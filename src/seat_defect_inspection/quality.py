@@ -17,10 +17,10 @@ class ImageQualityGuard:
     def evaluate(self, image) -> ImageQualityDecision:
         """计算质量指标并返回通过或拒绝结论。"""
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        laplacian_variance = float(cv2.Laplacian(gray, cv2.CV_64F).var())
-        brightness_mean = float(gray.mean())
-        overexposed_ratio = float((gray >= 245).mean())
-        underexposed_ratio = float((gray <= 10).mean())
+        laplacian_variance = float(cv2.Laplacian(gray, cv2.CV_64F).var()) # 拉普拉斯算子方差，用于检测图像清晰度
+        brightness_mean = float(gray.mean()) # 图像平均亮度
+        overexposed_ratio = float((gray >= 245).mean()) # 过曝像素比例
+        underexposed_ratio = float((gray <= 10).mean()) # 欠曝像素比例
 
         metrics = ImageQualityMetrics(
             laplacian_variance=laplacian_variance,

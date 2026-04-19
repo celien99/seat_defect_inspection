@@ -64,7 +64,10 @@ class MvsCameraSourceConfig:
     reverse_y: bool | None = None
 
     def to_locator(self) -> CameraLocator:
-        """转换为相机定位配置。"""
+        """转换为相机定位配置。
+
+        该方法只负责设备选择信息，不负责曝光、增益、ROI 等运行参数。
+        """
         return CameraLocator(
             device_index=self.device_index,
             serial_number=self.serial_number,
@@ -73,7 +76,10 @@ class MvsCameraSourceConfig:
         )
 
     def to_property_config(self) -> CameraPropertyConfig:
-        """转换为相机属性配置。"""
+        """转换为相机属性配置。
+
+        该方法把 query string 中的曝光、增益、帧率、ROI 等参数下发给底层相机控制器。
+        """
         return CameraPropertyConfig(
             exposure_auto=self.exposure_auto,
             exposure_time_us=self.exposure_time_us,
@@ -114,6 +120,7 @@ def parse_mvs_source(source: str) -> MvsCameraSourceConfig:
     parsed = urlparse(source)
     query = parse_qs(parsed.query)
 
+    # 先解析 query string，再综合 URL path 和 query selector 决定最终选机方式。
     config = MvsCameraSourceConfig(
         grab_timeout_ms=int(query.get("timeout_ms", [DEFAULT_GRAB_TIMEOUT_MS])[0]),
         trigger_mode=query.get("trigger", ["continuous"])[0].lower(),
@@ -145,7 +152,12 @@ def open_mvs_capture(source: str) -> "MvsCameraCapture":
 
 
 class MvsCameraCapture:
-    """对外暴露的相机取流适配器。"""
+    """对外暴露的相机取流适配器。
+
+    目标：
+    - 对上层表现得像 `cv2.VideoCapture`
+    - 对下层则委托 `HikCamera` 完成实际的 SDK 调用
+    """
 
     def __init__(self, config: MvsCameraSourceConfig) -> None:
         self._config = config
@@ -163,7 +175,12 @@ class MvsCameraCapture:
         return self._camera.opened
 
     def read(self) -> tuple[bool, Any]:
-        """读取一帧 BGR 图像。"""
+        """读取一帧 BGR 图像。
+
+        返回值保持和 `cv2.VideoCapture.read()` 一致：
+        - `(True, frame)` 表示成功
+        - `(False, None)` 表示超时或未取到帧
+        """
         frame = self._camera.get_frame(timeout_ms=self._config.grab_timeout_ms)
         if frame is None:
             return False, None
@@ -190,7 +207,13 @@ class MvsCameraCapture:
 
 
 def _apply_selector_from_url(config: MvsCameraSourceConfig, parsed) -> None:
-    """从 URL 中应用选择器。"""
+    """从 URL 中应用选择器。
+
+    示例：
+    - `mvs://0`
+    - `mvs://index/1`
+    - `mvs://sn/ABC123`
+    """
     selector = (parsed.netloc or "").strip()
     remainder = parsed.path.strip("/")
 
@@ -206,7 +229,10 @@ def _apply_selector_from_url(config: MvsCameraSourceConfig, parsed) -> None:
 
 
 def _apply_selector_from_query(config: MvsCameraSourceConfig, query: dict[str, list[str]]) -> None:
-    """从查询参数中应用选择器。"""
+    """从查询参数中应用选择器。
+
+    query 中的 index/sn/ip/mac 会覆盖 URL path 中的默认选择方式。
+    """
     if "index" in query:
         config.device_index = int(query["index"][0])
     if "sn" in query:
@@ -238,7 +264,10 @@ def _set_selector(config: MvsCameraSourceConfig, selector: str, value: str) -> N
 
 
 def _validate_selector(config: MvsCameraSourceConfig) -> None:
-    """验证选择器。"""
+    """验证选择器。
+
+    同时指定多种选机方式会引发歧义，因此这里强制只允许一种。
+    """
     selected = [
         config.device_index is not None,
         bool(config.serial_number),

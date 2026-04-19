@@ -83,10 +83,10 @@ class _CameraPipeline:
 
     def __init__(self, config: CameraConfig) -> None:
         self.config = config
-        self.quality_guard = ImageQualityGuard(config.quality)
-        self.preprocess_engine = PreprocessEngine(config.preprocess)
-        self.detection_service = DetectionService(config.detection)
-        self.roi_refine_engine = RoiRefineEngine(config.roi)
+        self.quality_guard = ImageQualityGuard(config.quality) # 质量门控
+        self.preprocess_engine = PreprocessEngine(config.preprocess) # 预处理
+        self.detection_service = DetectionService(config.detection) # 检测
+        self.roi_refine_engine = RoiRefineEngine(config.roi) # ROI 精修
 
     def prepare_image(self, image: Any) -> PreparedCameraSample:
         """完成质量检查、预处理、检测和 ROI 精修。"""
@@ -725,6 +725,7 @@ def _write_mask(path: Path, mask: np.ndarray) -> None:
 
 
 def _render_detections(image: Any, detection) -> Any:
+    """渲染检测结果。"""
     if detection is None:
         return image.copy()
     canvas = image.copy()
@@ -736,6 +737,7 @@ def _render_detections(image: Any, detection) -> Any:
 
 
 def _draw_box(image: Any, box, color: tuple[int, int, int], label: str) -> None:
+    """绘制检测框。"""
     x1 = int(round(box.x1))
     y1 = int(round(box.y1))
     x2 = int(round(box.x2))
@@ -754,5 +756,6 @@ def _draw_box(image: Any, box, color: tuple[int, int, int], label: str) -> None:
 
 
 def _overlay_heatmap(image: Any, heatmap: np.ndarray) -> Any:
+    """叠加热力图。"""
     color_map = cv2.applyColorMap(np.uint8(np.clip(heatmap, 0.0, 1.0) * 255), cv2.COLORMAP_JET)
     return cv2.addWeighted(image, 0.65, color_map, 0.35, 0.0)

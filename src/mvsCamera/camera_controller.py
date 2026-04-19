@@ -62,7 +62,17 @@ class MvsCameraError(RuntimeError):
 
 @dataclass(slots=True)
 class MvsDeviceInfo:
-    """标准化设备信息。"""
+    """标准化设备信息。
+
+    字段：
+    - index: 当前设备在 SDK 枚举结果中的索引
+    - tlayer_type: 传输层类型，通常是 GigE 或 USB
+    - serial_number: 序列号
+    - mac_address: MAC 地址
+    - ip_address: 当前 IP，仅 GigE 相机通常可用
+    - model_name: 设备型号名
+    - user_defined_name: 相机用户自定义名称
+    """
 
     index: int
     tlayer_type: int
@@ -75,7 +85,17 @@ class MvsDeviceInfo:
 
 @dataclass(slots=True)
 class CameraLocator:
-    """相机定位信息。"""
+    """相机定位信息。
+
+    字段：
+    - device_index: 按枚举顺序选机
+    - serial_number: 按序列号选机
+    - ip_address: 按 IP 选机
+    - mac_address: 按 MAC 选机
+
+    约束：
+    运行时应尽量只使用一种选择方式，避免现场设备顺序变化造成误选。
+    """
 
     device_index: int | None = 0
     serial_number: str | None = None
@@ -85,7 +105,16 @@ class CameraLocator:
 
 @dataclass(slots=True)
 class CameraPropertyConfig:
-    """相机运行时属性配置。"""
+    """相机运行时属性配置。
+
+    字段：
+    - exposure_auto / exposure_time_us: 曝光模式与曝光时间
+    - gain_auto / gain: 增益模式与增益值
+    - gamma: 相机端 Gamma
+    - acquisition_frame_rate_enable / acquisition_frame_rate: 帧率控制
+    - width / height / offset_x / offset_y: 采集 ROI
+    - reverse_x / reverse_y: 镜像翻转
+    """
 
     exposure_auto: str | None = None
     exposure_time_us: float | None = None
@@ -103,7 +132,17 @@ class CameraPropertyConfig:
 
 
 class HikCamera:
-    """参考 Windows 已验证代码整理出的单相机控制器。"""
+    """参考 Windows 已验证代码整理出的单相机控制器。
+
+    生命周期：
+    1. `__init__` 初始化 SDK 计数与基础状态
+    2. `open` 枚举并打开目标相机，写入触发模式和属性
+    3. `start_grabbing` 申请缓冲区并开始取流
+    4. `get_frame` 读取单帧并转成 BGR
+    5. `close` 停止取流、关闭设备、必要时反初始化 SDK
+
+    该类是整个 MVS 接入链中最靠近海康 SDK 的业务封装层。
+    """
 
     sdk_initialized = False
     instance_count = 0
@@ -135,6 +174,10 @@ class HikCamera:
 
     @classmethod
     def _initialize_sdk(cls) -> None:
+        """按进程级别初始化海康 SDK。
+
+        当前实现通过类变量 `sdk_initialized` 保证重复创建相机对象时不会重复初始化。
+        """
         if cls.sdk_initialized:
             return
         ret = MvCamera.MV_CC_Initialize()
@@ -144,6 +187,7 @@ class HikCamera:
 
     @classmethod
     def _finalize_sdk(cls) -> None:
+        """在最后一个相机对象释放后反初始化 SDK。"""
         if not cls.sdk_initialized:
             return
         ret = MvCamera.MV_CC_Finalize()
@@ -164,7 +208,16 @@ class HikCamera:
         return devices
 
     def open(self) -> MvsDeviceInfo:
-        """打开目标相机。"""
+        """打开目标相机。
+
+        调用顺序：
+        1. `enumerate_devices`
+        2. `_resolve_device`
+        3. `MV_CC_CreateHandle`
+        4. `MV_CC_OpenDevice`
+        5. 设置心跳、最佳包大小、触发模式、像素格式和业务属性
+        6. 读取 Width/Height/FPS 作为当前相机状态
+        """
         devices = self.enumerate_devices()
         if not devices:
             raise MvsCameraError("No MVS camera devices were found")
@@ -207,7 +260,13 @@ class HikCamera:
             raise
 
     def start_grabbing(self) -> None:
-        """开始取流。"""
+        """开始取流。
+
+        关键动作：
+        - 先读取 `PayloadSize`
+        - 为 SDK 输出帧分配缓冲区
+        - 调用 `MV_CC_StartGrabbing`
+        """
         if not self.opened:
             raise MvsCameraError("Camera is not opened")
 
@@ -228,7 +287,11 @@ class HikCamera:
         self.grabbing = False
 
     def set_trigger_mode(self, enable: bool) -> None:
-        """设置触发模式。"""
+        """设置触发模式。
+
+        - `False`: 连续采集
+        - `True`: 软件触发，并把触发源切到 `TriggerSoftware`
+        """
         ret = self.cam.MV_CC_SetEnumValue("TriggerMode", 1 if enable else 0)
         if ret != 0:
             raise MvsCameraError(f"Set TriggerMode failed: {parse_error(ret)}")
@@ -244,9 +307,15 @@ class HikCamera:
             raise MvsCameraError(f"TriggerSoftware failed: {parse_error(ret)}")
 
     def apply_property_config(self) -> None:
-        """应用额外的相机属性配置。"""
+        """应用额外的相机属性配置。
+
+        说明：
+        该函数把 `CameraPropertyConfig` 中的字段逐项写入相机节点，
+        是现场相机参数下发的总入口。
+        """
         config = self.property_config
 
+        # 先应用翻转、曝光、增益等成像参数，再应用 ROI，避免局部节点依赖顺序问题。
         if config.reverse_x is not None:
             self._set_bool_value("ReverseX", config.reverse_x)
         if config.reverse_y is not None:
@@ -299,7 +368,10 @@ class HikCamera:
         offset_x: int | None = None,
         offset_y: int | None = None,
     ) -> None:
-        """设置 ROI 参数。"""
+        """设置 ROI 参数。
+
+        通常用于产线现场把采集区域裁到只覆盖座椅所在区域，减少冗余带宽与处理开销。
+        """
         if width is not None:
             self._set_int_value("Width", width)
         if height is not None:
@@ -310,7 +382,10 @@ class HikCamera:
             self._set_int_value("OffsetY", offset_y)
 
     def get_int_node(self, node_name: str) -> dict[str, int]:
-        """读取整数节点的当前值与范围。"""
+        """读取整数节点的当前值与范围。
+
+        适合现场调试时查询 `Width`、`Height`、`OffsetX` 等节点的当前值和可配置范围。
+        """
         value = MVCC_INTVALUE()
         memset(byref(value), 0, sizeof(value))
         ret = self.cam.MV_CC_GetIntValue(node_name, value)
@@ -324,7 +399,10 @@ class HikCamera:
         }
 
     def get_float_node(self, node_name: str) -> dict[str, float]:
-        """读取浮点节点的当前值与范围。"""
+        """读取浮点节点的当前值与范围。
+
+        适合现场调试时查询 `ExposureTime`、`Gain`、`AcquisitionFrameRate` 等节点。
+        """
         value = MVCC_FLOATVALUE()
         memset(byref(value), 0, sizeof(value))
         ret = self.cam.MV_CC_GetFloatValue(node_name, value)
@@ -337,7 +415,18 @@ class HikCamera:
         }
 
     def get_frame(self, timeout_ms: int = 1000) -> np.ndarray | None:
-        """读取一帧图像，统一返回 BGR。"""
+        """读取一帧图像，统一返回 BGR。
+
+        调用顺序：
+        1. 若为软件触发模式，先执行 `trigger_once`
+        2. 调用 `MV_CC_GetOneFrameTimeout`
+        3. 更新当前宽高
+        4. 调用 `_decode_frame` 转成 OpenCV 可直接使用的 BGR
+
+        返回：
+        - 成功：`np.ndarray`，BGR 图像
+        - 超时或未取到帧：`None`
+        """
         if not self.grabbing or self.data_buf is None:
             raise MvsCameraError("Camera is not grabbing")
 
@@ -371,12 +460,18 @@ class HikCamera:
                 HikCamera._finalize_sdk()
 
     def _safe_destroy(self) -> None:
+        """在异常或正常关闭时安全释放 Handle 和 Device。"""
         if self.opened:
             self.cam.MV_CC_CloseDevice()
             self.cam.MV_CC_DestroyHandle()
             self.opened = False
 
     def _resolve_device(self, devices: list[MvsDeviceInfo]) -> MvsDeviceInfo:
+        """根据 `CameraLocator` 从枚举结果中选出目标相机。
+
+        选择优先级：
+        serial_number -> ip_address -> mac_address -> device_index
+        """
         locator = self.locator
         if locator.serial_number:
             for device in devices:
@@ -402,6 +497,7 @@ class HikCamera:
         return devices[index]
 
     def _build_device_info(self, index: int) -> MvsDeviceInfo:
+        """把 SDK 原始设备信息转换为业务层可读的 `MvsDeviceInfo`。"""
         device_info = cast(
             self.device_list.pDeviceInfo[index],
             POINTER(MV_CC_DEVICE_INFO),
@@ -433,6 +529,7 @@ class HikCamera:
         return MvsDeviceInfo(index=index, tlayer_type=device_info.nTLayerType)
 
     def _get_int_value(self, node_name: str) -> int:
+        """读取整数节点当前值。"""
         value = MVCC_INTVALUE()
         memset(byref(value), 0, sizeof(value))
         ret = self.cam.MV_CC_GetIntValue(node_name, value)
@@ -441,6 +538,10 @@ class HikCamera:
         return int(value.nCurValue)
 
     def _get_float_value(self, node_name: str) -> float:
+        """读取浮点节点当前值。
+
+        某些节点或机型不支持时返回 0.0，而不是直接中断打开流程。
+        """
         value = MVCC_FLOATVALUE()
         memset(byref(value), 0, sizeof(value))
         ret = self.cam.MV_CC_GetFloatValue(node_name, value)
@@ -449,21 +550,25 @@ class HikCamera:
         return float(value.fCurValue)
 
     def _set_int_value(self, node_name: str, value: int) -> None:
+        """写入整数节点。"""
         ret = self.cam.MV_CC_SetIntValue(node_name, int(value))
         if ret != 0:
             raise MvsCameraError(f"Set int node '{node_name}' failed: {parse_error(ret)}")
 
     def _set_float_value(self, node_name: str, value: float) -> None:
+        """写入浮点节点。"""
         ret = self.cam.MV_CC_SetFloatValue(node_name, float(value))
         if ret != 0:
             raise MvsCameraError(f"Set float node '{node_name}' failed: {parse_error(ret)}")
 
     def _set_bool_value(self, node_name: str, value: bool) -> None:
+        """写入布尔节点。"""
         ret = self.cam.MV_CC_SetBoolValue(node_name, bool(value))
         if ret != 0:
             raise MvsCameraError(f"Set bool node '{node_name}' failed: {parse_error(ret)}")
 
     def _set_mapped_enum_value(self, node_name: str, value: str, mapping: dict[str, int]) -> None:
+        """把字符串枚举值映射为 SDK 所需整数枚举后写入节点。"""
         normalized = value.strip().lower()
         enum_value = mapping.get(normalized)
         if enum_value is None:
@@ -474,6 +579,7 @@ class HikCamera:
             raise MvsCameraError(f"Set enum node '{node_name}' failed: {parse_error(ret)}")
 
     def _apply_roi_config(self, config: CameraPropertyConfig) -> None:
+        """仅当 ROI 相关参数被配置时才下发 ROI。"""
         if (
             config.width is None
             and config.height is None
@@ -489,6 +595,10 @@ class HikCamera:
         )
 
     def _try_set_pixel_format(self, pixel_format: str) -> None:
+        """尝试直接把相机输出像素格式切到目标格式。
+
+        若机型不支持，则静默保留原始像素格式，后续在 `_decode_frame` 中做软件转换。
+        """
         pixel_type = PIXEL_FORMAT_MAP.get(pixel_format.lower())
         if pixel_type is None:
             return
@@ -498,6 +608,15 @@ class HikCamera:
             return
 
     def _decode_frame(self, frame_buffer: Any, frame_info: Any) -> np.ndarray:
+        """把 SDK 原始帧数据解码为 BGR 图像。
+
+        分支：
+        - 已经是 BGR8: 直接 reshape
+        - RGB8: 转为 BGR
+        - Mono8: 转为 3 通道 BGR
+        - 其他彩色格式: 先调用 SDK 像素转换再输出 BGR
+        - 其他灰度格式: 先转换为 Mono8，再升成 BGR
+        """
         pixel_type = int(frame_info.enPixelType)
         width = int(frame_info.nWidth)
         height = int(frame_info.nHeight)
@@ -562,6 +681,10 @@ class HikCamera:
         destination_pixel_type: int,
         destination_size: int,
     ) -> Any:
+        """调用海康 SDK 做像素格式转换。
+
+        这是 Bayer/YUV 等非 OpenCV 直接友好格式的关键兜底转换入口。
+        """
         convert_param = MV_CC_PIXEL_CONVERT_PARAM()
         memset(byref(convert_param), 0, sizeof(convert_param))
         convert_param.nWidth = frame_info.nWidth
@@ -589,6 +712,7 @@ def parse_error(ret: int) -> str:
 
 
 def _extract_mac_address(device_info) -> str | None:
+    """从不同设备结构中抽取 MAC 地址。"""
     if hasattr(device_info, "nMacAddrHigh") and hasattr(device_info, "nMacAddrLow"):
         high = device_info.nMacAddrHigh
         low = device_info.nMacAddrLow

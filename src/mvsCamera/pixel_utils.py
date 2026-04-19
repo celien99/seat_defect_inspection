@@ -1,3 +1,11 @@
+"""MVS 像素格式与底层缓冲区辅助函数。
+
+这些函数主要服务于 `camera_controller.py`，用于：
+- 把 SDK 返回的字符数组、IP、缓冲区转换成 Python/NumPy 友好格式
+- 判断像素类型属于灰度还是彩色
+- 估算某些像素格式下的理论数据长度
+"""
+
 from __future__ import annotations
 
 from ctypes import c_ubyte, memmove
@@ -110,6 +118,7 @@ COLOR_PIXEL_TYPES = {
 
 
 def char_array_to_string(char_array) -> str:
+    """把 SDK 的 C 风格字符数组转换为 Python 字符串。"""
     result = []
     for value in char_array:
         if value == 0:
@@ -119,16 +128,19 @@ def char_array_to_string(char_array) -> str:
 
 
 def int_to_ip(value: int) -> str:
+    """把 32 位整数 IP 转换为点分十进制字符串。"""
     return ".".join(str((value >> shift) & 0xFF) for shift in (24, 16, 8, 0))
 
 
 def copy_frame_buffer(buffer_pointer, data_size: int) -> np.ndarray:
+    """把 SDK 指针指向的帧数据复制为独立的 NumPy 缓冲区。"""
     frame_buffer = (c_ubyte * data_size)()
     memmove(frame_buffer, buffer_pointer, data_size)
     return np.frombuffer(frame_buffer, count=data_size, dtype=np.uint8)
 
 
 def frame_data_size(frame_info) -> int:
+    """根据像素类型和宽高估算一帧数据长度。"""
     bytes_per_pixel = PIXEL_BYTE_DEPTH.get(frame_info.enPixelType)
     if bytes_per_pixel is None:
         raise ValueError(f"unsupported pixel type: {frame_info.enPixelType}")
@@ -136,8 +148,10 @@ def frame_data_size(frame_info) -> int:
 
 
 def is_mono_pixel_type(pixel_type: int) -> bool:
+    """判断像素类型是否属于灰度格式。"""
     return pixel_type in MONO_PIXEL_TYPES
 
 
 def is_color_pixel_type(pixel_type: int) -> bool:
+    """判断像素类型是否属于彩色格式。"""
     return pixel_type in COLOR_PIXEL_TYPES

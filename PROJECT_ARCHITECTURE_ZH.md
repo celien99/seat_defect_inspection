@@ -533,7 +533,135 @@ cli.main
 14. `mvsCamera/frame_source.py`
 15. `mvsCamera/camera_controller.py`
 
-## 10. 重新评估后的结论
+## 10. 按产线调试顺序的阅读路径
+
+如果目标不是“学架构”，而是“现场快速定位问题”，建议按下面顺序读。
+
+### 10.1 第一步：先确认命令入口和配置是否跑对
+
+阅读顺序：
+
+1. `src/seat_defect_inspection/cli.py`
+2. `src/seat_defect_inspection/runtime_config.py`
+3. `configs/seat_defect_inspection.mvs.json`
+4. `configs/seat_defect_inspection.multimodel.example.json`
+
+适用问题：
+
+- 命令参数有没有生效
+- 当前到底走的是哪个 `seat_model_id`
+- 当前机位是不是启用了
+- 当前机位到底加载了哪个 YOLO 权重和哪个 PatchCore 模型
+
+### 10.2 第二步：采图失败时，先读输入链路
+
+阅读顺序：
+
+1. `src/seat_defect_inspection/acquisition.py`
+2. `src/media_inputs/core.py`
+3. `src/mvsCamera/frame_source.py`
+4. `src/mvsCamera/camera_controller.py`
+
+适用问题：
+
+- `capture` 命令失败
+- MVS 相机打不开
+- 现场换机后选错设备
+- 取流超时
+- 能打开但读不到帧
+
+推荐定位顺序：
+
+1. 先看 `AcquisitionService.capture`
+2. 再看 `media_inputs.infer_source_kind/open_frame_stream`
+3. 再看 `parse_mvs_source`
+4. 最后看 `HikCamera.open/start_grabbing/get_frame`
+
+### 10.3 第三步：图像有了，但 YOLO 检不准时
+
+阅读顺序：
+
+1. `src/seat_defect_inspection/quality.py`
+2. `src/seat_defect_inspection/preprocess.py`
+3. `src/seat_defect_inspection/detection.py`
+
+适用问题：
+
+- 图像太暗、太亮、太糊
+- OpenCV 处理后 YOLO 效果变差
+- YOLO 检不到 `seat_main`
+- 分割 mask 和框不稳定
+
+推荐先看：
+
+1. `ImageQualityGuard.evaluate`
+2. `PreprocessEngine.process`
+3. `DetectionService.detect`
+
+### 10.4 第四步：YOLO 检到了，但 PatchCore 不稳定时
+
+阅读顺序：
+
+1. `src/seat_defect_inspection/roi.py`
+2. `src/seat_defect_inspection/patchcore.py`
+3. `src/seat_defect_inspection/color_branch.py`
+
+适用问题：
+
+- ROI 裁偏
+- ROI 外背景干扰过强
+- 同机位热力图漂移
+- 颜色变化导致误报
+- `valid_patch_ratio` 过低
+
+推荐先看：
+
+1. `RoiRefineEngine.refine`
+2. `_prepare_texture_image`
+3. `PatchCoreService.predict`
+4. `ColorConsistencyService.predict`
+
+### 10.5 第五步：单机位正常，但整机结果异常时
+
+阅读顺序：
+
+1. `src/seat_defect_inspection/service.py`
+2. `src/seat_defect_inspection/fusion.py`
+3. `src/seat_defect_inspection/reporting.py`
+
+适用问题：
+
+- 明明单机位都 OK，最终结果却 REJECT
+- 某一路失败导致整体被打回
+- 最终 JSON 和调试图不一致
+
+推荐先看：
+
+1. `InspectionService._inspect_one_camera`
+2. `fuse_camera_results`
+3. `export_inspection_report`
+
+### 10.6 第六步：训练结果和线上结果不一致时
+
+阅读顺序：
+
+1. `src/seat_defect_inspection/service.py`
+2. `src/seat_defect_inspection/patchcore.py`
+3. `src/seat_defect_inspection/yolo_training.py`
+
+适用问题：
+
+- PatchCore 训练好但线上误报高
+- 训练集和线上 ROI 分布不一致
+- YOLO 新模型上线后 ROI 效果变了
+
+关键原则：
+
+1. 先确认训练阶段是否复用了 `_CameraPipeline.prepare_image`
+2. 再确认 `texture_ready_image` 是否发生变化
+3. 最后确认模型路径和 `seat_model_id` 是否选对
+
+## 11. 重新评估后的结论
 
 从工程视角看，当前项目已经具备下面几个优点：
 
