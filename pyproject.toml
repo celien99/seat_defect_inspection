@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "seat-defect-inspection"
+version = "0.1.0"
+description = "Independent production-grade automotive seat defect inspection project"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "ultralytics",
+  "opencv-python",
+]
+
+[project.scripts]
+seat-defect-inspection = "seat_defect_inspection.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

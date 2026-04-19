@@ -1,0 +1,124 @@
+"""JSON 输出工具。"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from .schemas import (
+    BoundingBox,
+    CameraInspectionResult,
+    CaptureRecord,
+    CaptureSummary,
+    InspectionResult,
+)
+
+
+def export_inspection_report(result: InspectionResult, output_path: str) -> Path:
+    """写出一次检测任务的结果 JSON。"""
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "part_id": result.part_id,
+        "frame_id": result.frame_id,
+        "timestamp": result.timestamp,
+        "status": result.status,
+        "decision_reason": result.decision_reason,
+        "camera_results": [_camera_result_to_dict(item) for item in result.camera_results],
+    }
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def export_capture_manifest(summary: CaptureSummary) -> Path:
+    """写出一次采图任务的 manifest。"""
+    path = Path(summary.manifest_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "part_id": summary.part_id,
+        "run_id": summary.run_id,
+        "output_dir": summary.output_dir,
+        "capture_count": len(summary.records),
+        "success_count": sum(1 for item in summary.records if item.status == "OK"),
+        "failure_count": sum(1 for item in summary.records if item.status != "OK"),
+        "records": [_capture_record_to_dict(item) for item in summary.records],
+    }
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def _camera_result_to_dict(result: CameraInspectionResult) -> dict:
+    return {
+        "camera_id": result.camera_id,
+        "frame_id": result.frame_id,
+        "source": result.source,
+        "source_kind": result.source_kind,
+        "status": result.status,
+        "reason": result.reason,
+        "quality": (
+            {
+                "accepted": result.quality.accepted,
+                "reason": result.quality.reason,
+                "metrics": {
+                    "laplacian_variance": result.quality.metrics.laplacian_variance,
+                    "brightness_mean": result.quality.metrics.brightness_mean,
+                    "overexposed_ratio": result.quality.metrics.overexposed_ratio,
+                    "underexposed_ratio": result.quality.metrics.underexposed_ratio,
+                    "is_black_frame": result.quality.metrics.is_black_frame,
+                    "is_white_frame": result.quality.metrics.is_white_frame,
+                },
+            }
+            if result.quality is not None
+            else None
+        ),
+        "target_box": _box_to_dict(result.crop_box),
+        "texture_result": (
+            {
+                "score": result.texture_result.score,
+                "threshold": result.texture_result.threshold,
+                "is_anomaly": result.texture_result.is_anomaly,
+                "valid_patch_ratio": result.texture_result.valid_patch_ratio,
+                "valid_patch_count": result.texture_result.valid_patch_count,
+                "total_patch_count": result.texture_result.total_patch_count,
+            }
+            if result.texture_result is not None
+            else None
+        ),
+        "color_result": (
+            {
+                "score": result.color_result.score,
+                "threshold": result.color_result.threshold,
+                "is_anomaly": result.color_result.is_anomaly,
+                "diagnostics": result.color_result.diagnostics,
+            }
+            if result.color_result is not None
+            else None
+        ),
+        "artifact_paths": result.artifact_paths,
+    }
+
+
+def _capture_record_to_dict(record: CaptureRecord) -> dict[str, str | None]:
+    return {
+        "camera_id": record.camera_id,
+        "frame_id": record.frame_id,
+        "part_id": record.part_id,
+        "source": record.source,
+        "source_kind": record.source_kind,
+        "timestamp": record.timestamp,
+        "status": record.status,
+        "reason": record.reason,
+        "output_path": record.output_path,
+        "train_good_path": record.train_good_path,
+    }
+
+
+def _box_to_dict(box: BoundingBox | None) -> dict[str, float] | None:
+    if box is None:
+        return None
+    return {
+        "x1": box.x1,
+        "y1": box.y1,
+        "x2": box.x2,
+        "y2": box.y2,
+    }
