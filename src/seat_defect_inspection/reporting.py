@@ -79,10 +79,17 @@ def _camera_result_to_dict(result: CameraInspectionResult) -> dict:
             {
                 "score": result.texture_result.score,
                 "threshold": result.texture_result.threshold,
+                "decision_threshold": result.texture_result.decision_threshold,
                 "is_anomaly": result.texture_result.is_anomaly,
                 "valid_patch_ratio": result.texture_result.valid_patch_ratio,
                 "valid_patch_count": result.texture_result.valid_patch_count,
                 "total_patch_count": result.texture_result.total_patch_count,
+                "peak_patch_score": result.texture_result.peak_patch_score,
+                "strong_patch_count": result.texture_result.strong_patch_count,
+                "largest_component_patch_count": result.texture_result.largest_component_patch_count,
+                "strong_patch_ratio": result.texture_result.strong_patch_ratio,
+                "largest_component_patch_ratio": result.texture_result.largest_component_patch_ratio,
+                "decision_mode": result.texture_result.decision_mode,
             }
             if result.texture_result is not None
             else None

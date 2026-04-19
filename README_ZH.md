@@ -165,7 +165,7 @@ seat_defect_inspection/
 - `src/seat_defect_inspection/roi.py`
   ROI 精修层，负责扩框裁剪、GrabCut/分割掩膜、忽略区掩膜、对齐、前景羽化、背景压制和纹理增强图生成。
 - `src/seat_defect_inspection/patchcore.py`
-  轻量 PatchCore 风格纹理异常检测实现，包含训练、记忆库压缩、模型保存/加载和热力图生成。
+  PatchCore 异常检测实现，当前同时支持完整 CNN 特征版 `full` 后端和轻量 `handcrafted` 兜底后端，包含训练、记忆库压缩、模型保存/加载和热力图生成。
 - `src/seat_defect_inspection/color_branch.py`
   颜色一致性分支，基于 LAB 统计量做正常颜色分布建模和异常评分。
 - `src/seat_defect_inspection/fusion.py`
@@ -307,6 +307,12 @@ seat-defect-inspection train-yolo --config configs/seat_defect_inspection.multim
   PatchCore 正常样本目录
 - `patchcore_model_path`
   当前机位 PatchCore 模型输出路径
+- `patchcore.backend`
+  推荐设为 `full`，启用完整 PatchCore；只有在无 `torch/torchvision` 环境下才建议回退到 `handcrafted`
+- `patchcore.backbone_name` / `patchcore.feature_layers`
+  完整 PatchCore 的 backbone 和取特征层，当前推荐 `wide_resnet50_2 + [layer2, layer3]`
+- `patchcore.backbone_weights_path` / `patchcore.backbone_pretrained`
+  完整 PatchCore 的特征权重来源。正式产线建议提供本地 ImageNet 预训练权重或预先缓存 torchvision 权重
 - `detection.model_path`
   YOLO 权重路径。没有时可先设为 `null`
 - `detection.fallback_box`

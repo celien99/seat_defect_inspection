@@ -165,6 +165,7 @@ class PatchCoreConfig:
     """PatchCore 风格模型与 patch 过滤配置。
 
     字段：
+    - backend: PatchCore 后端，支持 full / handcrafted
     - image_size: ROI 统一缩放尺寸
     - patch_size / stride: Patch 提取参数
     - max_memory: 记忆库最大容量
@@ -173,8 +174,23 @@ class PatchCoreConfig:
     - min_target_coverage: patch 落在目标区域的最小覆盖率
     - max_ignore_overlap: patch 与忽略区域的最大重叠率
     - min_valid_patch_ratio: 推理时最小有效 patch 占比
+    - decision_score_margin: 最终判定时对训练阈值再乘一层安全系数
+    - strong_patch_score_ratio: 强异常 patch 判定比例，基于当前图像分数和训练阈值共同决定
+    - min_strong_patch_count: 至少需要多少个强异常 patch 才允许判 NG
+    - min_strong_component_count: 最大连通强异常区域至少包含多少个 patch
+    - min_strong_patch_ratio: 强异常 patch 占全部有效 patch 的最小比例
+    - min_strong_component_ratio: 最大连通强异常区域占全部有效 patch 的最小比例
+    - critical_score_margin: 强异常快速命中时的整图分数安全系数
+    - critical_peak_score_margin: 强异常快速命中时的峰值 patch 分数安全系数
+    - critical_min_component_patch_count: 强异常快速命中要求的最小连通 patch 数
+    - backbone_name / feature_layers: 完整 PatchCore 的 CNN backbone 与取特征层
+    - backbone_pretrained / backbone_weights_path / backbone_device:
+      完整 PatchCore 的权重加载与推理设备配置
+    - feature_pool_kernel_size: 完整 PatchCore 对中间层做局部平均池化的核大小
+    - coreset_sampling_ratio: 完整 PatchCore 记忆库抽样比例
     """
 
+    backend: str = "full"
     image_size: int = 256
     patch_size: int = 32
     stride: int = 16
@@ -184,6 +200,22 @@ class PatchCoreConfig:
     min_target_coverage: float = 0.8
     max_ignore_overlap: float = 0.1
     min_valid_patch_ratio: float = 0.65
+    decision_score_margin: float = 1.08
+    strong_patch_score_ratio: float = 0.9
+    min_strong_patch_count: int = 3
+    min_strong_component_count: int = 2
+    min_strong_patch_ratio: float = 0.015
+    min_strong_component_ratio: float = 0.01
+    critical_score_margin: float = 1.35
+    critical_peak_score_margin: float = 1.45
+    critical_min_component_patch_count: int = 2
+    backbone_name: str = "wide_resnet50_2"
+    feature_layers: list[str] = field(default_factory=lambda: ["layer2", "layer3"])
+    backbone_pretrained: bool = False
+    backbone_weights_path: str | None = None
+    backbone_device: str = "cpu"
+    feature_pool_kernel_size: int = 3
+    coreset_sampling_ratio: float = 0.1
 
 
 @dataclass(slots=True)
@@ -239,10 +271,14 @@ class FusionConfig:
     字段：
     - reject_on_any_reject: 是否只要有 REJECT 就整体 REJECT
     - ng_strategy: NG 融合策略，支持 any / all / majority
+    - early_stop_on_ng: 当 NG 融合策略已满足时是否提前结束后续机位
+    - defect_overrides_reject: 已确认存在缺陷时，是否优先输出 NG 而不是 REJECT
     """
 
     reject_on_any_reject: bool = True
     ng_strategy: str = "any"
+    early_stop_on_ng: bool = True
+    defect_overrides_reject: bool = True
 
 
 @dataclass(slots=True)

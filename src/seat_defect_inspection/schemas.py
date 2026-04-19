@@ -154,6 +154,13 @@ class TextureAnomalyResult:
     - heatmap: ROI 级异常热力图
     - valid_patch_ratio / valid_patch_count / total_patch_count:
       patch 有效性统计
+    - decision_threshold: 应用于最终工业判定的保守阈值
+    - peak_patch_score: 当前图像最强 patch 分数
+    - strong_patch_count: 达到强异常阈值的 patch 数量
+    - largest_component_patch_count: 最大连通强异常区域包含的 patch 数量
+    - strong_patch_ratio: 强异常 patch 占全部有效 patch 的比例
+    - largest_component_patch_ratio: 最大连通强异常区域占全部有效 patch 的比例
+    - decision_mode: 最终命中路径，便于区分常规命中还是强缺陷快速命中
     """
 
     score: float
@@ -163,6 +170,13 @@ class TextureAnomalyResult:
     valid_patch_ratio: float
     valid_patch_count: int
     total_patch_count: int
+    decision_threshold: float = 0.0
+    peak_patch_score: float = 0.0
+    strong_patch_count: int = 0
+    largest_component_patch_count: int = 0
+    strong_patch_ratio: float = 0.0
+    largest_component_patch_ratio: float = 0.0
+    decision_mode: str = "none"
 
 
 @dataclass(slots=True)

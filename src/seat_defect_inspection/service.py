@@ -16,7 +16,7 @@ from .acquisition import AcquisitionService
 from .color_branch import ColorConsistencyService
 from .config import CameraConfig, InspectionConfig
 from .detection import DetectionService
-from .fusion import fuse_camera_results
+from .fusion import fuse_camera_results, should_early_stop_on_ng
 from .patchcore import LoadedModelBundle, PatchCoreService, list_images
 from .preprocess import PreprocessEngine
 from .quality import ImageQualityGuard
@@ -320,8 +320,9 @@ class InspectionService:
         1. `_resolve_context` 解析当前型号与机位
         2. `AcquisitionService.capture` 逐机位抓图
         3. `_inspect_one_camera` 完成单机位完整检测
-        4. `fuse_camera_results` 汇总多机位结果
-        5. `export_inspection_report` 输出结果 JSON
+        4. 若已满足 NG fail-fast 条件则提前结束
+        5. `fuse_camera_results` 汇总多机位结果
+        6. `export_inspection_report` 输出结果 JSON
         """
         context = self._resolve_context(seat_model_id)
         resolved_part_id = part_id or self.config.part_id
@@ -341,6 +342,7 @@ class InspectionService:
         frame_id = ""
         timestamp = ""
         camera_results: list[CameraInspectionResult] = []
+        total_camera_count = len(context.cameras)
         for camera in context.cameras:
             try:
                 frame_packet = self.acquisition.capture(
@@ -360,6 +362,22 @@ class InspectionService:
                         seat_model_id=context.seat_model_id,
                     )
                 )
+                if should_early_stop_on_ng(
+                    camera_results=camera_results,
+                    total_camera_count=total_camera_count,
+                    fusion_config=self.config.fusion,
+                ):
+                    early_result = InspectionResult(
+                        part_id=resolved_part_id,
+                        frame_id=frame_id,
+                        timestamp=timestamp,
+                        status="NG",
+                        decision_reason=self._build_early_stop_reason(camera_results),
+                        seat_model_id=context.seat_model_id,
+                        camera_results=camera_results,
+                    )
+                    export_inspection_report(early_result, self.config.output_json_path)
+                    return early_result
                 continue
 
             if not frame_id:
@@ -367,14 +385,13 @@ class InspectionService:
                 timestamp = frame_packet.timestamp
 
             try:
-                camera_results.append(
-                    self._inspect_one_camera(
-                        frame_packet,
-                        camera,
-                        context.pipelines[camera.camera_id],
-                        context.seat_model_id,
-                    )
+                camera_result = self._inspect_one_camera(
+                    frame_packet,
+                    camera,
+                    context.pipelines[camera.camera_id],
+                    context.seat_model_id,
                 )
+                camera_results.append(camera_result)
             except Exception as exc:
                 camera_results.append(
                     CameraInspectionResult(
@@ -388,6 +405,23 @@ class InspectionService:
                     )
                 )
 
+            if should_early_stop_on_ng(
+                camera_results=camera_results,
+                total_camera_count=total_camera_count,
+                fusion_config=self.config.fusion,
+            ):
+                early_result = InspectionResult(
+                    part_id=resolved_part_id,
+                    frame_id=frame_id,
+                    timestamp=timestamp,
+                    status="NG",
+                    decision_reason=self._build_early_stop_reason(camera_results),
+                    seat_model_id=context.seat_model_id,
+                    camera_results=camera_results,
+                )
+                export_inspection_report(early_result, self.config.output_json_path)
+                return early_result
+
         fused = fuse_camera_results(
             part_id=resolved_part_id,
             frame_id=frame_id,
@@ -398,6 +432,12 @@ class InspectionService:
         fused.seat_model_id = context.seat_model_id
         export_inspection_report(fused, self.config.output_json_path)
         return fused
+
+    def _build_early_stop_reason(self, camera_results: list[CameraInspectionResult]) -> str:
+        ng_cameras = [result.camera_id for result in camera_results if result.status == "NG"]
+        if not ng_cameras:
+            return "early_stop_without_ng"
+        return f"early_stop_ng_from_{','.join(ng_cameras)}"
 
     def _inspect_one_camera(
         self,

@@ -184,7 +184,7 @@ def _build_camera_config(payload: dict[str, Any], config_dir: Path) -> CameraCon
         preprocess=PreprocessConfig(**(payload.get("preprocess") or {})),
         detection=_build_detection_config(payload.get("detection") or {}, config_dir),
         roi=_build_roi_config(payload.get("roi") or {}, config_dir),
-        patchcore=PatchCoreConfig(**(payload.get("patchcore") or {})),
+        patchcore=_build_patchcore_config(payload.get("patchcore") or {}, config_dir),
         color_branch=ColorBranchConfig(**(payload.get("color_branch") or {})),
     )
 
@@ -224,6 +224,20 @@ def _build_roi_config(payload: dict[str, Any], config_dir: Path) -> RoiRefineCon
                 if template_image_path
                 else None
             ),
+        ),
+    )
+
+
+def _build_patchcore_config(payload: dict[str, Any], config_dir: Path) -> PatchCoreConfig:
+    """构建 PatchCore 子配置，处理 backbone 权重路径解析。"""
+    normalized = dict(payload)
+    backbone_weights_path = normalized.pop("backbone_weights_path", None)
+    return PatchCoreConfig(
+        **normalized,
+        backbone_weights_path=(
+            _resolve_local_path(config_dir, backbone_weights_path, force=True)
+            if backbone_weights_path
+            else None
         ),
     )
 
