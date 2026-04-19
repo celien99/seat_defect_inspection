@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from .config import (
     AlignmentConfig,
@@ -23,6 +24,24 @@ from .config import (
 )
 from .schemas import BoundingBox
 
+_T = TypeVar("_T")
+_MISSING = dataclasses.MISSING
+
+
+def _field_default(cls: type, name: str) -> Any:
+    """返回 dataclass 字段的默认值；字段不存在或无默认值时抛出 KeyError / TypeError。"""
+    for f in dataclasses.fields(cls):  # type: ignore[arg-type]
+        if f.name == name:
+            if f.default is not _MISSING:
+                return f.default
+            if f.default_factory is not _MISSING:  # type: ignore[misc]
+                return f.default_factory()
+            raise TypeError(f"{cls.__name__}.{name} 没有默认值")
+    raise KeyError(f"{cls.__name__} 不存在字段 `{name}`")
+
+def _get_or_default(payload: dict[str, Any], cls: type, key: str) -> Any:
+    """从 payload 中取值；键不存在时回退到 dataclass 字段默认值。"""
+    return payload.get(key, _field_default(cls, key))
 
 def load_config(path: str) -> InspectionConfig:
     """加载缺陷检测主配置。"""
@@ -53,44 +72,26 @@ def load_config(path: str) -> InspectionConfig:
         default_seat_model_id=default_seat_model_id,
         output_json_path=_resolve_local_path(
             config_dir,
-            inspection_payload.get(
-                "output_json_path",
-                InspectionConfig.__dataclass_fields__["output_json_path"].default,
-            ),
+            _get_or_default(inspection_payload, InspectionConfig, "output_json_path"),
             force=True,
         ),
         debug_dir=_resolve_local_path(
             config_dir,
-            inspection_payload.get(
-                "debug_dir",
-                InspectionConfig.__dataclass_fields__["debug_dir"].default,
-            ),
+            _get_or_default(inspection_payload, InspectionConfig, "debug_dir"),
             force=True,
         ),
         capture_dir=_resolve_local_path(
             config_dir,
-            inspection_payload.get(
-                "capture_dir",
-                InspectionConfig.__dataclass_fields__["capture_dir"].default,
-            ),
+            _get_or_default(inspection_payload, InspectionConfig, "capture_dir"),
             force=True,
         ),
         save_debug_artifacts=bool(
-            inspection_payload.get(
-                "save_debug_artifacts",
-                InspectionConfig.__dataclass_fields__["save_debug_artifacts"].default,
-            ),
+            _get_or_default(inspection_payload, InspectionConfig, "save_debug_artifacts")
         ),
         capture_retries=int(
-            inspection_payload.get(
-                "capture_retries",
-                InspectionConfig.__dataclass_fields__["capture_retries"].default,
-            ),
+            _get_or_default(inspection_payload, InspectionConfig, "capture_retries")
         ),
-        part_id=inspection_payload.get(
-            "part_id",
-            InspectionConfig.__dataclass_fields__["part_id"].default,
-        ),
+        part_id=_get_or_default(inspection_payload, InspectionConfig, "part_id"),
         fusion=FusionConfig(**(inspection_payload.get("fusion") or {})),
     )
 
@@ -102,19 +103,9 @@ def load_yolo_training_config(path: str, seat_model_id: str | None = None) -> Yo
     payload = json.loads(config_path.read_text(encoding="utf-8"))
     inspection_payload = payload.get("seat_defect_inspection", payload)
 
-    selected_seat_model_id = seat_model_id
-    training_payload = payload.get("yolo_training")
-
-    if inspection_payload.get("seat_models"):
-        selected_model_payload = _select_seat_model_payload(
-            inspection_payload.get("seat_models") or [],
-            selected_seat_model_id or inspection_payload.get("default_seat_model_id"),
-        )
-        if selected_model_payload is not None and selected_model_payload.get("yolo_training") is not None:
-            training_payload = selected_model_payload["yolo_training"]
-            selected_seat_model_id = selected_model_payload["seat_model_id"]
-        elif training_payload is None and selected_model_payload is not None:
-            selected_seat_model_id = selected_model_payload["seat_model_id"]
+    training_payload, selected_seat_model_id = _resolve_yolo_training_payload(
+        payload, inspection_payload, seat_model_id
+    )
 
     if training_payload is None:
         raise ValueError("配置文件缺少 `yolo_training` 配置块")
@@ -160,7 +151,7 @@ def _build_yolo_training_config(
     )
     normalized["project"] = _resolve_local_path(
         config_dir,
-        normalized.get("project", YoloTrainingConfig.__dataclass_fields__["project"].default),
+        normalized.get("project", _field_default(YoloTrainingConfig, "project")),
         force=True,
     )
     if "model_path" in normalized:
@@ -173,14 +164,7 @@ def _build_yolo_training_config(
 
 
 def _build_camera_config(payload: dict[str, Any], config_dir: Path) -> CameraConfig:
-    detection_payload = dict(payload.get("detection") or {})
-    fallback_box_payload = detection_payload.pop("fallback_box", None)
-    detection_model_path = detection_payload.pop("model_path", None)
-
-    roi_payload = dict(payload.get("roi") or {})
-    alignment_payload = dict(roi_payload.pop("alignment", {}) or {})
-    template_image_path = alignment_payload.pop("template_image_path", None)
-
+    """构建单个相机配置。"""
     return CameraConfig(
         camera_id=payload["camera_id"],
         source=_resolve_source_path(config_dir, payload["source"]),
@@ -198,35 +182,49 @@ def _build_camera_config(payload: dict[str, Any], config_dir: Path) -> CameraCon
         color_insensitive_mode=bool(payload.get("color_insensitive_mode", False)),
         quality=QualityGuardConfig(**(payload.get("quality") or {})),
         preprocess=PreprocessConfig(**(payload.get("preprocess") or {})),
-        detection=DetectionConfig(
-            **detection_payload,
-            model_path=_resolve_optional_model_path(
-                config_dir,
-                detection_model_path,
-            ),
-            fallback_box=(
-                _build_box(fallback_box_payload)
-                if fallback_box_payload is not None
+        detection=_build_detection_config(payload.get("detection") or {}, config_dir),
+        roi=_build_roi_config(payload.get("roi") or {}, config_dir),
+        patchcore=PatchCoreConfig(**(payload.get("patchcore") or {})),
+        color_branch=ColorBranchConfig(**(payload.get("color_branch") or {})),
+    )
+
+
+def _build_detection_config(payload: dict[str, Any], config_dir: Path) -> DetectionConfig:
+    """构建检测子配置，处理 model_path 和 fallback_box 的路径解析。"""
+    normalized = dict(payload)
+    fallback_box_payload = normalized.pop("fallback_box", None)
+    model_path = normalized.pop("model_path", None)
+    return DetectionConfig(
+        **normalized,
+        model_path=_resolve_optional_model_path(config_dir, model_path),
+        fallback_box=(
+            BoundingBox(
+                x1=float(fallback_box_payload["x1"]),
+                y1=float(fallback_box_payload["y1"]),
+                x2=float(fallback_box_payload["x2"]),
+                y2=float(fallback_box_payload["y2"]),
+            )
+            if fallback_box_payload is not None
+            else None
+        ),
+    )
+
+
+def _build_roi_config(payload: dict[str, Any], config_dir: Path) -> RoiRefineConfig:
+    """构建 ROI 精修子配置，处理对齐模板路径解析。"""
+    normalized = dict(payload)
+    alignment_payload = dict(normalized.pop("alignment", {}) or {})
+    template_image_path = alignment_payload.pop("template_image_path", None)
+    return RoiRefineConfig(
+        **normalized,
+        alignment=AlignmentConfig(
+            **alignment_payload,
+            template_image_path=(
+                _resolve_local_path(config_dir, template_image_path, force=True)
+                if template_image_path
                 else None
             ),
         ),
-        roi=RoiRefineConfig(
-            **roi_payload,
-            alignment=AlignmentConfig(
-                **alignment_payload,
-                template_image_path=(
-                    _resolve_local_path(
-                        config_dir,
-                        template_image_path,
-                        force=True,
-                    )
-                    if template_image_path
-                    else None
-                ),
-            ),
-        ),
-        patchcore=PatchCoreConfig(**(payload.get("patchcore") or {})),
-        color_branch=ColorBranchConfig(**(payload.get("color_branch") or {})),
     )
 
 
@@ -234,6 +232,7 @@ def _select_seat_model_payload(
     seat_models: list[dict[str, Any]],
     seat_model_id: str | None,
 ) -> dict[str, Any] | None:
+    """按 seat_model_id 查找对应 payload；未指定时返回第一个；找不到时抛出。"""
     if not seat_models:
         return None
     if seat_model_id is None:
@@ -245,28 +244,54 @@ def _select_seat_model_payload(
     raise ValueError(f"未知 seat_model_id `{seat_model_id}`，可选值：{available}")
 
 
-def _build_box(payload: dict[str, Any]) -> BoundingBox:
-    return BoundingBox(
-        x1=float(payload["x1"]),
-        y1=float(payload["y1"]),
-        x2=float(payload["x2"]),
-        y2=float(payload["y2"]),
-    )
+def _resolve_yolo_training_payload(
+    payload: dict[str, Any],
+    inspection_payload: dict[str, Any],
+    seat_model_id: str | None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """从配置中定位 yolo_training payload 及最终使用的 seat_model_id。
+
+    优先级：seat_models[seat_model_id].yolo_training > 顶层 yolo_training。
+    返回 (training_payload, resolved_seat_model_id)。
+    """
+    top_level_training = payload.get("yolo_training")
+    seat_models: list[dict[str, Any]] = inspection_payload.get("seat_models") or []
+
+    if not seat_models:
+        return top_level_training, seat_model_id
+
+    effective_id = seat_model_id or inspection_payload.get("default_seat_model_id")
+    selected = _select_seat_model_payload(seat_models, effective_id)
+
+    if selected is None:
+        return top_level_training, seat_model_id
+
+    resolved_id: str | None = selected.get("seat_model_id")
+
+    # 优先使用 seat_model 内嵌的 yolo_training
+    if selected.get("yolo_training") is not None:
+        return selected["yolo_training"], resolved_id
+
+    # seat_model 内无训练配置，回退到顶层，但仍记录匹配到的 seat_model_id
+    return top_level_training, resolved_id
 
 
 def _resolve_source_path(config_dir: Path, value: str) -> str:
+    """解析相机数据源路径;URL 协议或纯数字设备号直接透传。"""
     if "://" in value or value.isdigit():
         return value
     return _resolve_local_path(config_dir, value, force=True)
 
 
 def _resolve_optional_model_path(config_dir: Path, value: str | None) -> str | None:
+    """解析可选的模型路径；为 None 时直接返回 None。"""
     if value is None:
         return None
     return _resolve_local_path(config_dir, value, force=False)
 
 
 def _resolve_local_path(config_dir: Path, value: str, *, force: bool) -> str:
+    """将相对路径解析为基于 config_dir 的绝对路径；绝对路径直接返回。"""
     candidate = Path(value)
     if candidate.is_absolute():
         return str(candidate)
@@ -275,5 +300,15 @@ def _resolve_local_path(config_dir: Path, value: str, *, force: bool) -> str:
     return str((config_dir / candidate).resolve())
 
 
+_LOCAL_PATH_SUFFIXES = {
+    ".pt", ".pth", ".onnx", ".yaml", ".yml", ".json", ".png", ".jpg", ".jpeg",
+}
+
+
 def _looks_like_local_path(value: str) -> bool:
-    return value.startswith(".") or os.sep in value or (os.altsep is not None and os.altsep in value)
+    """判断字符串是否看起来像本地文件路径（非 URL、非设备号）。"""
+    if value.startswith(".") or os.sep in value:
+        return True
+    if os.altsep is not None and os.altsep in value:
+        return True
+    return Path(value).suffix.lower() in _LOCAL_PATH_SUFFIXES
