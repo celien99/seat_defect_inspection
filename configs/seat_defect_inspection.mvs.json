@@ -1,9 +1,9 @@
 {
   "seat_defect_inspection": {
     "part_id": "seat_production",
-    "output_json_path": "outputs/seat_defect_inspection/mvs_results.json",
-    "debug_dir": "outputs/seat_defect_inspection/mvs_debug",
-    "capture_dir": "outputs/seat_defect_inspection/mvs_capture",
+    "output_json_path": "../outputs/seat_defect_inspection/mvs_results.json",
+    "debug_dir": "../outputs/seat_defect_inspection/mvs_debug",
+    "capture_dir": "../outputs/seat_defect_inspection/mvs_capture",
     "save_debug_artifacts": true,
     "capture_retries": 3,
     "fusion": {
@@ -14,8 +14,9 @@
       {
         "camera_id": "cam_0",
         "source": "mvs://sn/DA9184658?timeout_ms=1000",
-        "train_good_dir": "data/seat_defect_inspection/cam_0/train/good",
-        "patchcore_model_path": "models/seat_defect_inspection/cam_0_patchcore.npz",
+        "train_good_dir": "../data/seat_defect_inspection/cam_0/train/good",
+        "patchcore_model_path": "../models/seat_defect_inspection/cam_0_patchcore.npz",
+        "color_insensitive_mode": true,
         "quality": {
           "min_laplacian_variance": 80.0,
           "min_brightness_mean": 30.0,
@@ -26,6 +27,11 @@
         "preprocess": {
           "denoise_method": "gaussian",
           "gaussian_kernel_size": 5,
+          "white_balance_method": "gray_world",
+          "max_white_balance_gain": 1.2,
+          "apply_illumination_correction": true,
+          "illumination_blur_kernel_size": 51,
+          "illumination_strength": 0.65,
           "apply_clahe": true,
           "clahe_clip_limit": 2.0,
           "clahe_tile_grid_size": 8,
@@ -58,6 +64,16 @@
           "morphology_kernel_size": 5,
           "ignore_dilate_kernel_size": 9,
           "edge_ignore_pixels": 8,
+          "apply_texture_clahe": true,
+          "texture_denoise_method": "bilateral",
+          "texture_illumination_correction": true,
+          "texture_illumination_blur_kernel_size": 41,
+          "texture_illumination_strength": 0.85,
+          "mask_feather_kernel_size": 15,
+          "edge_enhance_method": "scharr",
+          "edge_enhance_weight": 0.18,
+          "suppress_background": true,
+          "background_fill_mode": "median",
           "alignment": {
             "enabled": false,
             "method": "resize",
@@ -77,7 +93,7 @@
           "min_valid_patch_ratio": 0.55
         },
         "color_branch": {
-          "enabled": true,
+          "enabled": false,
           "threshold_quantile": 0.99,
           "min_valid_pixel_ratio": 0.4
         }
@@ -85,8 +101,9 @@
       {
         "camera_id": "cam_1",
         "source": "mvs://sn/DA9184675?timeout_ms=1000",
-        "train_good_dir": "data/seat_defect_inspection/cam_1/train/good",
-        "patchcore_model_path": "models/seat_defect_inspection/cam_1_patchcore.npz",
+        "train_good_dir": "../data/seat_defect_inspection/cam_1/train/good",
+        "patchcore_model_path": "../models/seat_defect_inspection/cam_1_patchcore.npz",
+        "color_insensitive_mode": true,
         "quality": {
           "min_laplacian_variance": 80.0,
           "min_brightness_mean": 30.0,
@@ -97,6 +114,11 @@
         "preprocess": {
           "denoise_method": "gaussian",
           "gaussian_kernel_size": 5,
+          "white_balance_method": "gray_world",
+          "max_white_balance_gain": 1.2,
+          "apply_illumination_correction": true,
+          "illumination_blur_kernel_size": 51,
+          "illumination_strength": 0.65,
           "apply_clahe": true,
           "clahe_clip_limit": 2.0,
           "clahe_tile_grid_size": 8,
@@ -129,6 +151,16 @@
           "morphology_kernel_size": 5,
           "ignore_dilate_kernel_size": 9,
           "edge_ignore_pixels": 8,
+          "apply_texture_clahe": true,
+          "texture_denoise_method": "bilateral",
+          "texture_illumination_correction": true,
+          "texture_illumination_blur_kernel_size": 41,
+          "texture_illumination_strength": 0.85,
+          "mask_feather_kernel_size": 15,
+          "edge_enhance_method": "scharr",
+          "edge_enhance_weight": 0.18,
+          "suppress_background": true,
+          "background_fill_mode": "median",
           "alignment": {
             "enabled": false,
             "method": "resize",
@@ -148,7 +180,7 @@
           "min_valid_patch_ratio": 0.55
         },
         "color_branch": {
-          "enabled": true,
+          "enabled": false,
           "threshold_quantile": 0.99,
           "min_valid_pixel_ratio": 0.4
         }
@@ -156,8 +188,9 @@
       {
         "camera_id": "cam_2",
         "source": "mvs://sn/DA9184671?timeout_ms=1000",
-        "train_good_dir": "data/seat_defect_inspection/cam_2/train/good",
-        "patchcore_model_path": "models/seat_defect_inspection/cam_2_patchcore.npz",
+        "train_good_dir": "../data/seat_defect_inspection/cam_2/train/good",
+        "patchcore_model_path": "../models/seat_defect_inspection/cam_2_patchcore.npz",
+        "color_insensitive_mode": true,
         "quality": {
           "min_laplacian_variance": 80.0,
           "min_brightness_mean": 30.0,
@@ -168,6 +201,11 @@
         "preprocess": {
           "denoise_method": "gaussian",
           "gaussian_kernel_size": 5,
+          "white_balance_method": "gray_world",
+          "max_white_balance_gain": 1.2,
+          "apply_illumination_correction": true,
+          "illumination_blur_kernel_size": 51,
+          "illumination_strength": 0.65,
           "apply_clahe": true,
           "clahe_clip_limit": 2.0,
           "clahe_tile_grid_size": 8,
@@ -200,6 +238,16 @@
           "morphology_kernel_size": 5,
           "ignore_dilate_kernel_size": 9,
           "edge_ignore_pixels": 8,
+          "apply_texture_clahe": true,
+          "texture_denoise_method": "bilateral",
+          "texture_illumination_correction": true,
+          "texture_illumination_blur_kernel_size": 41,
+          "texture_illumination_strength": 0.85,
+          "mask_feather_kernel_size": 15,
+          "edge_enhance_method": "scharr",
+          "edge_enhance_weight": 0.18,
+          "suppress_background": true,
+          "background_fill_mode": "median",
           "alignment": {
             "enabled": false,
             "method": "resize",
@@ -219,7 +267,7 @@
           "min_valid_patch_ratio": 0.55
         },
         "color_branch": {
-          "enabled": true,
+          "enabled": false,
           "threshold_quantile": 0.99,
           "min_valid_pixel_ratio": 0.4
         }
@@ -227,8 +275,9 @@
       {
         "camera_id": "cam_3",
         "source": "mvs://sn/DA9184680?timeout_ms=1000",
-        "train_good_dir": "data/seat_defect_inspection/cam_3/train/good",
-        "patchcore_model_path": "models/seat_defect_inspection/cam_3_patchcore.npz",
+        "train_good_dir": "../data/seat_defect_inspection/cam_3/train/good",
+        "patchcore_model_path": "../models/seat_defect_inspection/cam_3_patchcore.npz",
+        "color_insensitive_mode": true,
         "quality": {
           "min_laplacian_variance": 80.0,
           "min_brightness_mean": 30.0,
@@ -239,6 +288,11 @@
         "preprocess": {
           "denoise_method": "gaussian",
           "gaussian_kernel_size": 5,
+          "white_balance_method": "gray_world",
+          "max_white_balance_gain": 1.2,
+          "apply_illumination_correction": true,
+          "illumination_blur_kernel_size": 51,
+          "illumination_strength": 0.65,
           "apply_clahe": true,
           "clahe_clip_limit": 2.0,
           "clahe_tile_grid_size": 8,
@@ -271,6 +325,16 @@
           "morphology_kernel_size": 5,
           "ignore_dilate_kernel_size": 9,
           "edge_ignore_pixels": 8,
+          "apply_texture_clahe": true,
+          "texture_denoise_method": "bilateral",
+          "texture_illumination_correction": true,
+          "texture_illumination_blur_kernel_size": 41,
+          "texture_illumination_strength": 0.85,
+          "mask_feather_kernel_size": 15,
+          "edge_enhance_method": "scharr",
+          "edge_enhance_weight": 0.18,
+          "suppress_background": true,
+          "background_fill_mode": "median",
           "alignment": {
             "enabled": false,
             "method": "resize",
@@ -290,7 +354,7 @@
           "min_valid_patch_ratio": 0.55
         },
         "color_branch": {
-          "enabled": true,
+          "enabled": false,
           "threshold_quantile": 0.99,
           "min_valid_pixel_ratio": 0.4
         }
@@ -298,8 +362,9 @@
       {
         "camera_id": "cam_4",
         "source": "mvs://sn/DA9184674?timeout_ms=1000",
-        "train_good_dir": "data/seat_defect_inspection/cam_4/train/good",
-        "patchcore_model_path": "models/seat_defect_inspection/cam_4_patchcore.npz",
+        "train_good_dir": "../data/seat_defect_inspection/cam_4/train/good",
+        "patchcore_model_path": "../models/seat_defect_inspection/cam_4_patchcore.npz",
+        "color_insensitive_mode": true,
         "quality": {
           "min_laplacian_variance": 80.0,
           "min_brightness_mean": 30.0,
@@ -310,6 +375,11 @@
         "preprocess": {
           "denoise_method": "gaussian",
           "gaussian_kernel_size": 5,
+          "white_balance_method": "gray_world",
+          "max_white_balance_gain": 1.2,
+          "apply_illumination_correction": true,
+          "illumination_blur_kernel_size": 51,
+          "illumination_strength": 0.65,
           "apply_clahe": true,
           "clahe_clip_limit": 2.0,
           "clahe_tile_grid_size": 8,
@@ -342,6 +412,16 @@
           "morphology_kernel_size": 5,
           "ignore_dilate_kernel_size": 9,
           "edge_ignore_pixels": 8,
+          "apply_texture_clahe": true,
+          "texture_denoise_method": "bilateral",
+          "texture_illumination_correction": true,
+          "texture_illumination_blur_kernel_size": 41,
+          "texture_illumination_strength": 0.85,
+          "mask_feather_kernel_size": 15,
+          "edge_enhance_method": "scharr",
+          "edge_enhance_weight": 0.18,
+          "suppress_background": true,
+          "background_fill_mode": "median",
           "alignment": {
             "enabled": false,
             "method": "resize",
@@ -361,7 +441,7 @@
           "min_valid_patch_ratio": 0.55
         },
         "color_branch": {
-          "enabled": true,
+          "enabled": false,
           "threshold_quantile": 0.99,
           "min_valid_pixel_ratio": 0.4
         }
@@ -370,12 +450,12 @@
   },
   "yolo_training": {
     "model_path": "yolo11n.pt",
-    "data_config_path": "configs/seat_defect_yolo.dataset.example.yaml",
+    "data_config_path": "seat_defect_yolo.dataset.example.yaml",
     "epochs": 100,
     "imgsz": 1280,
     "batch": 8,
     "device": "cpu",
-    "project": "outputs/seat_defect_inspection/yolo_training",
+    "project": "../outputs/seat_defect_inspection/yolo_training",
     "name": "seat_defect_mvs",
     "workers": 4,
     "patience": 20,

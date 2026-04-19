@@ -34,6 +34,7 @@ def train_yolo_model(config: YoloTrainingConfig) -> dict[str, Any]:
 
     save_dir = Path(getattr(results, "save_dir", Path(config.project) / config.name))
     summary = {
+        "seat_model_id": config.seat_model_id,
         "model_path": config.model_path,
         "data_config_path": str(data_config_path),
         "epochs": int(config.epochs),

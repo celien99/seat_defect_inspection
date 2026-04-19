@@ -11,6 +11,7 @@ from .config import (
     PreprocessConfig,
     QualityGuardConfig,
     RoiRefineConfig,
+    SeatModelConfig,
     YoloTrainingConfig,
 )
 from .runtime_config import load_config, load_yolo_training_config
@@ -39,6 +40,7 @@ __all__ = [
     "PreprocessConfig",
     "QualityGuardConfig",
     "RoiRefineConfig",
+    "SeatModelConfig",
     "YoloTrainingConfig",
     "capture_samples",
     "load_config",

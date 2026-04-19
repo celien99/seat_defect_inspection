@@ -39,13 +39,14 @@ class PreprocessEngine:
             )
 
         processed = self._denoise(processed)
+        processed = self._white_balance(processed)
         processed = self._normalize_lighting(processed)
 
         if self.config.sharpen:
-            processed = cv2.filter2D(
+            processed = _apply_unsharp_mask(
                 processed,
-                -1,
-                np.asarray([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32),
+                sigma=float(self.config.sharpen_sigma),
+                amount=float(self.config.sharpen_amount),
             )
         return processed
 
@@ -69,9 +70,32 @@ class PreprocessEngine:
             0,
         )
 
+    def _white_balance(self, image):
+        method = self.config.white_balance_method.strip().lower()
+        if method == "none":
+            return image
+        if method != "gray_world":
+            return image
+
+        float_image = image.astype(np.float32)
+        channel_means = float_image.reshape(-1, 3).mean(axis=0)
+        gray_mean = float(channel_means.mean())
+        max_gain = max(1.0, float(self.config.max_white_balance_gain))
+        gains = gray_mean / np.maximum(channel_means, 1e-6)
+        gains = np.clip(gains, 1.0 / max_gain, max_gain)
+        balanced = float_image * gains.reshape(1, 1, 3)
+        return np.clip(balanced, 0.0, 255.0).astype(np.uint8)
+
     def _normalize_lighting(self, image):
         lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
         l_channel, a_channel, b_channel = cv2.split(lab)
+
+        if self.config.apply_illumination_correction:
+            l_channel = _flatten_illumination_channel(
+                l_channel,
+                kernel_size=int(self.config.illumination_blur_kernel_size),
+                strength=float(self.config.illumination_strength),
+            )
 
         if self.config.apply_clahe:
             clahe = cv2.createCLAHE(
@@ -93,6 +117,57 @@ class PreprocessEngine:
             dtype=np.uint8,
         )
         return cv2.LUT(normalized, table)
+
+
+def _flatten_illumination_channel(
+    channel: np.ndarray,
+    *,
+    kernel_size: int,
+    strength: float,
+) -> np.ndarray:
+    normalized_strength = float(np.clip(strength, 0.0, 1.0))
+    if normalized_strength <= 0.0:
+        return channel
+
+    kernel = _odd_kernel(kernel_size)
+    float_channel = channel.astype(np.float32)
+    estimated_background = cv2.GaussianBlur(float_channel, (kernel, kernel), 0)
+    estimated_background = np.maximum(estimated_background, 1.0)
+    corrected = cv2.divide(
+        float_channel,
+        estimated_background,
+        scale=float(estimated_background.mean()),
+    )
+    corrected = np.clip(corrected, 0.0, 255.0)
+    blended = cv2.addWeighted(
+        float_channel,
+        1.0 - normalized_strength,
+        corrected,
+        normalized_strength,
+        0.0,
+    )
+    return np.clip(blended, 0.0, 255.0).astype(np.uint8)
+
+
+def _apply_unsharp_mask(
+    image: np.ndarray,
+    *,
+    sigma: float,
+    amount: float,
+) -> np.ndarray:
+    normalized_amount = max(0.0, float(amount))
+    if normalized_amount <= 0.0:
+        return image
+
+    blurred = cv2.GaussianBlur(image, (0, 0), max(0.1, float(sigma)))
+    sharpened = cv2.addWeighted(
+        image.astype(np.float32),
+        1.0 + normalized_amount,
+        blurred.astype(np.float32),
+        -normalized_amount,
+        0.0,
+    )
+    return np.clip(sharpened, 0.0, 255.0).astype(np.uint8)
 
 
 def _odd_kernel(value: int) -> int:

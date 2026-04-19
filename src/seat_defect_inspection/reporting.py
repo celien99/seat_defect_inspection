@@ -24,6 +24,7 @@ def export_inspection_report(result: InspectionResult, output_path: str) -> Path
         "timestamp": result.timestamp,
         "status": result.status,
         "decision_reason": result.decision_reason,
+        "seat_model_id": result.seat_model_id,
         "camera_results": [_camera_result_to_dict(item) for item in result.camera_results],
     }
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -38,6 +39,7 @@ def export_capture_manifest(summary: CaptureSummary) -> Path:
         "part_id": summary.part_id,
         "run_id": summary.run_id,
         "output_dir": summary.output_dir,
+        "seat_model_id": summary.seat_model_id,
         "capture_count": len(summary.records),
         "success_count": sum(1 for item in summary.records if item.status == "OK"),
         "failure_count": sum(1 for item in summary.records if item.status != "OK"),
@@ -55,6 +57,7 @@ def _camera_result_to_dict(result: CameraInspectionResult) -> dict:
         "source_kind": result.source_kind,
         "status": result.status,
         "reason": result.reason,
+        "seat_model_id": result.seat_model_id,
         "quality": (
             {
                 "accepted": result.quality.accepted,
@@ -107,6 +110,7 @@ def _capture_record_to_dict(record: CaptureRecord) -> dict[str, str | None]:
         "source_kind": record.source_kind,
         "timestamp": record.timestamp,
         "status": record.status,
+        "seat_model_id": record.seat_model_id,
         "reason": record.reason,
         "output_path": record.output_path,
         "train_good_path": record.train_good_path,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -36,7 +36,15 @@ from .schemas import (
 
 @dataclass(slots=True)
 class PreparedCameraSample:
-    """单机位共享中间结果。"""
+    """单机位共享中间结果。
+
+    字段：
+    - quality: 质量门控结果
+    - preprocessed_image: YOLO 前的 OpenCV 预处理结果
+    - detection: YOLO 检测结果
+    - roi: ROI 精修结果
+    - rejection_reason: 若当前机位需要提前终止，记录拒绝原因
+    """
 
     quality: ImageQualityDecision
     preprocessed_image: Any | None = None
@@ -45,8 +53,33 @@ class PreparedCameraSample:
     rejection_reason: str | None = None
 
 
+@dataclass(slots=True)
+class _ResolvedInspectionContext:
+    """运行时解析出的型号上下文。
+
+    字段：
+    - seat_model_id: 当前实际命中的型号
+    - cameras: 当前型号下启用的机位
+    - pipelines: 每个机位对应的 `_CameraPipeline` 实例
+    """
+
+    seat_model_id: str | None
+    cameras: list[CameraConfig]
+    pipelines: dict[str, "_CameraPipeline"]
+
+
 class _CameraPipeline:
-    """单机位预处理、检测与 ROI 精修流程。"""
+    """单机位预处理、检测与 ROI 精修流程。
+
+    调用顺序：
+    1. `ImageQualityGuard.evaluate`
+    2. `PreprocessEngine.process`
+    3. `DetectionService.detect`
+    4. `RoiRefineEngine.refine`
+
+    该类只负责把单张图像准备成可供 PatchCore / 颜色分支消费的中间结果，
+    不负责模型加载、异常判定和多机位融合。
+    """
 
     def __init__(self, config: CameraConfig) -> None:
         self.config = config
@@ -64,6 +97,7 @@ class _CameraPipeline:
                 rejection_reason=f"quality_{quality.reason}",
             )
 
+        # 训练与推理共用同一条预处理链路，确保模型输入分布一致。
         preprocessed = self.preprocess_engine.process(image)
         detection = self.detection_service.detect(preprocessed)
         if detection.target is None:
@@ -85,85 +119,114 @@ class _CameraPipeline:
 
 
 class InspectionService:
-    """缺陷检测主服务，负责采图、训练和推理。"""
+    """缺陷检测主服务，负责采图、训练和推理。
+
+    这是项目的总编排层，向上承接 CLI，向下串联：
+    - 采图服务 `AcquisitionService`
+    - 单机位图像准备链 `_CameraPipeline`
+    - PatchCore / 颜色分支推理
+    - 多机位融合与报告输出
+    """
 
     def __init__(self, config: InspectionConfig) -> None:
         self.config = config
         self.acquisition = AcquisitionService(config.capture_retries)
-        self._pipelines = {
-            camera.camera_id: _CameraPipeline(camera)
-            for camera in config.cameras
-            if camera.enabled
-        }
-        self._model_cache: dict[str, LoadedModelBundle] = {}
+        self._pipeline_cache: dict[str, dict[str, _CameraPipeline]] = {}
+        self._model_cache: dict[tuple[str, str], LoadedModelBundle] = {}
 
-    def train_patchcore_models(self) -> list[dict[str, Any]]:
-        """按机位训练 PatchCore 模型。"""
+    def train_patchcore_models(self, seat_model_id: str | None = None) -> list[dict[str, Any]]:
+        """按机位训练 PatchCore 模型。多型号配置下默认训练全部型号。
+
+        调用链：
+        1. `_resolve_training_scope` 确定需要训练的型号范围
+        2. `_resolve_context` 获取当前型号的机位和子流程
+        3. `list_images` 收集正常样本
+        4. `_CameraPipeline.prepare_image` 复用线上链路生成 ROI
+        5. `PatchCoreService.fit` 训练纹理模型
+        6. 视配置调用 `ColorConsistencyService.fit`
+        7. `PatchCoreService.save` 落盘模型与摘要
+        """
+        model_scope = self._resolve_training_scope(seat_model_id)
         summaries: list[dict[str, Any]] = []
-        for camera in [item for item in self.config.cameras if item.enabled]:
-            if not camera.train_good_dir:
-                raise ValueError(f"机位 `{camera.camera_id}` 缺少 `train_good_dir` 配置")
 
-            train_dir = Path(camera.train_good_dir)
-            image_paths = list_images(train_dir)
-            if not image_paths:
-                raise FileNotFoundError(f"训练目录中没有图像：{train_dir}")
+        for candidate_model_id in model_scope:
+            context = self._resolve_context(candidate_model_id)
+            for camera in context.cameras:
+                if not camera.train_good_dir:
+                    raise ValueError(f"机位 `{camera.camera_id}` 缺少 `train_good_dir` 配置")
 
-            pipeline = self._pipelines[camera.camera_id]
-            patchcore_samples: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
-            color_samples: list[tuple[np.ndarray, np.ndarray]] = []
-            skipped_images: list[str] = []
+                train_dir = Path(camera.train_good_dir)
+                image_paths = list_images(train_dir)
+                if not image_paths:
+                    raise FileNotFoundError(f"训练目录中没有图像：{train_dir}")
 
-            for image_path in image_paths:
-                image = cv2.imread(str(image_path))
-                if image is None:
-                    skipped_images.append(str(image_path))
-                    continue
+                pipeline = context.pipelines[camera.camera_id]
+                patchcore_samples: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+                color_samples: list[tuple[np.ndarray, np.ndarray]] = []
+                skipped_images: list[str] = []
 
-                prepared = pipeline.prepare_image(image)
-                if prepared.rejection_reason is not None or prepared.roi is None:
-                    skipped_images.append(str(image_path))
-                    continue
+                # 训练阶段同样走质量、OpenCV、YOLO、ROI 精修，避免训练/推理分布错位。
+                for image_path in image_paths:
+                    image = cv2.imread(str(image_path))
+                    if image is None:
+                        skipped_images.append(str(image_path))
+                        continue
 
-                patchcore_samples.append(
-                    (
-                        prepared.roi.aligned_roi_image,
-                        prepared.roi.target_mask,
-                        prepared.roi.ignore_mask,
+                    prepared = pipeline.prepare_image(image)
+                    if prepared.rejection_reason is not None or prepared.roi is None:
+                        skipped_images.append(str(image_path))
+                        continue
+
+                    texture_image = (
+                        prepared.roi.texture_ready_image
+                        if prepared.roi.texture_ready_image is not None
+                        else prepared.roi.aligned_roi_image
                     )
-                )
-                color_samples.append(
-                    (
-                        prepared.roi.aligned_roi_image,
-                        prepared.roi.valid_mask,
+                    patchcore_samples.append(
+                        (
+                            texture_image,
+                            prepared.roi.target_mask,
+                            prepared.roi.ignore_mask,
+                        )
                     )
+                    color_samples.append(
+                        (
+                            prepared.roi.aligned_roi_image,
+                            prepared.roi.valid_mask,
+                        )
+                    )
+
+                patchcore = self._build_patchcore_service(camera)
+                patchcore_summary = patchcore.fit(patchcore_samples)
+
+                color_profile = None
+                color_summary: dict[str, Any] | None = None
+                if camera.color_branch.enabled and not camera.color_insensitive_mode:
+                    color_service = ColorConsistencyService(camera.color_branch)
+                    color_summary = color_service.fit(color_samples)
+                    color_profile = color_service.profile
+                elif camera.color_insensitive_mode:
+                    color_summary = {
+                        "skipped": True,
+                        "reason": "color_insensitive_mode",
+                    }
+
+                patchcore.save(camera.patchcore_model_path, color_profile=color_profile)
+                summary = {
+                    "seat_model_id": context.seat_model_id,
+                    "camera_id": camera.camera_id,
+                    "model_path": camera.patchcore_model_path,
+                    "patchcore": patchcore_summary,
+                    "color_branch": color_summary,
+                    "skipped_image_count": len(skipped_images),
+                }
+                summary_path = Path(camera.patchcore_model_path).with_suffix(".summary.json")
+                summary_path.parent.mkdir(parents=True, exist_ok=True)
+                summary_path.write_text(
+                    json.dumps(summary, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
                 )
-
-            patchcore = PatchCoreService(camera.patchcore)
-            patchcore_summary = patchcore.fit(patchcore_samples)
-
-            color_profile = None
-            color_summary: dict[str, Any] | None = None
-            if camera.color_branch.enabled:
-                color_service = ColorConsistencyService(camera.color_branch)
-                color_summary = color_service.fit(color_samples)
-                color_profile = color_service.profile
-
-            patchcore.save(camera.patchcore_model_path, color_profile=color_profile)
-            summary = {
-                "camera_id": camera.camera_id,
-                "model_path": camera.patchcore_model_path,
-                "patchcore": patchcore_summary,
-                "color_branch": color_summary,
-                "skipped_image_count": len(skipped_images),
-            }
-            summary_path = Path(camera.patchcore_model_path).with_suffix(".summary.json")
-            summary_path.parent.mkdir(parents=True, exist_ok=True)
-            summary_path.write_text(
-                json.dumps(summary, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
-            summaries.append(summary)
+                summaries.append(summary)
         return summaries
 
     def capture(
@@ -171,17 +234,30 @@ class InspectionService:
         part_id: str | None = None,
         *,
         output_dir: str | None = None,
+        seat_model_id: str | None = None,
         save_to_train_good_dir: bool = False,
     ) -> CaptureSummary:
-        """每个启用机位抓取一帧并落盘。"""
+        """每个启用机位抓取一帧并落盘。
+
+        调用链：
+        1. `_resolve_context` 解析型号与启用机位
+        2. `AcquisitionService.capture` 逐机位抓图
+        3. `_save_captured_frame` 保存采图结果
+        4. 视配置调用 `_save_train_good_frame`
+        5. `export_capture_manifest` 输出 manifest
+        """
+        context = self._resolve_context(seat_model_id)
         resolved_part_id = part_id or self.config.part_id
-        active_cameras = [camera for camera in self.config.cameras if camera.enabled]
         run_id = datetime.now().astimezone().strftime("%Y%m%d_%H%M%S_%f")
-        capture_root = Path(output_dir or self.config.capture_dir) / resolved_part_id / run_id
+        capture_root = (
+            _build_model_scoped_root(Path(output_dir or self.config.capture_dir), context.seat_model_id)
+            / resolved_part_id
+            / run_id
+        )
         capture_root.mkdir(parents=True, exist_ok=True)
 
         records: list[CaptureRecord] = []
-        for camera in active_cameras:
+        for camera in context.cameras:
             try:
                 frame_packet = self.acquisition.capture(
                     camera.camera_id,
@@ -201,6 +277,7 @@ class InspectionService:
                         source_kind=frame_packet.source_kind,
                         timestamp=frame_packet.timestamp,
                         status="OK",
+                        seat_model_id=context.seat_model_id,
                         output_path=output_path,
                         train_good_path=train_good_path,
                     )
@@ -215,6 +292,7 @@ class InspectionService:
                         source_kind=infer_source_kind(camera.source),
                         timestamp=datetime.now().astimezone().isoformat(),
                         status="ERROR",
+                        seat_model_id=context.seat_model_id,
                         reason=str(exc),
                     )
                 )
@@ -224,22 +302,37 @@ class InspectionService:
             run_id=run_id,
             output_dir=str(capture_root),
             manifest_path=str(capture_root / "manifest.json"),
+            seat_model_id=context.seat_model_id,
             records=records,
         )
         export_capture_manifest(summary)
         return summary
 
-    def run_inspection(self, part_id: str | None = None) -> InspectionResult:
-        """抓取各机位图像，执行检测并输出融合结果。"""
+    def run_inspection(
+        self,
+        part_id: str | None = None,
+        *,
+        seat_model_id: str | None = None,
+    ) -> InspectionResult:
+        """抓取各机位图像，执行检测并输出融合结果。
+
+        调用链：
+        1. `_resolve_context` 解析当前型号与机位
+        2. `AcquisitionService.capture` 逐机位抓图
+        3. `_inspect_one_camera` 完成单机位完整检测
+        4. `fuse_camera_results` 汇总多机位结果
+        5. `export_inspection_report` 输出结果 JSON
+        """
+        context = self._resolve_context(seat_model_id)
         resolved_part_id = part_id or self.config.part_id
-        active_cameras = [camera for camera in self.config.cameras if camera.enabled]
-        if not active_cameras:
+        if not context.cameras:
             result = InspectionResult(
                 part_id=resolved_part_id,
                 frame_id="",
                 timestamp="",
                 status="REJECT",
                 decision_reason="no_enabled_cameras",
+                seat_model_id=context.seat_model_id,
                 camera_results=[],
             )
             export_inspection_report(result, self.config.output_json_path)
@@ -248,7 +341,7 @@ class InspectionService:
         frame_id = ""
         timestamp = ""
         camera_results: list[CameraInspectionResult] = []
-        for camera in active_cameras:
+        for camera in context.cameras:
             try:
                 frame_packet = self.acquisition.capture(
                     camera.camera_id,
@@ -264,6 +357,7 @@ class InspectionService:
                         source_kind=infer_source_kind(camera.source),
                         status="REJECT",
                         reason=f"capture_failed:{exc}",
+                        seat_model_id=context.seat_model_id,
                     )
                 )
                 continue
@@ -271,7 +365,28 @@ class InspectionService:
             if not frame_id:
                 frame_id = frame_packet.frame_id
                 timestamp = frame_packet.timestamp
-            camera_results.append(self._inspect_one_camera(frame_packet))
+
+            try:
+                camera_results.append(
+                    self._inspect_one_camera(
+                        frame_packet,
+                        camera,
+                        context.pipelines[camera.camera_id],
+                        context.seat_model_id,
+                    )
+                )
+            except Exception as exc:
+                camera_results.append(
+                    CameraInspectionResult(
+                        camera_id=camera.camera_id,
+                        frame_id=frame_packet.frame_id,
+                        source=frame_packet.source,
+                        source_kind=frame_packet.source_kind,
+                        status="REJECT",
+                        reason=f"pipeline_failed:{exc}",
+                        seat_model_id=context.seat_model_id,
+                    )
+                )
 
         fused = fuse_camera_results(
             part_id=resolved_part_id,
@@ -280,16 +395,26 @@ class InspectionService:
             camera_results=camera_results,
             fusion_config=self.config.fusion,
         )
+        fused.seat_model_id = context.seat_model_id
         export_inspection_report(fused, self.config.output_json_path)
         return fused
 
-    def _inspect_one_camera(self, frame_packet: FramePacket) -> CameraInspectionResult:
-        camera = next(
-            item
-            for item in self.config.cameras
-            if item.enabled and item.camera_id == frame_packet.camera_id
-        )
-        pipeline = self._pipelines[camera.camera_id]
+    def _inspect_one_camera(
+        self,
+        frame_packet: FramePacket,
+        camera: CameraConfig,
+        pipeline: _CameraPipeline,
+        seat_model_id: str | None,
+    ) -> CameraInspectionResult:
+        """执行单机位完整检测。
+
+        调用链：
+        1. `_CameraPipeline.prepare_image`
+        2. `_load_model_bundle`
+        3. `PatchCoreService.predict`
+        4. 视配置调用 `ColorConsistencyService.predict`
+        5. `_save_artifacts` 保存调试图
+        """
         prepared = pipeline.prepare_image(frame_packet.image)
         if prepared.rejection_reason is not None or prepared.roi is None:
             result = CameraInspectionResult(
@@ -299,16 +424,23 @@ class InspectionService:
                 source_kind=frame_packet.source_kind,
                 status="REJECT",
                 reason=prepared.rejection_reason or "camera_prepare_failed",
+                seat_model_id=seat_model_id,
                 quality=prepared.quality,
                 detection=prepared.detection,
                 crop_box=(prepared.roi.crop_box if prepared.roi is not None else None),
             )
-            result.artifact_paths = self._save_artifacts(frame_packet, prepared, None)
+            result.artifact_paths = self._save_artifacts(frame_packet, prepared, None, seat_model_id)
             return result
 
-        model_bundle = self._load_model_bundle(camera)
+        # 纹理分支始终优先，颜色分支是可选叠加分支。
+        model_bundle = self._load_model_bundle(camera, seat_model_id)
+        texture_input = (
+            prepared.roi.texture_ready_image
+            if prepared.roi.texture_ready_image is not None
+            else prepared.roi.aligned_roi_image
+        )
         texture_result = model_bundle.patchcore.predict(
-            prepared.roi.aligned_roi_image,
+            texture_input,
             prepared.roi.target_mask,
             prepared.roi.ignore_mask,
         )
@@ -320,16 +452,26 @@ class InspectionService:
                 source_kind=frame_packet.source_kind,
                 status="REJECT",
                 reason="low_valid_patch_ratio",
+                seat_model_id=seat_model_id,
                 quality=prepared.quality,
                 detection=prepared.detection,
                 texture_result=texture_result,
                 crop_box=prepared.roi.crop_box,
             )
-            result.artifact_paths = self._save_artifacts(frame_packet, prepared, texture_result)
+            result.artifact_paths = self._save_artifacts(
+                frame_packet,
+                prepared,
+                texture_result,
+                seat_model_id,
+            )
             return result
 
         color_result = None
-        if camera.color_branch.enabled and model_bundle.color_profile is not None:
+        if (
+            camera.color_branch.enabled
+            and not camera.color_insensitive_mode
+            and model_bundle.color_profile is not None
+        ):
             color_service = ColorConsistencyService(
                 camera.color_branch,
                 profile=model_bundle.color_profile,
@@ -355,21 +497,85 @@ class InspectionService:
             source_kind=frame_packet.source_kind,
             status=status,
             reason=reason,
+            seat_model_id=seat_model_id,
             quality=prepared.quality,
             detection=prepared.detection,
             texture_result=texture_result,
             color_result=color_result,
             crop_box=prepared.roi.crop_box,
         )
-        result.artifact_paths = self._save_artifacts(frame_packet, prepared, texture_result)
+        result.artifact_paths = self._save_artifacts(frame_packet, prepared, texture_result, seat_model_id)
         return result
 
-    def _load_model_bundle(self, camera: CameraConfig) -> LoadedModelBundle:
-        bundle = self._model_cache.get(camera.camera_id)
+    def _resolve_training_scope(self, seat_model_id: str | None) -> list[str | None]:
+        if not self.config.seat_models:
+            return [seat_model_id or self.config.default_seat_model_id]
+        if seat_model_id is not None:
+            return [seat_model_id]
+        return [item.seat_model_id for item in self.config.seat_models]
+
+    def _resolve_context(self, seat_model_id: str | None) -> _ResolvedInspectionContext:
+        """解析当前应使用的型号、机位集合和机位处理链缓存。"""
+        resolved_seat_model_id, cameras = self._resolve_active_cameras(seat_model_id)
+        cache_key = resolved_seat_model_id or "__default__"
+        pipelines = self._pipeline_cache.get(cache_key)
+        if pipelines is None:
+            pipelines = {
+                camera.camera_id: _CameraPipeline(camera)
+                for camera in cameras
+            }
+            self._pipeline_cache[cache_key] = pipelines
+        return _ResolvedInspectionContext(
+            seat_model_id=resolved_seat_model_id,
+            cameras=cameras,
+            pipelines=pipelines,
+        )
+
+    def _resolve_active_cameras(self, seat_model_id: str | None) -> tuple[str | None, list[CameraConfig]]:
+        """根据单型号或多型号配置，解析当前启用的机位列表。"""
+        if self.config.seat_models:
+            resolved_seat_model_id = (
+                seat_model_id
+                or self.config.default_seat_model_id
+                or self.config.seat_models[0].seat_model_id
+            )
+            for seat_model in self.config.seat_models:
+                if seat_model.seat_model_id == resolved_seat_model_id:
+                    return (
+                        resolved_seat_model_id,
+                        [camera for camera in seat_model.cameras if camera.enabled],
+                    )
+            available = ", ".join(item.seat_model_id for item in self.config.seat_models)
+            raise ValueError(f"未知 seat_model_id `{resolved_seat_model_id}`，可选值：{available}")
+
+        resolved_seat_model_id = seat_model_id or self.config.default_seat_model_id
+        return resolved_seat_model_id, [camera for camera in self.config.cameras if camera.enabled]
+
+    def _build_patchcore_service(self, camera: CameraConfig) -> PatchCoreService:
+        """根据机位配置创建 PatchCore 服务。
+
+        当启用颜色不敏感模式时，强制把纹理输入收敛到亮度主导模式。
+        """
+        patchcore_config = camera.patchcore
+        if (
+            camera.color_insensitive_mode
+            and patchcore_config.texture_input.strip().lower() not in {"gray", "lab_l"}
+        ):
+            patchcore_config = replace(patchcore_config, texture_input="lab_l")
+        return PatchCoreService(patchcore_config)
+
+    def _load_model_bundle(
+        self,
+        camera: CameraConfig,
+        seat_model_id: str | None,
+    ) -> LoadedModelBundle:
+        """从缓存或磁盘加载当前型号/机位对应的模型包。"""
+        cache_key = (seat_model_id or "__default__", camera.camera_id)
+        bundle = self._model_cache.get(cache_key)
         if bundle is not None:
             return bundle
         loaded = PatchCoreService.load_bundle(camera.patchcore_model_path)
-        self._model_cache[camera.camera_id] = loaded
+        self._model_cache[cache_key] = loaded
         return loaded
 
     def _save_captured_frame(self, capture_root: Path, frame_packet: FramePacket) -> str:
@@ -393,12 +599,14 @@ class InspectionService:
         frame_packet: FramePacket,
         prepared: PreparedCameraSample,
         texture_result,
+        seat_model_id: str | None,
     ) -> dict[str, str]:
+        """把当前机位调试产物写入磁盘并返回路径字典。"""
         if not self.config.save_debug_artifacts:
             return {}
 
         camera_dir = (
-            Path(self.config.debug_dir)
+            _build_model_scoped_root(Path(self.config.debug_dir), seat_model_id)
             / frame_packet.part_id
             / frame_packet.camera_id
             / frame_packet.frame_id
@@ -424,10 +632,18 @@ class InspectionService:
 
         if prepared.roi is not None:
             roi_path = camera_dir / "roi.png"
+            texture_roi_path = camera_dir / "roi_texture.png"
+            foreground_weight_path = camera_dir / "foreground_weight.png"
             target_mask_path = camera_dir / "target_mask.png"
             ignore_mask_path = camera_dir / "ignore_mask.png"
             valid_mask_path = camera_dir / "valid_mask.png"
             _write_image(roi_path, prepared.roi.aligned_roi_image)
+            if prepared.roi.texture_ready_image is not None:
+                _write_image(texture_roi_path, prepared.roi.texture_ready_image)
+                artifact_paths["roi_texture"] = str(texture_roi_path)
+            if prepared.roi.foreground_weight is not None:
+                _write_mask(foreground_weight_path, prepared.roi.foreground_weight)
+                artifact_paths["foreground_weight"] = str(foreground_weight_path)
             _write_mask(target_mask_path, prepared.roi.target_mask)
             _write_mask(ignore_mask_path, prepared.roi.ignore_mask)
             _write_mask(valid_mask_path, prepared.roi.valid_mask)
@@ -450,9 +666,12 @@ class InspectionService:
         return artifact_paths
 
 
-def train_patchcore_models(config: InspectionConfig) -> list[dict[str, Any]]:
+def train_patchcore_models(
+    config: InspectionConfig,
+    seat_model_id: str | None = None,
+) -> list[dict[str, Any]]:
     """训练全部机位的 PatchCore 模型。"""
-    return InspectionService(config).train_patchcore_models()
+    return InspectionService(config).train_patchcore_models(seat_model_id=seat_model_id)
 
 
 def capture_samples(
@@ -460,12 +679,14 @@ def capture_samples(
     part_id: str | None = None,
     *,
     output_dir: str | None = None,
+    seat_model_id: str | None = None,
     save_to_train_good_dir: bool = False,
 ) -> CaptureSummary:
     """抓取并落盘全部启用机位的图像。"""
     return InspectionService(config).capture(
         part_id=part_id,
         output_dir=output_dir,
+        seat_model_id=seat_model_id,
         save_to_train_good_dir=save_to_train_good_dir,
     )
 
@@ -473,9 +694,20 @@ def capture_samples(
 def run_inspection(
     config: InspectionConfig,
     part_id: str | None = None,
+    *,
+    seat_model_id: str | None = None,
 ) -> InspectionResult:
     """执行一次完整检测。"""
-    return InspectionService(config).run_inspection(part_id=part_id)
+    return InspectionService(config).run_inspection(
+        part_id=part_id,
+        seat_model_id=seat_model_id,
+    )
+
+
+def _build_model_scoped_root(base_dir: Path, seat_model_id: str | None) -> Path:
+    if seat_model_id is None:
+        return base_dir
+    return base_dir / seat_model_id
 
 
 def _write_image(path: Path, image: Any) -> None:

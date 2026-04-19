@@ -1,0 +1,149 @@
+{
+  "seat_defect_inspection": {
+    "part_id": "seat_demo",
+    "default_seat_model_id": "seat_model_a",
+    "output_json_path": "../outputs/seat_defect_inspection/multimodel_results.json",
+    "debug_dir": "../outputs/seat_defect_inspection/multimodel_debug",
+    "capture_dir": "../outputs/seat_defect_inspection/multimodel_capture",
+    "save_debug_artifacts": true,
+    "capture_retries": 3,
+    "fusion": {
+      "reject_on_any_reject": true,
+      "ng_strategy": "any"
+    },
+    "seat_models": [
+      {
+        "seat_model_id": "seat_model_a",
+        "display_name": "座椅型号A",
+        "yolo_training": {
+          "model_path": "yolo11n.pt",
+          "data_config_path": "seat_defect_yolo.dataset.example.yaml",
+          "epochs": 100,
+          "imgsz": 1280,
+          "batch": 8,
+          "device": "cpu",
+          "project": "../outputs/seat_defect_inspection/yolo_training",
+          "name": "seat_model_a"
+        },
+        "cameras": [
+          {
+            "camera_id": "cam_front",
+            "source": "mvs://sn/REPLACE_MODEL_A_CAM_FRONT?timeout_ms=1000",
+            "train_good_dir": "../data/seat_defect_inspection/seat_model_a/cam_front/train/good",
+            "patchcore_model_path": "../models/seat_defect_inspection/seat_model_a/cam_front_patchcore.npz",
+            "color_insensitive_mode": true,
+            "preprocess": {
+              "white_balance_method": "gray_world",
+              "max_white_balance_gain": 1.2,
+              "apply_illumination_correction": true,
+              "illumination_blur_kernel_size": 51,
+              "illumination_strength": 0.65
+            },
+            "detection": {
+              "model_path": "../models/seat_defect_inspection/yolo/seat_model_a_best.pt",
+              "target_class": "seat_main",
+              "ignore_classes": [
+                "tooling",
+                "worker_hand",
+                "wire",
+                "foreign_object"
+              ],
+              "fallback_box": {
+                "x1": 900.0,
+                "y1": 280.0,
+                "x2": 2600.0,
+                "y2": 2400.0
+              }
+            },
+            "roi": {
+              "crop_expand_ratio": 0.02,
+              "mask_mode": "grabcut",
+              "texture_denoise_method": "bilateral",
+              "texture_illumination_correction": true,
+              "texture_illumination_blur_kernel_size": 41,
+              "texture_illumination_strength": 0.85,
+              "mask_feather_kernel_size": 15,
+              "edge_enhance_method": "scharr",
+              "edge_enhance_weight": 0.18,
+              "suppress_background": true,
+              "background_fill_mode": "median"
+            },
+            "patchcore": {
+              "texture_input": "lab_l",
+              "min_valid_patch_ratio": 0.55
+            },
+            "color_branch": {
+              "enabled": false
+            }
+          }
+        ]
+      },
+      {
+        "seat_model_id": "seat_model_b",
+        "display_name": "座椅型号B",
+        "yolo_training": {
+          "model_path": "yolo11n.pt",
+          "data_config_path": "seat_defect_yolo.dataset.example.yaml",
+          "epochs": 100,
+          "imgsz": 1280,
+          "batch": 8,
+          "device": "cpu",
+          "project": "../outputs/seat_defect_inspection/yolo_training",
+          "name": "seat_model_b"
+        },
+        "cameras": [
+          {
+            "camera_id": "cam_front",
+            "source": "mvs://sn/REPLACE_MODEL_B_CAM_FRONT?timeout_ms=1000",
+            "train_good_dir": "../data/seat_defect_inspection/seat_model_b/cam_front/train/good",
+            "patchcore_model_path": "../models/seat_defect_inspection/seat_model_b/cam_front_patchcore.npz",
+            "color_insensitive_mode": true,
+            "preprocess": {
+              "white_balance_method": "gray_world",
+              "max_white_balance_gain": 1.2,
+              "apply_illumination_correction": true,
+              "illumination_blur_kernel_size": 51,
+              "illumination_strength": 0.65
+            },
+            "detection": {
+              "model_path": "../models/seat_defect_inspection/yolo/seat_model_b_best.pt",
+              "target_class": "seat_main",
+              "ignore_classes": [
+                "tooling",
+                "worker_hand",
+                "wire",
+                "foreign_object"
+              ],
+              "fallback_box": {
+                "x1": 860.0,
+                "y1": 260.0,
+                "x2": 2540.0,
+                "y2": 2360.0
+              }
+            },
+            "roi": {
+              "crop_expand_ratio": 0.02,
+              "mask_mode": "grabcut",
+              "texture_denoise_method": "bilateral",
+              "texture_illumination_correction": true,
+              "texture_illumination_blur_kernel_size": 41,
+              "texture_illumination_strength": 0.85,
+              "mask_feather_kernel_size": 15,
+              "edge_enhance_method": "scharr",
+              "edge_enhance_weight": 0.18,
+              "suppress_background": true,
+              "background_fill_mode": "median"
+            },
+            "patchcore": {
+              "texture_input": "lab_l",
+              "min_valid_patch_ratio": 0.55
+            },
+            "color_branch": {
+              "enabled": false
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

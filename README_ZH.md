@@ -93,12 +93,14 @@ seat-defect-inspection inspect \
 
 ```text
 seat_defect_inspection/
+├── PROJECT_ARCHITECTURE_ZH.md
 ├── README.md
 ├── README_ZH.md
 ├── pyproject.toml
 ├── requirements.txt
 ├── configs/
 │   ├── seat_defect_inspection.mvs.json
+│   ├── seat_defect_inspection.multimodel.example.json
 │   └── seat_defect_yolo.dataset.example.yaml
 └── src/
     ├── media_inputs/
@@ -134,12 +136,16 @@ seat_defect_inspection/
 
 - `README.md` / `README_ZH.md`
   项目英文/中文说明、命令示例、配置约定和落地边界。
+- `PROJECT_ARCHITECTURE_ZH.md`
+  项目整体评估、模块职责、核心类/函数/属性说明，以及 `capture / inspect / train-patchcore / train-yolo` 的完整调用链文档。
 - `pyproject.toml`
   打包配置、最小依赖定义，以及 `seat-defect-inspection` CLI 入口声明。
 - `requirements.txt`
   轻量依赖清单，便于快速安装运行环境。
 - `configs/seat_defect_inspection.mvs.json`
   当前 5 路 MVS 相机示例配置，定义机位源、PatchCore 路径、YOLO 配置和输出目录。
+- `configs/seat_defect_inspection.multimodel.example.json`
+  多型号路由配置示例，演示如何按 `seat_model_id` 选择整套机位与模型。
 - `configs/seat_defect_yolo.dataset.example.yaml`
   YOLO 训练数据集 YAML 示例，定义 train/val/test 路径和类别名。
 - `src/seat_defect_inspection/__main__.py`
@@ -153,11 +159,11 @@ seat_defect_inspection/
 - `src/seat_defect_inspection/quality.py`
   图像质量守卫，负责模糊、过暗、过曝、黑白帧过滤。
 - `src/seat_defect_inspection/preprocess.py`
-  OpenCV 预处理层，负责去噪、畸变矫正、亮度归一化、CLAHE 和锐化。
+  OpenCV 预处理层，负责去噪、畸变矫正、灰世界白平衡、光照场校正、CLAHE 和锐化。
 - `src/seat_defect_inspection/detection.py`
   YOLO 检测层，负责主座椅目标和忽略区域检测；无权重时退回到静态 `fallback_box`。
 - `src/seat_defect_inspection/roi.py`
-  ROI 精修层，负责扩框裁剪、GrabCut/分割掩膜、忽略区掩膜、对齐和有效区域掩膜生成。
+  ROI 精修层，负责扩框裁剪、GrabCut/分割掩膜、忽略区掩膜、对齐、前景羽化、背景压制和纹理增强图生成。
 - `src/seat_defect_inspection/patchcore.py`
   轻量 PatchCore 风格纹理异常检测实现，包含训练、记忆库压缩、模型保存/加载和热力图生成。
 - `src/seat_defect_inspection/color_branch.py`
@@ -194,9 +200,102 @@ seat_defect_inspection/
 ## 配置文件
 
 - `configs/seat_defect_inspection.mvs.json`
-  当前 5 路 MVS 相机配置示例
+  当前 5 路 MVS 相机配置示例，已默认开启颜色不敏感模式
+- `configs/seat_defect_inspection.multimodel.example.json`
+  多型号路由配置示例，适合一个项目里维护多个座椅型号
 - `configs/seat_defect_yolo.dataset.example.yaml`
   YOLO 数据集配置示例
+
+说明：
+- 当前 JSON 中大部分路径都是相对配置文件目录解析的；放在 `configs/` 下的配置文件如果要指向仓库根目录，推荐使用 `../models/...`、`../outputs/...`、`../data/...` 这种写法。
+
+## 多型号路由
+
+当现场存在多个座椅型号时，推荐使用 `seat_models` 而不是把所有型号塞进同一组 `cameras`。
+
+推荐结构：
+
+```json
+{
+  "seat_defect_inspection": {
+    "default_seat_model_id": "seat_model_a",
+    "seat_models": [
+      {
+        "seat_model_id": "seat_model_a",
+        "display_name": "座椅型号A",
+        "cameras": [
+          {
+            "camera_id": "cam_front",
+            "patchcore_model_path": "../models/.../seat_model_a/cam_front_patchcore.npz"
+          }
+        ]
+      },
+      {
+        "seat_model_id": "seat_model_b",
+        "display_name": "座椅型号B",
+        "cameras": [
+          {
+            "camera_id": "cam_front",
+            "patchcore_model_path": "../models/.../seat_model_b/cam_front_patchcore.npz"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+运行时可通过 `--seat-model-id` 选择对应整套流程：
+
+```bash
+seat-defect-inspection inspect \
+  --config configs/seat_defect_inspection.multimodel.example.json \
+  --seat-model-id seat_model_a \
+  --part-id seat_000001
+```
+
+同样支持：
+
+```bash
+seat-defect-inspection capture --config configs/seat_defect_inspection.multimodel.example.json --seat-model-id seat_model_a
+seat-defect-inspection train-patchcore --config configs/seat_defect_inspection.multimodel.example.json --seat-model-id seat_model_a
+seat-defect-inspection train-yolo --config configs/seat_defect_inspection.multimodel.example.json --seat-model-id seat_model_a
+```
+
+## 颜色不敏感模式
+
+为了让“同型号不同颜色”尽量共用同一套流程，当前版本新增了 `color_insensitive_mode`。它主要做三件事：
+
+- 关闭颜色一致性分支对最终结果的干扰，避免把合法颜色差异直接打成异常
+- PatchCore 保持使用亮度主导的纹理输入，弱化色度变化影响
+- ROI 阶段额外生成 `roi_texture.png`，通过 OpenCV 的局部 CLAHE、光照展平、双边滤波、Scharr 边缘增强、前景羽化和背景压制，压低背景和非 ROI 因素
+
+典型配置：
+
+```json
+{
+  "color_insensitive_mode": true,
+  "roi": {
+    "suppress_background": true,
+    "background_fill_mode": "median",
+    "texture_denoise_method": "bilateral"
+  },
+  "color_branch": {
+    "enabled": false
+  }
+}
+```
+
+## OpenCV 增强链路
+
+当前项目推荐把 OpenCV 当作真正的中间层，而不是只做一层简单 resize/blur。现阶段默认链路已经增强为：
+
+- 原图 -> 去噪 -> 灰世界白平衡 -> 大核光照校正 -> CLAHE -> YOLO
+- YOLO ROI -> GrabCut/分割掩膜 -> 掩膜清理 -> ROI 对齐 -> ROI 局部 CLAHE -> ROI 光照展平 -> 双边滤波 -> Scharr 纹理增强 -> 前景羽化 -> 背景压制 -> PatchCore
+
+调试目录中除了原有的 `roi.png`、`roi_texture.png`、`target_mask.png` 之外，还会新增 `foreground_weight.png`，用于观察 ROI 边界是否被平滑压制到位。
+
+如果你调整了这些 OpenCV 链路参数，尤其是 ROI 纹理增强和背景抑制部分，建议重新训练对应机位的 PatchCore 模型，避免训练分布和推理分布不一致。
 
 ## 配置重点
 
@@ -212,9 +311,31 @@ seat_defect_inspection/
   YOLO 权重路径。没有时可先设为 `null`
 - `detection.fallback_box`
   YOLO 不可用时的兜底框
+- `color_insensitive_mode`
+  是否启用颜色不敏感模式。开启后更适合同型号多颜色共流程
+- `preprocess.white_balance_method`
+  相机前端颜色漂移抑制方式，推荐 `gray_world`
+- `preprocess.apply_illumination_correction`
+  是否启用大核光照校正，用来压平阴影和热点
+- `roi.suppress_background`
+  是否对 ROI 外区域做背景抑制
+- `roi.background_fill_mode`
+  ROI 外背景填充策略，推荐 `median` 或 `blur`
+- `roi.texture_denoise_method`
+  纹理专用去噪方式，推荐 `bilateral`
+- `roi.texture_illumination_correction`
+  是否对 ROI 内部再做一次亮度展平
+- `roi.mask_feather_kernel_size`
+  前景羽化大小，用来减弱 ROI 边缘硬切带来的干扰
+- `roi.edge_enhance_method` / `roi.edge_enhance_weight`
+  纹理增强方式和强度，推荐 `scharr` + `0.12~0.20`
 
 顶层最常用字段：
 
+- `default_seat_model_id`
+  多型号配置下的默认型号
+- `seat_models`
+  多型号整套路由配置
 - `capture_dir`
   采图输出目录
 - `output_json_path`
