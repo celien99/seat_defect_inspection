@@ -15,7 +15,7 @@
     "cameras": [
       {
         "camera_id": "cam_0",
-        "source": "mvs://sn/DA9184658?timeout_ms=1000",
+        "source": "mvs://sn/DA9184658?timeout_ms=1000&exposure_auto=off&exposure_time=12000&gain_auto=off&gain=6",
         "train_good_dir": "../data/seat_defect_inspection/cam_0/train/good",
         "patchcore_model_path": "../models/seat_defect_inspection/cam_0_patchcore.npz",
         "color_insensitive_mode": true,
@@ -108,7 +108,7 @@
       },
       {
         "camera_id": "cam_1",
-        "source": "mvs://sn/DA9184675?timeout_ms=1000",
+        "source": "mvs://sn/DA9184675?timeout_ms=1000&exposure_auto=off&exposure_time=12000&gain_auto=off&gain=6",
         "train_good_dir": "../data/seat_defect_inspection/cam_1/train/good",
         "patchcore_model_path": "../models/seat_defect_inspection/cam_1_patchcore.npz",
         "color_insensitive_mode": true,
@@ -201,7 +201,7 @@
       },
       {
         "camera_id": "cam_2",
-        "source": "mvs://sn/DA9184671?timeout_ms=1000",
+        "source": "mvs://sn/DA9184671?timeout_ms=1000&exposure_auto=off&exposure_time=12000&gain_auto=off&gain=6",
         "train_good_dir": "../data/seat_defect_inspection/cam_2/train/good",
         "patchcore_model_path": "../models/seat_defect_inspection/cam_2_patchcore.npz",
         "color_insensitive_mode": true,
@@ -294,7 +294,7 @@
       },
       {
         "camera_id": "cam_3",
-        "source": "mvs://sn/DA9184680?timeout_ms=1000",
+        "source": "mvs://sn/DA9184680?timeout_ms=1000&exposure_auto=off&exposure_time=12000&gain_auto=off&gain=6",
         "train_good_dir": "../data/seat_defect_inspection/cam_3/train/good",
         "patchcore_model_path": "../models/seat_defect_inspection/cam_3_patchcore.npz",
         "color_insensitive_mode": true,
@@ -387,7 +387,7 @@
       },
       {
         "camera_id": "cam_4",
-        "source": "mvs://sn/DA9184674?timeout_ms=1000",
+        "source": "mvs://sn/DA9184674?timeout_ms=1000&exposure_auto=off&exposure_time=12000&gain_auto=off&gain=6",
         "train_good_dir": "../data/seat_defect_inspection/cam_4/train/good",
         "patchcore_model_path": "../models/seat_defect_inspection/cam_4_patchcore.npz",
         "color_insensitive_mode": true,
