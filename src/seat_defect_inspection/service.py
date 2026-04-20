@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections import Counter
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
@@ -171,17 +172,20 @@ class InspectionService:
                 patchcore_samples: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
                 color_samples: list[tuple[np.ndarray, np.ndarray]] = []
                 skipped_images: list[str] = []
+                skipped_reason_counter: Counter[str] = Counter()
 
                 # 训练阶段同样走质量、OpenCV、YOLO、ROI 精修，避免训练/推理分布错位。
                 for image_path in image_paths:
                     image = cv2.imread(str(image_path))
                     if image is None:
                         skipped_images.append(str(image_path))
+                        skipped_reason_counter["image_read_failed"] += 1
                         continue
 
                     prepared = pipeline.prepare_image(image)
                     if prepared.rejection_reason is not None or prepared.roi is None:
                         skipped_images.append(str(image_path))
+                        skipped_reason_counter[prepared.rejection_reason or "roi_missing"] += 1
                         continue
 
                     texture_image = (
@@ -203,8 +207,35 @@ class InspectionService:
                         )
                     )
 
+                if not patchcore_samples:
+                    raise ValueError(
+                        "PatchCore 训练前没有可用的 ROI 样本。"
+                        f" 机位：{camera.camera_id}，训练目录：{train_dir}，"
+                        f"原始图像数：{len(image_paths)}，"
+                        f"跳过图像数：{len(skipped_images)}，"
+                        f"跳过原因：{_format_reason_counter(skipped_reason_counter)}。"
+                        " 请优先检查：1) YOLO 是否检出 target_class；"
+                        "2) 采图亮度/清晰度是否触发质量门控；"
+                        "3) ROI 精修后的有效区域是否正常。"
+                    )
+
                 patchcore = self._build_patchcore_service(camera)
-                patchcore_summary = patchcore.fit(patchcore_samples)
+                try:
+                    patchcore_summary = patchcore.fit(patchcore_samples)
+                except ValueError as exc:
+                    if str(exc) != "PatchCore 没有可用的有效训练样本":
+                        raise
+                    raise ValueError(
+                        "PatchCore 训练样本已通过 ROI 阶段，但有效 patch 数仍为 0。"
+                        f" 机位：{camera.camera_id}，训练目录：{train_dir}，"
+                        f"ROI 样本数：{len(patchcore_samples)}，"
+                        f"跳过图像数：{len(skipped_images)}，"
+                        f"跳过原因：{_format_reason_counter(skipped_reason_counter)}，"
+                        f"patch 参数：min_target_coverage={camera.patchcore.min_target_coverage}, "
+                        f"max_ignore_overlap={camera.patchcore.max_ignore_overlap}, "
+                        f"min_valid_patch_ratio={camera.patchcore.min_valid_patch_ratio}。"
+                        " 这通常说明 ROI 掩膜太碎、有效前景过小，或 patch 阈值过严。"
+                    ) from exc
 
                 color_profile = None
                 color_summary: dict[str, Any] | None = None
@@ -766,6 +797,12 @@ def _build_model_scoped_root(base_dir: Path, seat_model_id: str | None) -> Path:
     if seat_model_id is None:
         return base_dir
     return base_dir / seat_model_id
+
+
+def _format_reason_counter(counter: Counter[str]) -> str:
+    if not counter:
+        return "none"
+    return ", ".join(f"{reason}={count}" for reason, count in sorted(counter.items()))
 
 
 def _write_image(path: Path, image: Any) -> None:
