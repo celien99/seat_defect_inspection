@@ -39,7 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     capture_parser = subparsers.add_parser(
         "capture",
-        help="从全部启用机位各抓取一帧并保存",
+        help="从全部启用机位抓取一帧或多帧并保存",
     )
     capture_parser.set_defaults(run=_run_capture)
     capture_parser.add_argument(
@@ -63,6 +63,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--save-to-train-good-dir",
         action="store_true",
         help="同时把图像拷贝到各机位的 train_good_dir",
+    )
+    capture_parser.add_argument(
+        "--count",
+        type=int,
+        default=1,
+        help="每个机位连续采集的张数，默认 1",
+    )
+    capture_parser.add_argument(
+        "--interval-ms",
+        type=int,
+        default=0,
+        help="同一机位连续采集之间的等待毫秒数，默认 0",
     )
 
     inspect_parser = subparsers.add_parser(
@@ -127,12 +139,15 @@ def _run_capture(args: argparse.Namespace) -> None:
         output_dir=args.output_dir,
         seat_model_id=args.seat_model_id,
         save_to_train_good_dir=args.save_to_train_good_dir,
+        count=args.count,
+        interval_ms=args.interval_ms,
     )
     success_count = sum(1 for item in summary.records if item.status == "OK")
     failure_count = len(summary.records) - success_count
     print(
         f"采图完成，成功 {success_count} 路，失败 {failure_count} 路，"
-        f"型号：{summary.seat_model_id or 'default'}，manifest：{summary.manifest_path}",
+        f"每机位张数：{args.count}，型号：{summary.seat_model_id or 'default'}，"
+        f"manifest：{summary.manifest_path}",
     )
 
 

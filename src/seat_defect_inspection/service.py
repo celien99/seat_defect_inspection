@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
@@ -242,8 +243,10 @@ class InspectionService:
         output_dir: str | None = None,
         seat_model_id: str | None = None,
         save_to_train_good_dir: bool = False,
+        count: int = 1,
+        interval_ms: int = 0,
     ) -> CaptureSummary:
-        """每个启用机位抓取一帧并落盘。
+        """每个启用机位抓取一帧或多帧并落盘。
 
         调用链：
         1. `_resolve_context` 解析型号与启用机位
@@ -254,6 +257,8 @@ class InspectionService:
         """
         context = self._resolve_context(seat_model_id)
         resolved_part_id = part_id or self.config.part_id
+        sample_count = max(1, int(count))
+        wait_seconds = max(0, int(interval_ms)) / 1000.0
         run_id = datetime.now().astimezone().strftime("%Y%m%d_%H%M%S_%f")
         capture_root = (
             _build_model_scoped_root(Path(output_dir or self.config.capture_dir), context.seat_model_id)
@@ -264,44 +269,47 @@ class InspectionService:
 
         records: list[CaptureRecord] = []
         for camera in context.cameras:
-            try:
-                frame_packet = self.acquisition.capture(
-                    camera.camera_id,
-                    camera.source,
-                    resolved_part_id,
-                )
-                output_path = self._save_captured_frame(capture_root, frame_packet)
-                train_good_path = None
-                if save_to_train_good_dir:
-                    train_good_path = self._save_train_good_frame(camera, frame_packet)
-                records.append(
-                    CaptureRecord(
-                        camera_id=frame_packet.camera_id,
-                        frame_id=frame_packet.frame_id,
-                        part_id=frame_packet.part_id,
-                        source=frame_packet.source,
-                        source_kind=frame_packet.source_kind,
-                        timestamp=frame_packet.timestamp,
-                        status="OK",
-                        seat_model_id=context.seat_model_id,
-                        output_path=output_path,
-                        train_good_path=train_good_path,
+            for sample_index in range(sample_count):
+                try:
+                    frame_packet = self.acquisition.capture(
+                        camera.camera_id,
+                        camera.source,
+                        resolved_part_id,
                     )
-                )
-            except Exception as exc:
-                records.append(
-                    CaptureRecord(
-                        camera_id=camera.camera_id,
-                        frame_id="",
-                        part_id=resolved_part_id,
-                        source=camera.source,
-                        source_kind=infer_source_kind(camera.source),
-                        timestamp=datetime.now().astimezone().isoformat(),
-                        status="ERROR",
-                        seat_model_id=context.seat_model_id,
-                        reason=str(exc),
+                    output_path = self._save_captured_frame(capture_root, frame_packet)
+                    train_good_path = None
+                    if save_to_train_good_dir:
+                        train_good_path = self._save_train_good_frame(camera, frame_packet)
+                    records.append(
+                        CaptureRecord(
+                            camera_id=frame_packet.camera_id,
+                            frame_id=frame_packet.frame_id,
+                            part_id=frame_packet.part_id,
+                            source=frame_packet.source,
+                            source_kind=frame_packet.source_kind,
+                            timestamp=frame_packet.timestamp,
+                            status="OK",
+                            seat_model_id=context.seat_model_id,
+                            output_path=output_path,
+                            train_good_path=train_good_path,
+                        )
                     )
-                )
+                except Exception as exc:
+                    records.append(
+                        CaptureRecord(
+                            camera_id=camera.camera_id,
+                            frame_id="",
+                            part_id=resolved_part_id,
+                            source=camera.source,
+                            source_kind=infer_source_kind(camera.source),
+                            timestamp=datetime.now().astimezone().isoformat(),
+                            status="ERROR",
+                            seat_model_id=context.seat_model_id,
+                            reason=f"sample_{sample_index + 1}:{exc}",
+                        )
+                    )
+                if wait_seconds > 0 and sample_index < sample_count - 1:
+                    time.sleep(wait_seconds)
 
         summary = CaptureSummary(
             part_id=resolved_part_id,
@@ -727,6 +735,8 @@ def capture_samples(
     output_dir: str | None = None,
     seat_model_id: str | None = None,
     save_to_train_good_dir: bool = False,
+    count: int = 1,
+    interval_ms: int = 0,
 ) -> CaptureSummary:
     """抓取并落盘全部启用机位的图像。"""
     return InspectionService(config).capture(
@@ -734,6 +744,8 @@ def capture_samples(
         output_dir=output_dir,
         seat_model_id=seat_model_id,
         save_to_train_good_dir=save_to_train_good_dir,
+        count=count,
+        interval_ms=interval_ms,
     )
 
 
