@@ -155,7 +155,7 @@ def _build_yolo_training_config(
         force=True,
     )
     if "model_path" in normalized:
-        normalized["model_path"] = _resolve_optional_model_path(
+        normalized["model_path"] = _resolve_yolo_training_model_path(
             config_dir,
             normalized["model_path"],
         )
@@ -268,7 +268,7 @@ def _resolve_yolo_training_payload(
     优先级：seat_models[seat_model_id].yolo_training > 顶层 yolo_training。
     返回 (training_payload, resolved_seat_model_id)。
     """
-    top_level_training = payload.get("yolo_training")
+    top_level_training = inspection_payload.get("yolo_training", payload.get("yolo_training"))
     seat_models: list[dict[str, Any]] = inspection_payload.get("seat_models") or []
 
     if not seat_models:
@@ -302,6 +302,26 @@ def _resolve_optional_model_path(config_dir: Path, value: str | None) -> str | N
     if value is None:
         return None
     return _resolve_local_path(config_dir, value, force=False)
+
+
+def _resolve_yolo_training_model_path(config_dir: Path, value: str) -> str:
+    """解析 YOLO 训练模型来源。
+
+    规则：
+    - 显式相对路径 / 绝对路径按本地文件处理
+    - 纯文件名若在配置目录下真实存在，也按本地文件处理
+    - 否则保留原值，允许 `yolo11n.pt` 这类 Ultralytics 模型别名透传
+    """
+    candidate = Path(value)
+    if candidate.is_absolute():
+        return str(candidate)
+    if value.startswith(".") or os.sep in value or (os.altsep is not None and os.altsep in value):
+        return _resolve_local_path(config_dir, value, force=True)
+
+    resolved = (config_dir / candidate).resolve()
+    if resolved.exists():
+        return str(resolved)
+    return value
 
 
 def _resolve_local_path(config_dir: Path, value: str, *, force: bool) -> str:

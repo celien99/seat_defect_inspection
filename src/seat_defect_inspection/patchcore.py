@@ -303,7 +303,7 @@ class PatchCoreService:
             feature_std=saved["feature_std"].astype(np.float32),
             threshold=float(meta["threshold"]),
         )
-        color_profile_json = saved["color_profile_json"].item()
+        color_profile_json = saved["color_profile_json"].item() if "color_profile_json" in saved.files else ""
         color_profile = (
             ColorReferenceProfile.from_json(color_profile_json)
             if color_profile_json

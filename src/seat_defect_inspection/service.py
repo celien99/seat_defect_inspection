@@ -39,14 +39,14 @@ class PreparedCameraSample:
     """单机位共享中间结果。
 
     字段：
-    - quality: 质量门控结果
+    - quality: ROI 质量门控结果；若尚未进入 ROI 阶段则为 None
     - preprocessed_image: YOLO 前的 OpenCV 预处理结果
     - detection: YOLO 检测结果
     - roi: ROI 精修结果
     - rejection_reason: 若当前机位需要提前终止，记录拒绝原因
     """
 
-    quality: ImageQualityDecision
+    quality: ImageQualityDecision | None
     preprocessed_image: Any | None = None
     detection: DetectionResult | None = None
     roi: RoiRefineResult | None = None
@@ -72,10 +72,10 @@ class _CameraPipeline:
     """单机位预处理、检测与 ROI 精修流程。
 
     调用顺序：
-    1. `ImageQualityGuard.evaluate`
-    2. `PreprocessEngine.process`
-    3. `DetectionService.detect`
-    4. `RoiRefineEngine.refine`
+    1. `PreprocessEngine.process`
+    2. `DetectionService.detect`
+    3. `RoiRefineEngine.refine`
+    4. `ImageQualityGuard.evaluate`
 
     该类只负责把单张图像准备成可供 PatchCore / 颜色分支消费的中间结果，
     不负责模型加载、异常判定和多机位融合。
@@ -89,26 +89,32 @@ class _CameraPipeline:
         self.roi_refine_engine = RoiRefineEngine(config.roi) # ROI 精修
 
     def prepare_image(self, image: Any) -> PreparedCameraSample:
-        """完成质量检查、预处理、检测和 ROI 精修。"""
-        quality = self.quality_guard.evaluate(image)
-        if not quality.accepted:
-            return PreparedCameraSample(
-                quality=quality,
-                rejection_reason=f"quality_{quality.reason}",
-            )
-
+        """完成预处理、检测、ROI 精修和 ROI 质量检查。"""
         # 训练与推理共用同一条预处理链路，确保模型输入分布一致。
         preprocessed = self.preprocess_engine.process(image)
         detection = self.detection_service.detect(preprocessed)
         if detection.target is None:
             return PreparedCameraSample(
-                quality=quality,
+                quality=None,
                 preprocessed_image=preprocessed,
                 detection=detection,
                 rejection_reason="target_not_found",
             )
 
         roi = self.roi_refine_engine.refine(preprocessed, detection)
+        quality = self.quality_guard.evaluate(
+            roi.aligned_roi_image,
+            valid_mask=roi.valid_mask,
+        )
+        if not quality.accepted:
+            return PreparedCameraSample(
+                quality=quality,
+                preprocessed_image=preprocessed,
+                detection=detection,
+                roi=roi,
+                rejection_reason=f"quality_{quality.reason}",
+            )
+
         return PreparedCameraSample(
             quality=quality,
             preprocessed_image=preprocessed,

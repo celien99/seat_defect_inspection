@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import json
+
 import numpy as np
 
-from seat_defect_inspection.config import FusionConfig, PatchCoreConfig
+from seat_defect_inspection.config import CameraConfig, DetectionConfig, FusionConfig, PatchCoreConfig, QualityGuardConfig, RoiRefineConfig
+from seat_defect_inspection.detection import DetectionService
 from seat_defect_inspection.fusion import fuse_camera_results, should_early_stop_on_ng
 from seat_defect_inspection.patchcore import PatchCoreService, _decide_patchcore_anomaly
-from seat_defect_inspection.schemas import CameraInspectionResult
+from seat_defect_inspection.quality import ImageQualityGuard
+from seat_defect_inspection.runtime_config import load_yolo_training_config
+from seat_defect_inspection.schemas import BoundingBox, CameraInspectionResult
+from seat_defect_inspection.service import _CameraPipeline
 
 
 def _camera_result(camera_id: str, status: str) -> CameraInspectionResult:
@@ -132,6 +138,139 @@ def test_fail_fast_disabled_when_reject_must_override() -> None:
         total_camera_count=3,
         fusion_config=fusion,
     )
+
+
+def test_wrapped_top_level_yolo_training_is_loaded(tmp_path) -> None:
+    config_path = tmp_path / "config.json"
+    dataset_path = tmp_path / "dataset.yaml"
+    dataset_path.write_text(
+        "path: .\ntrain: images/train\nval: images/val\nnames:\n  0: seat_main\n",
+        encoding="utf-8",
+    )
+    config_path.write_text(
+        json.dumps(
+            {
+                "seat_defect_inspection": {
+                    "cameras": [
+                        {
+                            "camera_id": "cam_0",
+                            "source": "0",
+                            "patchcore_model_path": "model.npz",
+                        }
+                    ],
+                    "yolo_training": {
+                        "model_path": "yolo11n.pt",
+                        "data_config_path": "dataset.yaml",
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_yolo_training_config(str(config_path))
+
+    assert config.model_path == "yolo11n.pt"
+    assert config.data_config_path == str(dataset_path.resolve())
+
+
+def test_yolo_training_alias_is_preserved_for_example_config() -> None:
+    config = load_yolo_training_config(
+        "configs/seat_defect_inspection.multimodel.example.json",
+        seat_model_id="seat_model_a",
+    )
+
+    assert config.model_path == "yolo11n.pt"
+
+
+def test_detection_does_not_use_fallback_when_yolo_misses() -> None:
+    class _EmptyBoxes:
+        xyxy = None
+
+    class _EmptyResult:
+        boxes = _EmptyBoxes()
+        names = {}
+
+    class _FakeModel:
+        def predict(self, *_args, **_kwargs):
+            return [_EmptyResult()]
+
+    service = DetectionService(
+        DetectionConfig(
+            model_path="dummy.pt",
+            fallback_box=BoundingBox(1.0, 2.0, 30.0, 40.0),
+        )
+    )
+    service._model = _FakeModel()
+
+    result = service.detect(np.zeros((64, 64, 3), dtype=np.uint8))
+
+    assert result.target is None
+    assert result.all_objects == []
+
+
+def test_legacy_patchcore_bundle_without_color_profile_loads(tmp_path) -> None:
+    model_path = tmp_path / "legacy_patchcore.npz"
+    np.savez_compressed(
+        model_path,
+        memory_bank=np.zeros((4, 8), dtype=np.float32),
+        feature_mean=np.zeros((8,), dtype=np.float32),
+        feature_std=np.ones((8,), dtype=np.float32),
+        meta_json=np.array(
+            json.dumps(
+                {
+                    "image_size": 256,
+                    "patch_size": 32,
+                    "stride": 16,
+                    "max_memory": 128,
+                    "threshold_quantile": 0.99,
+                    "threshold": 1.0,
+                }
+            )
+        ),
+    )
+
+    bundle = PatchCoreService.load_bundle(model_path)
+
+    assert bundle.color_profile is None
+    assert bundle.patchcore.threshold == 1.0
+
+
+def test_camera_pipeline_quality_uses_roi_instead_of_full_frame() -> None:
+    image = np.zeros((200, 200, 3), dtype=np.uint8)
+    checker = ((np.indices((60, 60)).sum(axis=0) % 2) * 255).astype(np.uint8)
+    image[70:130, 70:130] = np.stack([checker, checker, checker], axis=-1)
+
+    full_frame_quality = QualityGuardConfig(
+        min_laplacian_variance=20.0,
+        min_brightness_mean=30.0,
+    )
+    full_frame_decision = ImageQualityGuard(full_frame_quality).evaluate(image)
+    camera = CameraConfig(
+        camera_id="cam_0",
+        source="0",
+        patchcore_model_path="model.npz",
+        quality=full_frame_quality,
+        detection=DetectionConfig(
+            model_path=None,
+            fallback_box=BoundingBox(70.0, 70.0, 130.0, 130.0),
+        ),
+        roi=RoiRefineConfig(
+            mask_mode="full",
+            morphology_kernel_size=1,
+            ignore_dilate_kernel_size=1,
+            edge_ignore_pixels=0,
+        ),
+    )
+
+    pipeline = _CameraPipeline(camera)
+    prepared = pipeline.prepare_image(image)
+
+    assert full_frame_decision.accepted is False
+    assert full_frame_decision.reason == "underexposed"
+    assert prepared.quality is not None
+    assert prepared.quality.accepted is True
+    assert prepared.rejection_reason is None
 
 
 def test_full_patchcore_fit_predict_and_reload(tmp_path) -> None:

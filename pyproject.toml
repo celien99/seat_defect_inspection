@@ -9,8 +9,10 @@ description = "Independent production-grade automotive seat defect inspection pr
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-  "ultralytics",
   "opencv-python",
+  "torch",
+  "torchvision",
+  "ultralytics",
 ]
 
 [project.scripts]

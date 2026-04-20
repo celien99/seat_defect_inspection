@@ -53,9 +53,6 @@ class DetectionService:
         ]
 
         target = max(target_candidates, key=lambda item: item.confidence, default=None)
-        if target is None:
-            target = self._build_fallback_target()
-
         return DetectionResult(
             target=target,
             ignores=ignore_candidates,

@@ -79,7 +79,7 @@ class DetectionConfig:
     - ignore_classes: 需要进入忽略掩膜的干扰类别
     - confidence / iou / device: YOLO 推理参数
     - prefer_segmentation_mask: 有分割头时优先使用 mask
-    - fallback_box: YOLO 不可用或未检出时的兜底 ROI
+    - fallback_box: 未配置 YOLO 权重时的静态 ROI 兜底框
     """
 
     model_path: str | None = None
@@ -241,7 +241,7 @@ class CameraConfig:
 
     字段：
     - camera_id: 机位唯一标识
-    - source: 输入源，支持图片、视频、普通相机、mvs://
+    - source: 输入源,支持图片、视频、普通相机、mvs://
     - patchcore_model_path: 该机位 PatchCore 模型路径
     - train_good_dir: 该机位正常样本目录
     - enabled: 是否启用该机位
