@@ -1,11 +1,7 @@
-path: datasets/seat_defect
+path: ../datasets/seat_defect
 train: images/train
 val: images/val
 test: images/test
 
 names:
-  0: seat_main
-  1: tooling
-  2: worker_hand
-  3: wire
-  4: foreign_object
+  0: seat

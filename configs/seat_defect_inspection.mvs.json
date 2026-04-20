@@ -41,7 +41,7 @@
         },
         "detection": {
           "model_path": null,
-          "target_class": "seat_main",
+          "target_class": "seat",
           "ignore_classes": [
             "tooling",
             "worker_hand",
@@ -134,7 +134,7 @@
         },
         "detection": {
           "model_path": null,
-          "target_class": "seat_main",
+          "target_class": "seat",
           "ignore_classes": [
             "tooling",
             "worker_hand",
@@ -227,7 +227,7 @@
         },
         "detection": {
           "model_path": null,
-          "target_class": "seat_main",
+          "target_class": "seat",
           "ignore_classes": [
             "tooling",
             "worker_hand",
@@ -320,7 +320,7 @@
         },
         "detection": {
           "model_path": null,
-          "target_class": "seat_main",
+          "target_class": "seat",
           "ignore_classes": [
             "tooling",
             "worker_hand",
@@ -413,7 +413,7 @@
         },
         "detection": {
           "model_path": null,
-          "target_class": "seat_main",
+          "target_class": "seat",
           "ignore_classes": [
             "tooling",
             "worker_hand",
@@ -482,11 +482,11 @@
   },
   "yolo_training": {
     "model_path": "yolo11n.pt",
-    "data_config_path": "seat_defect_yolo.dataset.example.yaml",
-    "epochs": 100,
-    "imgsz": 1280,
+    "data_config_path": "../datasets/seat_defect/seat_defect.yaml",
+    "epochs": 20,
+    "imgsz": 640,
     "batch": 8,
-    "device": "cpu",
+    "device": "mps",
     "project": "../outputs/seat_defect_inspection/yolo_training",
     "name": "seat_defect_mvs",
     "workers": 4,

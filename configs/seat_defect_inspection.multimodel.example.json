@@ -19,7 +19,7 @@
         "display_name": "座椅型号A",
         "yolo_training": {
           "model_path": "yolo11n.pt",
-          "data_config_path": "seat_defect_yolo.dataset.example.yaml",
+          "data_config_path": "../datasets/seat_defect/seat_defect.yaml",
           "epochs": 100,
           "imgsz": 1280,
           "batch": 8,
@@ -43,7 +43,7 @@
             },
             "detection": {
               "model_path": "../models/seat_defect_inspection/yolo/seat_model_a_best.pt",
-              "target_class": "seat_main",
+              "target_class": "seat",
               "ignore_classes": [
                 "tooling",
                 "worker_hand",
@@ -91,7 +91,7 @@
         "display_name": "座椅型号B",
         "yolo_training": {
           "model_path": "yolo11n.pt",
-          "data_config_path": "seat_defect_yolo.dataset.example.yaml",
+          "data_config_path": "../datasets/seat_defect/seat_defect.yaml",
           "epochs": 100,
           "imgsz": 1280,
           "batch": 8,
@@ -115,7 +115,7 @@
             },
             "detection": {
               "model_path": "../models/seat_defect_inspection/yolo/seat_model_b_best.pt",
-              "target_class": "seat_main",
+              "target_class": "seat",
               "ignore_classes": [
                 "tooling",
                 "worker_hand",
