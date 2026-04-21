@@ -52,7 +52,6 @@
           "confidence": 0.5,
           "iou": 0.45,
           "device": "cpu",
-          "prefer_segmentation_mask": true,
           "fallback_box": {
             "x1": 1116.0,
             "y1": 332.0,
@@ -141,7 +140,6 @@
           "confidence": 0.5,
           "iou": 0.45,
           "device": "cpu",
-          "prefer_segmentation_mask": true,
           "fallback_box": {
             "x1": 1184.0,
             "y1": 292.0,
@@ -230,7 +228,6 @@
           "confidence": 0.5,
           "iou": 0.45,
           "device": "cpu",
-          "prefer_segmentation_mask": true,
           "fallback_box": {
             "x1": 1158.0,
             "y1": 289.0,
@@ -319,7 +316,6 @@
           "confidence": 0.5,
           "iou": 0.45,
           "device": "cpu",
-          "prefer_segmentation_mask": true,
           "fallback_box": {
             "x1": 1148.0,
             "y1": 1151.0,
@@ -408,7 +404,6 @@
           "confidence": 0.5,
           "iou": 0.45,
           "device": "cpu",
-          "prefer_segmentation_mask": true,
           "fallback_box": {
             "x1": 1274.0,
             "y1": 478.0,
@@ -462,7 +457,7 @@
     ]
   },
   "yolo_training": {
-    "model_path": "yolo11m.pt",
+    "model_path": "yolo11m-seg.pt",
     "data_config_path": "../datasets/seat_defect/seat_defect.yaml",
     "epochs": 200,
     "imgsz": 960,

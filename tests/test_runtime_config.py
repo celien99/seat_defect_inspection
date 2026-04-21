@@ -126,7 +126,7 @@ def test_load_yolo_training_falls_back_to_top_level_for_selected_seat_model(tmp_
                         },
                     ],
                     "yolo_training": {
-                        "model_path": "yolo11n.pt",
+                        "model_path": "yolo11m-seg.pt",
                         "data_config_path": "dataset.yaml",
                     },
                 }
@@ -138,7 +138,7 @@ def test_load_yolo_training_falls_back_to_top_level_for_selected_seat_model(tmp_
     config = load_yolo_training_config(str(config_path), seat_model_id="seat_model_a")
 
     assert config.seat_model_id == "seat_model_a"
-    assert config.model_path == "yolo11n.pt"
+    assert config.model_path == "yolo11m-seg.pt"
     assert config.data_config_path == str(dataset_path.resolve())
     assert config.project == str((tmp_path / "outputs/yolo_training").resolve())
 
@@ -165,7 +165,7 @@ def test_load_yolo_training_default_data_path_is_resolved(tmp_path: Path) -> Non
 
     config = load_yolo_training_config(str(config_path))
 
-    assert config.model_path == "yolo11n.pt"
+    assert config.model_path == "yolo11m-seg.pt"
     assert config.data_config_path == str(
         (tmp_path / "configs/seat_defect_yolo.dataset.example.yaml").resolve()
     )

@@ -38,6 +38,8 @@ seat-defect-inspection inspect --config configs/seat_defect_inspection.mvs.json 
 4. Prepare a YOLO dataset and run `train-yolo`.
 5. Configure the resulting weights and run `inspect`.
 
+The project now standardizes on `yolo11m-seg.pt`. YOLO segmentation masks are consumed directly for ROI mask generation, but PatchCore still needs a rectangular ROI plus the existing alignment, valid-mask cleanup, and texture preprocessing stages.
+
 ## Key Paths
 
 - `data/seat_defect_inspection/<camera_id>/train/good`

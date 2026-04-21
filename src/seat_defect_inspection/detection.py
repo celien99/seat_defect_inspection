@@ -10,6 +10,8 @@ import numpy as np
 from .config import DetectionConfig
 from .schemas import BoundingBox, DetectionObject, DetectionResult
 
+YOLO_SEGMENT_TASK = "segment"
+
 
 class DetectionService:
     """检测主座椅区域以及需要忽略的干扰区域。"""
@@ -31,6 +33,7 @@ class DetectionService:
             from ultralytics import YOLO
 
             self._model = YOLO(self.config.model_path)
+            _validate_model_task(self._model, str(self.config.model_path))
 
         result = self._model.predict(
             image,
@@ -111,11 +114,7 @@ class DetectionService:
                         x2=float(box[2]),
                         y2=float(box[3]),
                     ),
-                    segmentation_mask=(
-                        masks[index]
-                        if self.config.prefer_segmentation_mask and index < len(masks)
-                        else None
-                    ),
+                    segmentation_mask=masks[index] if index < len(masks) else None,
                 ),
             )
         return detections
@@ -139,3 +138,15 @@ class DetectionService:
             )
             masks.append((resized > 0.5).astype(np.uint8))
         return masks
+
+
+def _validate_model_task(model: Any, model_path: str) -> None:
+    task = str(getattr(model, "task", "")).strip().lower()
+    if task == YOLO_SEGMENT_TASK:
+        return
+    display_task = task or "unknown"
+    raise ValueError(
+        "当前项目只支持 YOLO segmentation 权重，"
+        f"但 `{model_path}` 的任务类型是 `{display_task}`。"
+        " 请改用 yolo11m-seg.pt 或分割训练产物。"
+    )

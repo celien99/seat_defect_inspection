@@ -13,6 +13,9 @@ from .config import YoloTrainingConfig
 IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".webp"}
 REQUIRED_DATASET_SPLITS = ("train", "val")
 OPTIONAL_DATASET_SPLITS = ("train", "val", "test")
+YOLO_SEGMENT_TASK = "segment"
+YOLO_SEGMENT_MODEL = "yolo11m-seg.pt"
+YOLO_SEGMENT_MODEL_YAML = "yolo11m-seg.yaml"
 
 
 def train_yolo_model(config: YoloTrainingConfig) -> dict[str, Any]:
@@ -31,6 +34,7 @@ def train_yolo_model(config: YoloTrainingConfig) -> dict[str, Any]:
     model, resolved_model_path, effective_pretrained = _load_yolo_model(config, YOLO)
     results = model.train(
         data=str(resolved_data_config_path),
+        task=YOLO_SEGMENT_TASK,
         epochs=int(config.epochs),
         imgsz=int(config.imgsz),
         batch=int(config.batch),
@@ -51,6 +55,7 @@ def train_yolo_model(config: YoloTrainingConfig) -> dict[str, Any]:
         "data_config_path": str(data_config_path),
         "resolved_data_config_path": str(resolved_data_config_path),
         "dataset_root": str(dataset_root),
+        "task": YOLO_SEGMENT_TASK,
         "epochs": int(config.epochs),
         "imgsz": int(config.imgsz),
         "batch": int(config.batch),
@@ -75,12 +80,19 @@ def _prepare_training_dataset(
         raise TypeError(f"YOLO 数据集配置格式错误：{data_config_path}")
     if not isinstance(loaded.get("names"), dict) or not loaded["names"]:
         raise ValueError(f"YOLO 数据集配置缺少有效的 `names`：{data_config_path}")
+    explicit_task = str(loaded.get("task", "")).strip().lower()
+    if explicit_task and explicit_task not in {"segment", "seg", "segmentation"}:
+        raise ValueError(
+            "当前项目固定使用 YOLO segmentation 训练，"
+            f"数据集配置中的 task 只能是 `segment`，收到 `{loaded.get('task')}`。"
+        )
 
     dataset_root = _resolve_path(data_config_path.parent, str(loaded.get("path", ".")))
     if not dataset_root.exists():
         raise FileNotFoundError(f"YOLO 数据集根目录不存在：{dataset_root}")
     resolved = dict(loaded)
     resolved["path"] = str(dataset_root)
+    resolved["task"] = YOLO_SEGMENT_TASK
 
     for split_name in OPTIONAL_DATASET_SPLITS:
         split_value = loaded.get(split_name)
@@ -126,8 +138,10 @@ def _validate_dataset_split(
     label_dir = _infer_label_dir(image_dir, dataset_root)
     if not label_dir.exists():
         raise FileNotFoundError(f"YOLO 数据集 `{split_name}` 缺少标签目录：{label_dir}")
-    if not _has_supported_file(label_dir, {".txt"}):
+    label_files = sorted(path for path in label_dir.rglob("*.txt") if path.is_file())
+    if not label_files:
         raise ValueError(f"YOLO 数据集 `{split_name}` 标签目录为空：{label_dir}")
+    _validate_label_files(label_files, split_name=split_name)
 
 
 def _infer_label_dir(image_dir: Path, dataset_root: Path) -> Path:
@@ -150,15 +164,76 @@ def _has_supported_file(folder: Path, suffixes: set[str]) -> bool:
     return False
 
 
+def _validate_label_files(label_files: list[Path], *, split_name: str) -> None:
+    inspected = 0
+    for label_file in label_files:
+        content = label_file.read_text(encoding="utf-8").strip()
+        if not content:
+            continue
+        inspected += 1
+        for line in content.splitlines():
+            _validate_label_line(line, label_file=label_file, split_name=split_name)
+        if inspected >= 20:
+            return
+    if inspected > 0:
+        return
+    raise ValueError(
+        f"YOLO 数据集 `{split_name}` 没有找到可用于分割训练的非空标签。"
+        " 当前项目固定使用 yolo11m-seg.pt，请确认 labels 为分割多边形格式。"
+    )
+
+
+def _validate_label_line(line: str, *, label_file: Path, split_name: str) -> None:
+    tokens = line.split()
+    if not tokens:
+        return
+    try:
+        values = [float(item) for item in tokens]
+    except ValueError as exc:
+        raise ValueError(f"YOLO 标签文件存在非数字内容：{label_file}") from exc
+    if values[0] < 0 or int(values[0]) != values[0]:
+        raise ValueError(f"YOLO 标签文件类别 id 非法：{label_file}")
+
+    coord_count = len(values) - 1
+    if coord_count < 6 or coord_count % 2 != 0:
+        raise ValueError(
+            f"YOLO 数据集 `{split_name}` 标签不是分割多边形格式：{label_file}"
+        )
+
+
 def _load_yolo_model(config: YoloTrainingConfig, yolo_cls) -> tuple[Any, str, bool]:
     requested_model_path = str(config.model_path)
     try:
-        return yolo_cls(requested_model_path), requested_model_path, bool(config.pretrained)
+        model = yolo_cls(requested_model_path, task=YOLO_SEGMENT_TASK)
+        resolved_model_path = requested_model_path
+        effective_pretrained = bool(config.pretrained)
     except ConnectionError as exc:
         candidate = Path(requested_model_path)
-        if candidate.suffix.lower() != ".pt" or candidate.is_absolute() or candidate.parent != Path("."):
+        if (
+            candidate.suffix.lower() != ".pt"
+            or candidate.is_absolute()
+            or candidate.parent != Path(".")
+            or candidate.name != YOLO_SEGMENT_MODEL
+        ):
             raise RuntimeError(
-                "YOLO 模型初始化失败，当前环境无法下载权重，且没有可用的本地架构 YAML 回退。"
+                "YOLO 模型初始化失败，当前项目固定使用 yolo11m-seg.pt。"
+                " 离线环境请提供本地 yolo11m-seg.pt，或直接传入可用的 segmentation checkpoint。"
             ) from exc
-        yaml_candidate = f"{candidate.stem}.yaml"
-        return yolo_cls(yaml_candidate), yaml_candidate, False
+        model = yolo_cls(YOLO_SEGMENT_MODEL_YAML, task=YOLO_SEGMENT_TASK)
+        resolved_model_path = YOLO_SEGMENT_MODEL_YAML
+        effective_pretrained = False
+
+    _validate_yolo_model_task(model, resolved_model_path)
+    return model, resolved_model_path, effective_pretrained
+
+
+def _validate_yolo_model_task(model: Any, model_path: str) -> None:
+    task = str(getattr(model, "task", "")).strip().lower()
+    if task == YOLO_SEGMENT_TASK:
+        return
+    display_task = task or "unknown"
+    raise ValueError(
+        "当前项目只支持 YOLO segmentation 模型，"
+        f"但 `{model_path}` 的任务类型是 `{display_task}`。"
+        " 请改用 yolo11m-seg.pt 或分割训练产物。"
+    )

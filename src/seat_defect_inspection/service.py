@@ -892,10 +892,17 @@ def _render_detections(image: Any, detection) -> Any:
         return image.copy()
     canvas = image.copy()
     if detection.target is not None:
-        _draw_box(canvas, detection.target.bounding_box, (0, 255, 0), detection.target.label)
+        _draw_detection(canvas, detection.target, (0, 255, 0))
     for item in detection.ignores:
-        _draw_box(canvas, item.bounding_box, (0, 0, 255), item.label)
+        _draw_detection(canvas, item, (0, 0, 255))
     return canvas
+
+
+def _draw_detection(image: Any, detection, color: tuple[int, int, int]) -> None:
+    """绘制检测框与可选分割轮廓。"""
+    if getattr(detection, "segmentation_mask", None) is not None:
+        _draw_segmentation_mask(image, detection.segmentation_mask, color)
+    _draw_box(image, detection.bounding_box, color, detection.label)
 
 
 def _draw_box(image: Any, box, color: tuple[int, int, int], label: str) -> None:
@@ -915,6 +922,32 @@ def _draw_box(image: Any, box, color: tuple[int, int, int], label: str) -> None:
         2,
         cv2.LINE_AA,
     )
+
+
+def _draw_segmentation_mask(image: Any, mask: np.ndarray, color: tuple[int, int, int]) -> None:
+    """绘制分割区域填充与轮廓。"""
+    normalized = np.asarray(mask)
+    if normalized.ndim != 2:
+        return
+    if normalized.shape[:2] != image.shape[:2]:
+        normalized = cv2.resize(
+            normalized.astype(np.float32),
+            (image.shape[1], image.shape[0]),
+            interpolation=cv2.INTER_NEAREST,
+        )
+    binary_mask = (normalized > 0).astype(np.uint8)
+    if binary_mask.sum() == 0:
+        return
+
+    overlay = image.copy()
+    overlay[binary_mask > 0] = (
+        0.82 * overlay[binary_mask > 0] + 0.18 * np.asarray(color, dtype=np.float32)
+    ).astype(np.uint8)
+    image[:] = overlay
+
+    contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if contours:
+        cv2.drawContours(image, contours, -1, color, 2, cv2.LINE_AA)
 
 
 def _overlay_heatmap(image: Any, heatmap: np.ndarray) -> Any:

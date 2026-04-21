@@ -78,6 +78,8 @@ seat-defect-inspection inspect \
 
 如果现场还没有 YOLO 权重，可以先把 `detection.model_path` 设为 `null`，继续使用 `fallback_box` 走完整流程。
 
+项目现在统一使用 `yolo11m-seg.pt`。代码会直接消费 YOLO segmentation mask 来生成 ROI 前景掩膜，但它替代的只是前景掩膜生成，不是整个 ROI/OpenCV 链路；PatchCore 仍然需要规则矩形 ROI、对齐、`valid_mask` 清理和纹理增强。
+
 ## 目录约定
 
 - `data/seat_defect_inspection/<camera_id>/train/good`
@@ -316,7 +318,7 @@ seat-defect-inspection train-yolo --config configs/seat_defect_inspection.multim
 - `patchcore.backbone_weights_path` / `patchcore.backbone_pretrained`
   完整 PatchCore 的特征权重来源。正式产线建议提供本地 ImageNet 预训练权重或预先缓存 torchvision 权重；不要使用随机初始化 backbone 做 `full` 后端训练
 - `detection.model_path`
-  YOLO 权重路径。没有时可先设为 `null`
+  YOLO segmentation 权重路径；当前项目应使用 `yolo11m-seg.pt` 或分割训练产物。没有时可先设为 `null`
 - `detection.fallback_box`
   YOLO 不可用时的兜底框
 - `color_insensitive_mode`
@@ -358,6 +360,8 @@ seat-defect-inspection train-yolo --config configs/seat_defect_inspection.multim
   调试图档位；`standard` 默认只保留 `raw / detections / roi / overlay`，`full` 额外输出 `preprocessed / roi_texture / foreground_weight / target_mask / ignore_mask / valid_mask / heatmap`
 
 排查 ROI 或 PatchCore 不稳定时，先切到 `debug_artifact_mode=full`，重点看 `roi.png`、`roi_texture.png`、`valid_mask.png`、`heatmap.png`、`overlay.png` 这 5 张图；只看最终 `overlay.png` 很容易误判问题出在模型，而不是掩膜或纹理输入。
+
+当前 `train-yolo` 固定使用 `yolo11m-seg.pt` 这条分割训练链路，数据集标签也必须是分割多边形格式，而不是普通检测框格式。命令启动前会先做一次基础校验，尽量把错误拦在训练前。
 
 ## 当前实现边界
 

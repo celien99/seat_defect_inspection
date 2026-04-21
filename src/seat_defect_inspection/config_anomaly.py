@@ -17,7 +17,6 @@ class DetectionConfig:
     confidence: float = 0.25
     iou: float = 0.45
     device: str = "cpu"
-    prefer_segmentation_mask: bool = True
     fallback_box: BoundingBox | None = None
 
 
@@ -67,7 +66,7 @@ class ColorBranchConfig:
 class YoloTrainingConfig:
     """YOLO 训练配置。"""
 
-    model_path: str = "yolo11n.pt"
+    model_path: str = "yolo11m-seg.pt"
     data_config_path: str = "configs/seat_defect_yolo.dataset.example.yaml"
     epochs: int = 100
     imgsz: int = 1280

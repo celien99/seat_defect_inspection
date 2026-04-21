@@ -24,8 +24,12 @@ class RoiRefineEngine:
         if detection_result.target is None:
             raise ValueError("ROI 精修必须提供目标检测框")
 
+        base_box = _resolve_crop_source_box(
+            detection_result.target,
+            image.shape[:2],
+        )
         crop_box = _expand_box(
-            detection_result.target.bounding_box,
+            base_box,
             image.shape[:2],
             expand_ratio=self.config.crop_expand_ratio,
             shrink_ratio=self.config.crop_shrink_ratio,
@@ -252,6 +256,42 @@ def _expand_box(
     x2 = min(float(width), box.x2 - shrink_x + expand_x)
     y2 = min(float(height), box.y2 - shrink_y + expand_y)
     return BoundingBox(x1=x1, y1=y1, x2=max(x1 + 1.0, x2), y2=max(y1 + 1.0, y2))
+
+
+def _resolve_crop_source_box(
+    target: DetectionObject,
+    image_shape: tuple[int, int],
+) -> BoundingBox:
+    if target.segmentation_mask is not None:
+        mask_box = _mask_to_box(target.segmentation_mask, image_shape)
+        if mask_box is not None:
+            return mask_box
+    return target.bounding_box
+
+
+def _mask_to_box(mask: Any, image_shape: tuple[int, int]) -> BoundingBox | None:
+    if mask is None:
+        return None
+    normalized = np.asarray(mask)
+    if normalized.ndim != 2:
+        return None
+
+    height, width = image_shape
+    if normalized.shape[:2] != (height, width):
+        normalized = cv2.resize(
+            normalized.astype(np.float32),
+            (width, height),
+            interpolation=cv2.INTER_NEAREST,
+        )
+    ys, xs = np.nonzero(normalized > 0)
+    if len(xs) == 0 or len(ys) == 0:
+        return None
+
+    x1 = float(xs.min())
+    y1 = float(ys.min())
+    x2 = float(xs.max() + 1)
+    y2 = float(ys.max() + 1)
+    return BoundingBox(x1=x1, y1=y1, x2=x2, y2=y2)
 
 
 def _box_to_ints(box: BoundingBox) -> tuple[int, int, int, int]:

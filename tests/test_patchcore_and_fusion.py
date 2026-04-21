@@ -161,7 +161,7 @@ def test_wrapped_top_level_yolo_training_is_loaded(tmp_path) -> None:
                         }
                     ],
                     "yolo_training": {
-                        "model_path": "yolo11n.pt",
+                        "model_path": "yolo11m-seg.pt",
                         "data_config_path": "dataset.yaml",
                     },
                 }
@@ -172,7 +172,7 @@ def test_wrapped_top_level_yolo_training_is_loaded(tmp_path) -> None:
 
     config = load_yolo_training_config(str(config_path))
 
-    assert config.model_path == "yolo11n.pt"
+    assert config.model_path == "yolo11m-seg.pt"
     assert config.data_config_path == str(dataset_path.resolve())
 
 
@@ -182,7 +182,7 @@ def test_yolo_training_alias_is_preserved_for_example_config() -> None:
         seat_model_id="seat_model_a",
     )
 
-    assert config.model_path == "yolo11n.pt"
+    assert config.model_path == "yolo11m-seg.pt"
 
 
 def test_detection_does_not_use_fallback_when_yolo_misses() -> None:
@@ -339,6 +339,42 @@ def test_roi_valid_mask_uses_safe_texture_margin() -> None:
 
     assert roi.valid_mask.sum() > 0
     assert roi.valid_mask.sum() < roi.target_mask.sum()
+
+
+def test_roi_crop_prefers_segmentation_mask_bounds() -> None:
+    image = np.full((80, 80, 3), 127, dtype=np.uint8)
+    segmentation_mask = np.zeros((80, 80), dtype=np.uint8)
+    segmentation_mask[18:62, 26:54] = 1
+    detection = DetectionResult(
+        target=DetectionObject(
+            label="seat",
+            confidence=1.0,
+            bounding_box=BoundingBox(8.0, 8.0, 72.0, 72.0),
+            segmentation_mask=segmentation_mask,
+        )
+    )
+    engine = RoiRefineEngine(
+        RoiRefineConfig(
+            crop_expand_ratio=0.0,
+            crop_shrink_ratio=0.0,
+            mask_mode="full",
+            morphology_kernel_size=1,
+            ignore_dilate_kernel_size=1,
+            edge_ignore_pixels=0,
+            alignment=AlignmentConfig(
+                enabled=False,
+                output_width=64,
+                output_height=64,
+            ),
+        )
+    )
+
+    roi = engine.refine(image, detection)
+
+    assert roi.crop_box.x1 == 26.0
+    assert roi.crop_box.y1 == 18.0
+    assert roi.crop_box.x2 == 54.0
+    assert roi.crop_box.y2 == 62.0
 
 
 def test_inspection_service_passes_valid_mask_to_patchcore() -> None:

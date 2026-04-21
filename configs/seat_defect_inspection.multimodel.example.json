@@ -19,7 +19,7 @@
         "seat_model_id": "seat_model_a",
         "display_name": "座椅型号A",
         "yolo_training": {
-          "model_path": "yolo11n.pt",
+          "model_path": "yolo11m-seg.pt",
           "data_config_path": "../datasets/seat_defect/seat_defect.yaml",
           "epochs": 100,
           "imgsz": 1280,
@@ -89,7 +89,7 @@
         "seat_model_id": "seat_model_b",
         "display_name": "座椅型号B",
         "yolo_training": {
-          "model_path": "yolo11n.pt",
+          "model_path": "yolo11m-seg.pt",
           "data_config_path": "../datasets/seat_defect/seat_defect.yaml",
           "epochs": 100,
           "imgsz": 1280,
