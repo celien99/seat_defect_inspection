@@ -481,17 +481,17 @@
     ]
   },
   "yolo_training": {
-    "model_path": "yolo11n.pt",
+    "model_path": "yolo11m.pt",
     "data_config_path": "../datasets/seat_defect/seat_defect.yaml",
-    "epochs": 20,
-    "imgsz": 640,
+    "epochs": 200,
+    "imgsz": 960,
     "batch": 8,
     "device": "mps",
     "project": "../outputs/seat_defect_inspection/yolo_training",
     "name": "seat_defect_mvs",
-    "workers": 4,
-    "patience": 20,
-    "cache": false,
+    "workers": 6,
+    "patience": 50,
+    "cache": true,
     "pretrained": true
   }
 }
