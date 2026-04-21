@@ -9,7 +9,7 @@ MODEL_PATH = "best.pt"
 IMAGE_DIR = "datasets/seat_defect/images/val"
 CONFIDENCE = 0.5
 IOU = 0.45
-DEVICE = "cpu"
+DEVICE = "cuda:0"
 PROJECT_DIR = "outputs/yolo_debug"
 RUN_NAME = "cam_0_batch"
 
