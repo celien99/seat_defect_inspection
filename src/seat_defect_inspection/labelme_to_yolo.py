@@ -1,13 +1,10 @@
-"""Convert LabelMe annotations into YOLO detection labels."""
+"""Convert LabelMe annotations into YOLO segmentation labels."""
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
 from pathlib import Path
-
-
-IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".webp", ".JPG", ".JPEG", ".PNG", ".BMP", ".WEBP"}
 
 
 @dataclass(slots=True)
@@ -31,7 +28,9 @@ def convert_labelme_split(
         raise FileNotFoundError(f"Image directory does not exist: {image_root}")
 
     label_root.mkdir(parents=True, exist_ok=True)
-    normalized_shape_types = {item.strip().lower() for item in (allowed_shape_types or {"rectangle", "linestrip"})}
+    normalized_shape_types = {
+        item.strip().lower() for item in (allowed_shape_types or {"polygon", "linestrip"})
+    }
 
     json_paths = sorted(image_root.glob("*.json")) + sorted(image_root.glob("*.JSON"))
     object_count = 0
@@ -75,32 +74,29 @@ def _convert_one_labelme_file(
         if label_name not in class_name_to_id:
             raise ValueError(f"Unsupported label `{label_name}` in {json_path}")
 
-        shape_type = str(shape.get("shape_type", "rectangle")).strip().lower()
+        shape_type = str(shape.get("shape_type", "polygon")).strip().lower()
         if shape_type not in allowed_shape_types:
             continue
 
-        x1, y1, x2, y2 = _shape_to_box(shape.get("points") or [], json_path=json_path)
-        x1 = min(max(x1, 0.0), image_width)
-        y1 = min(max(y1, 0.0), image_height)
-        x2 = min(max(x2, 0.0), image_width)
-        y2 = min(max(y2, 0.0), image_height)
-        if x2 <= x1 or y2 <= y1:
-            continue
+        polygon = _shape_to_polygon(shape.get("points") or [], json_path=json_path)
+        normalized_points: list[str] = []
+        for x, y in polygon:
+            normalized_x = min(max(float(x) / image_width, 0.0), 1.0)
+            normalized_y = min(max(float(y) / image_height, 0.0), 1.0)
+            normalized_points.append(f"{normalized_x:.6f}")
+            normalized_points.append(f"{normalized_y:.6f}")
 
-        x_center = ((x1 + x2) / 2.0) / image_width
-        y_center = ((y1 + y2) / 2.0) / image_height
-        width = (x2 - x1) / image_width
-        height = (y2 - y1) / image_height
-        rows.append(
-            f"{class_name_to_id[label_name]} "
-            f"{x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}"
-        )
+        rows.append(f"{class_name_to_id[label_name]} {' '.join(normalized_points)}")
     return rows
 
 
-def _shape_to_box(points: list[list[float]], *, json_path: Path) -> tuple[float, float, float, float]:
-    if len(points) < 2:
-        raise ValueError(f"Shape has fewer than 2 points in {json_path}")
-    xs = [float(point[0]) for point in points]
-    ys = [float(point[1]) for point in points]
-    return min(xs), min(ys), max(xs), max(ys)
+def _shape_to_polygon(points: list[list[float]], *, json_path: Path) -> list[tuple[float, float]]:
+    if len(points) < 3:
+        raise ValueError(f"Shape has fewer than 3 points in {json_path}")
+
+    polygon = [(float(point[0]), float(point[1])) for point in points]
+    if polygon[0] == polygon[-1]:
+        polygon = polygon[:-1]
+    if len(polygon) < 3:
+        raise ValueError(f"Shape has fewer than 3 unique points in {json_path}")
+    return polygon

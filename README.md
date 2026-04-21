@@ -15,8 +15,8 @@ The MVS SDK path is already wired in code. Hardware validation against real came
 
 ```bash
 cd seat_defect_inspection
-python3 -m venv .venv
-source .venv/bin/activate
+conda create -n seat-defect-inspection python=3.10 -y
+conda activate seat-defect-inspection
 pip install -e .
 seat-defect-inspection --help
 ```

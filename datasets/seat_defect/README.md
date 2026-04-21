@@ -1,6 +1,6 @@
-# YOLO Dataset Scaffold
+# YOLO Segmentation Dataset Scaffold
 
-This directory follows the standard Ultralytics YOLO detection layout:
+This directory follows the standard Ultralytics YOLO segmentation layout:
 
 ```text
 datasets/seat_defect/
@@ -16,12 +16,13 @@ datasets/seat_defect/
 
 Class mapping:
 
-- `0`: `seat_main`
-- `1`: `tooling`
-- `2`: `worker_hand`
-- `3`: `wire`
-- `4`: `foreign_object`
+- `0`: `seat`
 
-The initial samples in this scaffold are synthetic images used only to verify that the local
-training pipeline, dataset YAML, path resolution, and output directories work end-to-end.
-They are not suitable for production model quality evaluation.
+The current labels are generated from the LabelMe JSON files under `images/train` and
+`images/val`, and each `.txt` uses YOLO segmentation polygon format:
+
+```text
+class_id x1 y1 x2 y2 x3 y3 ...
+```
+
+All coordinates are normalized into `[0, 1]`.
