@@ -48,7 +48,7 @@
             "wire",
             "foreign_object"
           ],
-          "confidence": 0.25,
+          "confidence": 0.5,
           "iou": 0.45,
           "device": "cpu",
           "prefer_segmentation_mask": true,
@@ -141,7 +141,7 @@
             "wire",
             "foreign_object"
           ],
-          "confidence": 0.25,
+          "confidence": 0.5,
           "iou": 0.45,
           "device": "cpu",
           "prefer_segmentation_mask": true,
@@ -234,7 +234,7 @@
             "wire",
             "foreign_object"
           ],
-          "confidence": 0.25,
+          "confidence": 0.5,
           "iou": 0.45,
           "device": "cpu",
           "prefer_segmentation_mask": true,
@@ -327,7 +327,7 @@
             "wire",
             "foreign_object"
           ],
-          "confidence": 0.25,
+          "confidence": 0.5,
           "iou": 0.45,
           "device": "cpu",
           "prefer_segmentation_mask": true,
@@ -420,7 +420,7 @@
             "wire",
             "foreign_object"
           ],
-          "confidence": 0.25,
+          "confidence": 0.5,
           "iou": 0.45,
           "device": "cpu",
           "prefer_segmentation_mask": true,
@@ -486,7 +486,7 @@
     "epochs": 200,
     "imgsz": 960,
     "batch": 8,
-    "device": "mps",
+    "device": "cpu",
     "project": "../outputs/seat_defect_inspection/yolo_training",
     "name": "seat_defect_mvs",
     "workers": 6,
