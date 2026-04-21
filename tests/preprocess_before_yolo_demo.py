@@ -5,6 +5,7 @@ from pathlib import Path
 import cv2
 
 from demo_utils import write_image
+from seat_defect_inspection.config import PreprocessConfig
 from seat_defect_inspection.preprocess import PreprocessEngine
 
 # 这个脚本只做当前项目流程里的第一步：
@@ -27,12 +28,12 @@ PREPROCESS = {
 
 
 def main() -> None:
-    image_path = Path("datasets/seat_defect/images/val/1.png")
+    image_path = Path("datasets/seat_defect/images/train/11.png")
     image = cv2.imread(str(image_path))
     if image is None:
         raise FileNotFoundError(f"读取图片失败：{image_path}")
  
-    preprocess_engine = PreprocessEngine(PREPROCESS)
+    preprocess_engine = PreprocessEngine(PreprocessConfig(**PREPROCESS))
     preprocessed = preprocess_engine.process(image)
     
 

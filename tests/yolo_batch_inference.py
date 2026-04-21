@@ -11,7 +11,7 @@ CONFIDENCE = 0.5
 IOU = 0.45
 DEVICE = "cuda:0"
 PROJECT_DIR = "outputs/yolo_debug"
-RUN_NAME = "cam_0_batch"
+RUN_NAME = "demo"
 
 
 def main() -> None:
