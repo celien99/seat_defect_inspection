@@ -54,7 +54,7 @@ class RoiRefineEngine:
         if valid_mask.sum() == 0:
             valid_mask = (target_mask > 0).astype(np.uint8)
 
-        texture_ready_image, foreground_weight = self._prepare_texture_image(
+        texture_ready_image, texture_valid_mask, foreground_weight = self._prepare_texture_image(
             roi_image,
             valid_mask.astype(np.uint8),
         )
@@ -66,7 +66,7 @@ class RoiRefineEngine:
             texture_ready_image=texture_ready_image,
             target_mask=(target_mask > 0).astype(np.uint8),
             ignore_mask=(ignore_mask > 0).astype(np.uint8),
-            valid_mask=valid_mask.astype(np.uint8),
+            valid_mask=texture_valid_mask.astype(np.uint8),
             foreground_weight=foreground_weight,
             alignment_applied=aligned,
         )
@@ -182,7 +182,7 @@ class RoiRefineEngine:
         self,
         roi_image: Any,
         valid_mask: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         prepared = roi_image.copy()
         safe_mask = _safe_texture_mask(
             valid_mask,
@@ -229,7 +229,7 @@ class RoiRefineEngine:
                 fill_mode=self.config.background_fill_mode,
                 blur_kernel_size=self.config.background_blur_kernel_size,
             )
-        return prepared, foreground_weight
+        return prepared, safe_mask, foreground_weight
 
 
 def _expand_box(

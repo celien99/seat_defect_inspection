@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import numpy as np
 
-from seat_defect_inspection.config import CameraConfig, DetectionConfig, FusionConfig, PatchCoreConfig, QualityGuardConfig, RoiRefineConfig
+from seat_defect_inspection.config import AlignmentConfig, CameraConfig, DetectionConfig, FusionConfig, PatchCoreConfig, QualityGuardConfig, RoiRefineConfig
 from seat_defect_inspection.detection import DetectionService
 from seat_defect_inspection.fusion import fuse_camera_results, should_early_stop_on_ng
 from seat_defect_inspection.patchcore import PatchCoreService, _decide_patchcore_anomaly
 from seat_defect_inspection.quality import ImageQualityGuard
+from seat_defect_inspection.roi import RoiRefineEngine
 from seat_defect_inspection.runtime_config import load_yolo_training_config
-from seat_defect_inspection.schemas import BoundingBox, CameraInspectionResult
-from seat_defect_inspection.service import _CameraPipeline
+from seat_defect_inspection.schemas import BoundingBox, CameraInspectionResult, DetectionResult, DetectionObject, FramePacket, RoiRefineResult, TextureAnomalyResult
+from seat_defect_inspection.service import InspectionService, PreparedCameraSample, _CameraPipeline
 
 
 def _camera_result(camera_id: str, status: str) -> CameraInspectionResult:
@@ -273,17 +275,12 @@ def test_camera_pipeline_quality_uses_roi_instead_of_full_frame() -> None:
     assert prepared.rejection_reason is None
 
 
-def test_full_patchcore_fit_predict_and_reload(tmp_path) -> None:
+def test_handcrafted_patchcore_fit_predict_and_reload(tmp_path) -> None:
     config = PatchCoreConfig(
-        backend="full",
+        backend="handcrafted",
         image_size=64,
         max_memory=32,
         texture_input="lab_l",
-        backbone_name="resnet18",
-        feature_layers=["layer2", "layer3"],
-        backbone_pretrained=False,
-        backbone_device="cpu",
-        feature_pool_kernel_size=3,
         coreset_sampling_ratio=0.5,
     )
     service = PatchCoreService(config)
@@ -297,7 +294,7 @@ def test_full_patchcore_fit_predict_and_reload(tmp_path) -> None:
         samples.append((image, target_mask, ignore_mask))
 
     summary = service.fit(samples)
-    assert summary["backend"] == "full"
+    assert summary["backend"] == "handcrafted"
     assert int(summary["train_sample_count"]) == 3
     assert int(summary["memory_bank_size"]) > 0
 
@@ -305,10 +302,137 @@ def test_full_patchcore_fit_predict_and_reload(tmp_path) -> None:
     assert result.heatmap.shape == samples[0][0].shape[:2]
     assert result.total_patch_count >= result.valid_patch_count > 0
 
-    model_path = tmp_path / "full_patchcore_test.npz"
+    model_path = tmp_path / "handcrafted_patchcore_test.npz"
     service.save(model_path)
     loaded = PatchCoreService.load_bundle(model_path).patchcore
     reloaded_result = loaded.predict(*samples[1])
 
     assert reloaded_result.heatmap.shape == samples[1][0].shape[:2]
     assert reloaded_result.total_patch_count >= reloaded_result.valid_patch_count > 0
+
+
+def test_roi_valid_mask_uses_safe_texture_margin() -> None:
+    image = np.full((64, 64, 3), 127, dtype=np.uint8)
+    detection = DetectionResult(
+        target=DetectionObject(
+            label="seat",
+            confidence=1.0,
+            bounding_box=BoundingBox(8.0, 8.0, 56.0, 56.0),
+        )
+    )
+    engine = RoiRefineEngine(
+        RoiRefineConfig(
+            mask_mode="full",
+            morphology_kernel_size=1,
+            ignore_dilate_kernel_size=1,
+            edge_ignore_pixels=0,
+            safe_margin_erode_kernel_size=7,
+            alignment=AlignmentConfig(
+                enabled=False,
+                output_width=64,
+                output_height=64,
+            ),
+        )
+    )
+
+    roi = engine.refine(image, detection)
+
+    assert roi.valid_mask.sum() > 0
+    assert roi.valid_mask.sum() < roi.target_mask.sum()
+
+
+def test_inspection_service_passes_valid_mask_to_patchcore() -> None:
+    class _FakePatchCore:
+        def __init__(self) -> None:
+            self.target_mask = None
+            self.ignore_mask = None
+
+        def predict(self, _image, target_mask, ignore_mask):
+            self.target_mask = target_mask.copy()
+            self.ignore_mask = ignore_mask.copy()
+            return TextureAnomalyResult(
+                score=0.1,
+                threshold=1.0,
+                is_anomaly=False,
+                heatmap=np.zeros(target_mask.shape, dtype=np.float32),
+                valid_patch_ratio=1.0,
+                valid_patch_count=4,
+                total_patch_count=4,
+            )
+
+    class _FakePipeline:
+        def __init__(self, prepared: PreparedCameraSample) -> None:
+            self.prepared = prepared
+
+        def prepare_image(self, _image):
+            return self.prepared
+
+    camera = CameraConfig(
+        camera_id="cam_0",
+        source="0",
+        patchcore_model_path="model.npz",
+    )
+    service = InspectionService(
+        SimpleNamespace(
+            cameras=[camera],
+            seat_models=[],
+            default_seat_model_id=None,
+            output_json_path="results.json",
+            debug_dir="debug",
+            capture_dir="capture",
+            save_debug_artifacts=False,
+            debug_artifact_mode="standard",
+            capture_retries=1,
+            part_id="seat_demo",
+            fusion=FusionConfig(),
+        )
+    )
+
+    fake_patchcore = _FakePatchCore()
+    service._load_model_bundle = lambda *_args, **_kwargs: SimpleNamespace(  # type: ignore[method-assign]
+        patchcore=fake_patchcore,
+        color_profile=None,
+    )
+    roi = RoiRefineResult(
+        crop_box=BoundingBox(0.0, 0.0, 32.0, 32.0),
+        roi_image=np.zeros((32, 32, 3), dtype=np.uint8),
+        aligned_roi_image=np.zeros((32, 32, 3), dtype=np.uint8),
+        texture_ready_image=np.zeros((32, 32, 3), dtype=np.uint8),
+        target_mask=np.ones((32, 32), dtype=np.uint8),
+        ignore_mask=np.zeros((32, 32), dtype=np.uint8),
+        valid_mask=np.pad(np.ones((16, 16), dtype=np.uint8), 8),
+        foreground_weight=None,
+    )
+    prepared = PreparedCameraSample(
+        quality=None,
+        preprocessed_image=np.zeros((32, 32, 3), dtype=np.uint8),
+        detection=DetectionResult(
+            target=DetectionObject(
+                label="seat",
+                confidence=1.0,
+                bounding_box=BoundingBox(0.0, 0.0, 32.0, 32.0),
+            )
+        ),
+        roi=roi,
+        rejection_reason=None,
+    )
+    frame_packet = FramePacket(
+        camera_id="cam_0",
+        frame_id="frame_0",
+        part_id="part_0",
+        source="0",
+        source_kind="image",
+        timestamp="2026-04-21T00:00:00+08:00",
+        image=np.zeros((32, 32, 3), dtype=np.uint8),
+    )
+
+    result = service._inspect_one_camera(
+        frame_packet,
+        camera,
+        _FakePipeline(prepared),
+        seat_model_id=None,
+    )
+
+    assert result.status == "OK"
+    assert np.array_equal(fake_patchcore.target_mask, roi.valid_mask)
+    assert np.count_nonzero(fake_patchcore.ignore_mask) == 0

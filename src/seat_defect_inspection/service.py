@@ -17,6 +17,7 @@ from media_inputs import infer_source_kind
 from .acquisition import AcquisitionService
 from .color_branch import ColorConsistencyService
 from .config import CameraConfig, InspectionConfig
+from .debug_artifacts import resolve_debug_artifact_names
 from .detection import DetectionService
 from .fusion import fuse_camera_results, should_early_stop_on_ng
 from .patchcore import LoadedModelBundle, PatchCoreService, list_images
@@ -196,8 +197,8 @@ class InspectionService:
                     patchcore_samples.append(
                         (
                             texture_image,
-                            prepared.roi.target_mask,
-                            prepared.roi.ignore_mask,
+                            prepared.roi.valid_mask,
+                            np.zeros_like(prepared.roi.valid_mask, dtype=np.uint8),
                         )
                     )
                     color_samples.append(
@@ -526,8 +527,8 @@ class InspectionService:
         )
         texture_result = model_bundle.patchcore.predict(
             texture_input,
-            prepared.roi.target_mask,
-            prepared.roi.ignore_mask,
+            prepared.roi.valid_mask,
+            np.zeros_like(prepared.roi.valid_mask, dtype=np.uint8),
         )
         if texture_result.valid_patch_ratio < camera.patchcore.min_valid_patch_ratio:
             result = CameraInspectionResult(
@@ -689,6 +690,7 @@ class InspectionService:
         """把当前机位调试产物写入磁盘并返回路径字典。"""
         if not self.config.save_debug_artifacts:
             return {}
+        selected_artifacts = resolve_debug_artifact_names(self.config.debug_artifact_mode)
 
         camera_dir = (
             _build_model_scoped_root(Path(self.config.debug_dir), seat_model_id)
@@ -699,56 +701,121 @@ class InspectionService:
         camera_dir.mkdir(parents=True, exist_ok=True)
         artifact_paths: dict[str, str] = {}
 
-        raw_path = camera_dir / "raw.png"
-        _write_image(raw_path, frame_packet.image)
-        artifact_paths["raw"] = str(raw_path)
+        _save_selected_image(
+            artifact_paths,
+            selected_artifacts,
+            "raw",
+            camera_dir / "raw.png",
+            frame_packet.image,
+        )
 
         if prepared.preprocessed_image is not None:
-            preprocessed_path = camera_dir / "preprocessed.png"
-            _write_image(preprocessed_path, prepared.preprocessed_image)
-            artifact_paths["preprocessed"] = str(preprocessed_path)
-
-            detection_overlay_path = camera_dir / "detections.png"
-            _write_image(
-                detection_overlay_path,
-                _render_detections(prepared.preprocessed_image, prepared.detection),
+            _save_selected_image(
+                artifact_paths,
+                selected_artifacts,
+                "preprocessed",
+                camera_dir / "preprocessed.png",
+                prepared.preprocessed_image,
             )
-            artifact_paths["detections"] = str(detection_overlay_path)
+            if "detections" in selected_artifacts:
+                _save_selected_image(
+                    artifact_paths,
+                    selected_artifacts,
+                    "detections",
+                    camera_dir / "detections.png",
+                    _render_detections(prepared.preprocessed_image, prepared.detection),
+                )
 
         if prepared.roi is not None:
-            roi_path = camera_dir / "roi.png"
-            texture_roi_path = camera_dir / "roi_texture.png"
-            foreground_weight_path = camera_dir / "foreground_weight.png"
-            target_mask_path = camera_dir / "target_mask.png"
-            ignore_mask_path = camera_dir / "ignore_mask.png"
-            valid_mask_path = camera_dir / "valid_mask.png"
-            _write_image(roi_path, prepared.roi.aligned_roi_image)
+            _save_selected_image(
+                artifact_paths,
+                selected_artifacts,
+                "roi",
+                camera_dir / "roi.png",
+                prepared.roi.aligned_roi_image,
+            )
             if prepared.roi.texture_ready_image is not None:
-                _write_image(texture_roi_path, prepared.roi.texture_ready_image)
-                artifact_paths["roi_texture"] = str(texture_roi_path)
+                _save_selected_image(
+                    artifact_paths,
+                    selected_artifacts,
+                    "roi_texture",
+                    camera_dir / "roi_texture.png",
+                    prepared.roi.texture_ready_image,
+                )
             if prepared.roi.foreground_weight is not None:
-                _write_mask(foreground_weight_path, prepared.roi.foreground_weight)
-                artifact_paths["foreground_weight"] = str(foreground_weight_path)
-            _write_mask(target_mask_path, prepared.roi.target_mask)
-            _write_mask(ignore_mask_path, prepared.roi.ignore_mask)
-            _write_mask(valid_mask_path, prepared.roi.valid_mask)
-            artifact_paths["roi"] = str(roi_path)
-            artifact_paths["target_mask"] = str(target_mask_path)
-            artifact_paths["ignore_mask"] = str(ignore_mask_path)
-            artifact_paths["valid_mask"] = str(valid_mask_path)
+                _save_selected_mask(
+                    artifact_paths,
+                    selected_artifacts,
+                    "foreground_weight",
+                    camera_dir / "foreground_weight.png",
+                    prepared.roi.foreground_weight,
+                )
+            _save_selected_mask(
+                artifact_paths,
+                selected_artifacts,
+                "target_mask",
+                camera_dir / "target_mask.png",
+                prepared.roi.target_mask,
+            )
+            _save_selected_mask(
+                artifact_paths,
+                selected_artifacts,
+                "ignore_mask",
+                camera_dir / "ignore_mask.png",
+                prepared.roi.ignore_mask,
+            )
+            _save_selected_mask(
+                artifact_paths,
+                selected_artifacts,
+                "valid_mask",
+                camera_dir / "valid_mask.png",
+                prepared.roi.valid_mask,
+            )
 
         if texture_result is not None and prepared.roi is not None:
-            heatmap_path = camera_dir / "heatmap.png"
-            overlay_path = camera_dir / "overlay.png"
-            _write_mask(heatmap_path, texture_result.heatmap)
-            _write_image(
-                overlay_path,
-                _overlay_heatmap(prepared.roi.aligned_roi_image, texture_result.heatmap),
+            _save_selected_mask(
+                artifact_paths,
+                selected_artifacts,
+                "heatmap",
+                camera_dir / "heatmap.png",
+                texture_result.heatmap,
             )
-            artifact_paths["heatmap"] = str(heatmap_path)
-            artifact_paths["overlay"] = str(overlay_path)
+            if "overlay" in selected_artifacts:
+                _save_selected_image(
+                    artifact_paths,
+                    selected_artifacts,
+                    "overlay",
+                    camera_dir / "overlay.png",
+                    _overlay_heatmap(prepared.roi.aligned_roi_image, texture_result.heatmap),
+                )
 
         return artifact_paths
+
+
+def _save_selected_image(
+    artifact_paths: dict[str, str],
+    selected_artifacts: set[str],
+    key: str,
+    path: Path,
+    image: Any | None,
+) -> None:
+    if image is None or key not in selected_artifacts:
+        return
+    _write_image(path, image)
+    artifact_paths[key] = str(path)
+
+
+def _save_selected_mask(
+    artifact_paths: dict[str, str],
+    selected_artifacts: set[str],
+    key: str,
+    path: Path,
+    mask: np.ndarray | None,
+) -> None:
+    if mask is None or key not in selected_artifacts:
+        return
+    _write_mask(path, mask)
+    artifact_paths[key] = str(path)
 
 
 def train_patchcore_models(

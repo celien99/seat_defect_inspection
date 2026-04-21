@@ -673,7 +673,12 @@ def _load_torch_backbone(config: PatchCoreConfig) -> Any:
         return model
 
     if not config.backbone_pretrained:
-        return builder(weights=None)
+        raise RuntimeError(
+            "完整 PatchCore 不能使用随机初始化 backbone。"
+            " 请设置 patchcore.backbone_pretrained=true，"
+            "或配置 patchcore.backbone_weights_path 指向本地预训练权重，"
+            "或把 patchcore.backend 切换为 handcrafted。"
+        )
 
     torch.hub.set_dir(str(Path.cwd() / ".torch_cache"))
     try:
@@ -683,7 +688,7 @@ def _load_torch_backbone(config: PatchCoreConfig) -> Any:
             "完整 PatchCore 已启用 backbone_pretrained=True，但当前环境无法加载预训练权重。"
             "可选方案：1) 配置 patchcore.backbone_weights_path 指向本地权重；"
             "2) 先把 torchvision 权重缓存到项目 .torch_cache；"
-            "3) 临时将 backbone_pretrained 设为 false 做功能联调。"
+            "3) 临时将 patchcore.backend 切换为 handcrafted 做功能联调。"
         ) from exc
 
 

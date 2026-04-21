@@ -6,6 +6,7 @@
     "debug_dir": "../outputs/seat_defect_inspection/multimodel_debug",
     "capture_dir": "../outputs/seat_defect_inspection/multimodel_capture",
     "save_debug_artifacts": true,
+    "debug_artifact_mode": "standard",
     "capture_retries": 3,
     "fusion": {
       "reject_on_any_reject": true,
@@ -59,7 +60,8 @@
             },
             "roi": {
               "crop_expand_ratio": 0.02,
-              "mask_mode": "grabcut",
+              "mask_mode": "full",
+              "edge_ignore_pixels": 4,
               "texture_denoise_method": "bilateral",
               "texture_illumination_correction": true,
               "texture_illumination_blur_kernel_size": 41,
@@ -71,14 +73,11 @@
               "background_fill_mode": "median"
             },
             "patchcore": {
-              "backend": "full",
-              "backbone_name": "wide_resnet50_2",
-              "feature_layers": ["layer2", "layer3"],
-              "backbone_pretrained": false,
-              "backbone_device": "cpu",
+              "backend": "handcrafted",
               "coreset_sampling_ratio": 0.1,
               "texture_input": "lab_l",
-              "min_valid_patch_ratio": 0.55
+              "min_target_coverage": 0.6,
+              "min_valid_patch_ratio": 0.4
             },
             "color_branch": {
               "enabled": false
@@ -131,7 +130,8 @@
             },
             "roi": {
               "crop_expand_ratio": 0.02,
-              "mask_mode": "grabcut",
+              "mask_mode": "full",
+              "edge_ignore_pixels": 4,
               "texture_denoise_method": "bilateral",
               "texture_illumination_correction": true,
               "texture_illumination_blur_kernel_size": 41,
@@ -143,14 +143,11 @@
               "background_fill_mode": "median"
             },
             "patchcore": {
-              "backend": "full",
-              "backbone_name": "wide_resnet50_2",
-              "feature_layers": ["layer2", "layer3"],
-              "backbone_pretrained": false,
-              "backbone_device": "cpu",
+              "backend": "handcrafted",
               "coreset_sampling_ratio": 0.1,
               "texture_input": "lab_l",
-              "min_valid_patch_ratio": 0.55
+              "min_target_coverage": 0.6,
+              "min_valid_patch_ratio": 0.4
             },
             "color_branch": {
               "enabled": false

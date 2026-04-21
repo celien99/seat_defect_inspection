@@ -5,6 +5,7 @@
     "debug_dir": "../outputs/seat_defect_inspection/mvs_debug",
     "capture_dir": "../outputs/seat_defect_inspection/mvs_capture",
     "save_debug_artifacts": true,
+    "debug_artifact_mode": "standard",
     "capture_retries": 3,
     "fusion": {
       "reject_on_any_reject": true,
@@ -62,10 +63,10 @@
         "roi": {
           "crop_expand_ratio": 0.02,
           "crop_shrink_ratio": 0.0,
-          "mask_mode": "grabcut",
+          "mask_mode": "full",
           "morphology_kernel_size": 5,
           "ignore_dilate_kernel_size": 9,
-          "edge_ignore_pixels": 8,
+          "edge_ignore_pixels": 4,
           "apply_texture_clahe": true,
           "texture_denoise_method": "bilateral",
           "texture_illumination_correction": true,
@@ -84,21 +85,17 @@
           }
         },
         "patchcore": {
-          "backend": "full",
+          "backend": "handcrafted",
           "image_size": 256,
           "patch_size": 32,
           "stride": 16,
           "max_memory": 512,
           "threshold_quantile": 0.99,
-          "backbone_name": "wide_resnet50_2",
-          "feature_layers": ["layer2", "layer3"],
-          "backbone_pretrained": false,
-          "backbone_device": "cpu",
           "coreset_sampling_ratio": 0.1,
           "texture_input": "lab_l",
-          "min_target_coverage": 0.8,
+          "min_target_coverage": 0.6,
           "max_ignore_overlap": 0.1,
-          "min_valid_patch_ratio": 0.55
+          "min_valid_patch_ratio": 0.4
         },
         "color_branch": {
           "enabled": false,
@@ -155,10 +152,10 @@
         "roi": {
           "crop_expand_ratio": 0.02,
           "crop_shrink_ratio": 0.0,
-          "mask_mode": "grabcut",
+          "mask_mode": "full",
           "morphology_kernel_size": 5,
           "ignore_dilate_kernel_size": 9,
-          "edge_ignore_pixels": 8,
+          "edge_ignore_pixels": 4,
           "apply_texture_clahe": true,
           "texture_denoise_method": "bilateral",
           "texture_illumination_correction": true,
@@ -177,21 +174,17 @@
           }
         },
         "patchcore": {
-          "backend": "full",
+          "backend": "handcrafted",
           "image_size": 256,
           "patch_size": 32,
           "stride": 16,
           "max_memory": 512,
           "threshold_quantile": 0.99,
-          "backbone_name": "wide_resnet50_2",
-          "feature_layers": ["layer2", "layer3"],
-          "backbone_pretrained": false,
-          "backbone_device": "cpu",
           "coreset_sampling_ratio": 0.1,
           "texture_input": "lab_l",
-          "min_target_coverage": 0.8,
+          "min_target_coverage": 0.6,
           "max_ignore_overlap": 0.1,
-          "min_valid_patch_ratio": 0.55
+          "min_valid_patch_ratio": 0.4
         },
         "color_branch": {
           "enabled": false,
@@ -248,10 +241,10 @@
         "roi": {
           "crop_expand_ratio": 0.02,
           "crop_shrink_ratio": 0.0,
-          "mask_mode": "grabcut",
+          "mask_mode": "full",
           "morphology_kernel_size": 5,
           "ignore_dilate_kernel_size": 9,
-          "edge_ignore_pixels": 8,
+          "edge_ignore_pixels": 4,
           "apply_texture_clahe": true,
           "texture_denoise_method": "bilateral",
           "texture_illumination_correction": true,
@@ -270,21 +263,17 @@
           }
         },
         "patchcore": {
-          "backend": "full",
+          "backend": "handcrafted",
           "image_size": 256,
           "patch_size": 32,
           "stride": 16,
           "max_memory": 512,
           "threshold_quantile": 0.99,
-          "backbone_name": "wide_resnet50_2",
-          "feature_layers": ["layer2", "layer3"],
-          "backbone_pretrained": false,
-          "backbone_device": "cpu",
           "coreset_sampling_ratio": 0.1,
           "texture_input": "lab_l",
-          "min_target_coverage": 0.8,
+          "min_target_coverage": 0.6,
           "max_ignore_overlap": 0.1,
-          "min_valid_patch_ratio": 0.55
+          "min_valid_patch_ratio": 0.4
         },
         "color_branch": {
           "enabled": false,
@@ -341,10 +330,10 @@
         "roi": {
           "crop_expand_ratio": 0.02,
           "crop_shrink_ratio": 0.0,
-          "mask_mode": "grabcut",
+          "mask_mode": "full",
           "morphology_kernel_size": 5,
           "ignore_dilate_kernel_size": 9,
-          "edge_ignore_pixels": 8,
+          "edge_ignore_pixels": 4,
           "apply_texture_clahe": true,
           "texture_denoise_method": "bilateral",
           "texture_illumination_correction": true,
@@ -363,21 +352,17 @@
           }
         },
         "patchcore": {
-          "backend": "full",
+          "backend": "handcrafted",
           "image_size": 256,
           "patch_size": 32,
           "stride": 16,
           "max_memory": 512,
           "threshold_quantile": 0.99,
-          "backbone_name": "wide_resnet50_2",
-          "feature_layers": ["layer2", "layer3"],
-          "backbone_pretrained": false,
-          "backbone_device": "cpu",
           "coreset_sampling_ratio": 0.1,
           "texture_input": "lab_l",
-          "min_target_coverage": 0.8,
+          "min_target_coverage": 0.6,
           "max_ignore_overlap": 0.1,
-          "min_valid_patch_ratio": 0.55
+          "min_valid_patch_ratio": 0.4
         },
         "color_branch": {
           "enabled": false,
@@ -434,10 +419,10 @@
         "roi": {
           "crop_expand_ratio": 0.02,
           "crop_shrink_ratio": 0.0,
-          "mask_mode": "grabcut",
+          "mask_mode": "full",
           "morphology_kernel_size": 5,
           "ignore_dilate_kernel_size": 9,
-          "edge_ignore_pixels": 8,
+          "edge_ignore_pixels": 4,
           "apply_texture_clahe": true,
           "texture_denoise_method": "bilateral",
           "texture_illumination_correction": true,
@@ -456,21 +441,17 @@
           }
         },
         "patchcore": {
-          "backend": "full",
+          "backend": "handcrafted",
           "image_size": 256,
           "patch_size": 32,
           "stride": 16,
           "max_memory": 512,
           "threshold_quantile": 0.99,
-          "backbone_name": "wide_resnet50_2",
-          "feature_layers": ["layer2", "layer3"],
-          "backbone_pretrained": false,
-          "backbone_device": "cpu",
           "coreset_sampling_ratio": 0.1,
           "texture_input": "lab_l",
-          "min_target_coverage": 0.8,
+          "min_target_coverage": 0.6,
           "max_ignore_overlap": 0.1,
-          "min_valid_patch_ratio": 0.55
+          "min_valid_patch_ratio": 0.4
         },
         "color_branch": {
           "enabled": false,

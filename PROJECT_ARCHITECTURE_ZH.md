@@ -419,11 +419,13 @@ cli.main
    - `RoiRefineEngine.refine`
 6. 若某一步失败，直接返回 `REJECT` 类结果。
 7. 若准备成功，调用 `_load_model_bundle` 加载该机位模型。
-8. 调用 `PatchCoreService.predict(texture_input, target_mask, ignore_mask)`。
+8. 调用 `PatchCoreService.predict(texture_input, valid_mask, zeros_ignore_mask)`。
 9. 若启用了颜色分支且未开启颜色不敏感模式，再调用：
    - `ColorConsistencyService.predict(aligned_roi_image, valid_mask)`
 10. 根据纹理分支与颜色分支结果生成单机位 `OK / NG / REJECT`。
-11. 调用 `_save_artifacts` 保存 `raw.png preprocessed.png detections.png roi.png roi_texture.png target_mask.png heatmap.png overlay.png` 等调试图。
+11. 调用 `_save_artifacts` 按 `debug_artifact_mode` 保存调试图。
+    默认 `standard` 仅输出 `raw.png detections.png roi.png overlay.png`；
+    `full` 会额外输出 `preprocessed.png roi_texture.png foreground_weight.png target_mask.png ignore_mask.png valid_mask.png heatmap.png`。
 12. 所有机位处理完成后，调用 `fuse_camera_results`。
 13. 最终结果通过 `export_inspection_report` 输出。
 
@@ -454,7 +456,7 @@ cli.main
    - YOLO/静态框
    - ROI 精修
 6. 成功样本生成两组数据：
-   - `patchcore_samples = (texture_image, target_mask, ignore_mask)`
+   - `patchcore_samples = (texture_image, valid_mask, zeros_ignore_mask)`
    - `color_samples = (aligned_roi_image, valid_mask)`
 7. 调用 `_build_patchcore_service` 创建 `PatchCoreService`。
 8. 调用 `PatchCoreService.fit` 训练纹理模型。
@@ -658,8 +660,14 @@ cli.main
 关键原则：
 
 1. 先确认训练阶段是否复用了 `_CameraPipeline.prepare_image`
-2. 再确认 `texture_ready_image` 是否发生变化
+2. 再确认 `texture_ready_image` 和 `valid_mask` 是否发生变化
 3. 最后确认模型路径和 `seat_model_id` 是否选对
+
+补充建议：
+
+1. 排查 ROI 或 PatchCore 漂移时，先把 `debug_artifact_mode` 切到 `full`
+2. 优先查看 `roi.png`、`roi_texture.png`、`valid_mask.png`、`heatmap.png`、`overlay.png`
+3. 只要 ROI 掩膜、`valid_mask` 生成逻辑或纹理增强链路发生变化，就必须重训对应机位的 PatchCore 模型
 
 ## 11. 重新评估后的结论
 

@@ -1,5 +1,7 @@
 """座椅缺陷检测独立项目。"""
 
+from importlib import import_module
+
 from .config import (
     AlignmentConfig,
     CameraConfig,
@@ -16,13 +18,6 @@ from .config import (
 )
 from .runtime_config import load_config, load_yolo_training_config
 from .schemas import BoundingBox, CaptureRecord, CaptureSummary, InspectionResult
-from .service import (
-    InspectionService,
-    capture_samples,
-    run_inspection,
-    train_patchcore_models,
-)
-from .yolo_training import train_yolo_model
 
 __all__ = [
     "AlignmentConfig",
@@ -49,3 +44,20 @@ __all__ = [
     "train_patchcore_models",
     "train_yolo_model",
 ]
+
+_LAZY_EXPORTS = {
+    "InspectionService": (".service", "InspectionService"),
+    "capture_samples": (".service", "capture_samples"),
+    "run_inspection": (".service", "run_inspection"),
+    "train_patchcore_models": (".service", "train_patchcore_models"),
+    "train_yolo_model": (".yolo_training", "train_yolo_model"),
+}
+
+
+def __getattr__(name: str):
+    if name not in _LAZY_EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module_name, attr_name = _LAZY_EXPORTS[name]
+    value = getattr(import_module(module_name, __name__), attr_name)
+    globals()[name] = value
+    return value

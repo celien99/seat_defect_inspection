@@ -74,6 +74,8 @@ seat-defect-inspection inspect \
 3. 单独准备 YOLO 数据集并执行 `train-yolo`。
 4. 把每个机位的 `patchcore_model_path` 和 YOLO `model_path` 配好后，执行 `inspect`。
 
+如果你已经训练过 PatchCore 模型，而最近又修改了 ROI 掩膜、`valid_mask` 相关参数、纹理增强链路，或把 `patchcore.backend` 从 `full` 随机 backbone 改成 `handcrafted`，必须重新执行 `train-patchcore`。旧模型对应的训练分布已经失效，继续拿来跑 `inspect` 没有参考价值。
+
 如果现场还没有 YOLO 权重，可以先把 `detection.model_path` 设为 `null`，继续使用 `fallback_box` 走完整流程。
 
 ## 目录约定
@@ -291,9 +293,9 @@ seat-defect-inspection train-yolo --config configs/seat_defect_inspection.multim
 当前项目推荐把 OpenCV 当作真正的中间层，而不是只做一层简单 resize/blur。现阶段默认链路已经增强为：
 
 - 原图 -> 去噪 -> 灰世界白平衡 -> 大核光照校正 -> CLAHE -> YOLO
-- YOLO ROI -> GrabCut/分割掩膜 -> 掩膜清理 -> ROI 对齐 -> ROI 局部 CLAHE -> ROI 光照展平 -> 双边滤波 -> Scharr 纹理增强 -> 前景羽化 -> 背景压制 -> PatchCore
+- YOLO ROI -> 分割掩膜 / full mask / GrabCut -> 掩膜清理 -> ROI 对齐 -> ROI 局部 CLAHE -> ROI 光照展平 -> 双边滤波 -> Scharr 纹理增强 -> 前景羽化 -> 背景压制 -> PatchCore
 
-调试目录中除了原有的 `roi.png`、`roi_texture.png`、`target_mask.png` 之外，还会新增 `foreground_weight.png`，用于观察 ROI 边界是否被平滑压制到位。
+把 `debug_artifact_mode` 设为 `full` 时，调试目录会额外输出 `foreground_weight.png`，用于观察 ROI 边界是否被平滑压制到位。
 
 如果你调整了这些 OpenCV 链路参数，尤其是 ROI 纹理增强和背景抑制部分，建议重新训练对应机位的 PatchCore 模型，避免训练分布和推理分布不一致。
 
@@ -308,11 +310,11 @@ seat-defect-inspection train-yolo --config configs/seat_defect_inspection.multim
 - `patchcore_model_path`
   当前机位 PatchCore 模型输出路径
 - `patchcore.backend`
-  推荐设为 `full`，启用完整 PatchCore；只有在无 `torch/torchvision` 环境下才建议回退到 `handcrafted`
+  默认建议先用 `handcrafted` 跑通 ROI 和 PatchCore 闭环；只有在已经准备好 ImageNet 预训练权重或本地 backbone 权重时，才建议切到 `full`
 - `patchcore.backbone_name` / `patchcore.feature_layers`
   完整 PatchCore 的 backbone 和取特征层，当前推荐 `wide_resnet50_2 + [layer2, layer3]`
 - `patchcore.backbone_weights_path` / `patchcore.backbone_pretrained`
-  完整 PatchCore 的特征权重来源。正式产线建议提供本地 ImageNet 预训练权重或预先缓存 torchvision 权重
+  完整 PatchCore 的特征权重来源。正式产线建议提供本地 ImageNet 预训练权重或预先缓存 torchvision 权重；不要使用随机初始化 backbone 做 `full` 后端训练
 - `detection.model_path`
   YOLO 权重路径。没有时可先设为 `null`
 - `detection.fallback_box`
@@ -327,6 +329,8 @@ seat-defect-inspection train-yolo --config configs/seat_defect_inspection.multim
   是否对 ROI 外区域做背景抑制
 - `roi.background_fill_mode`
   ROI 外背景填充策略，推荐 `median` 或 `blur`
+- `roi.mask_mode`
+  当前更推荐先用 `full` 跑稳整条链路；只有在检测框背景干扰明显且没有可用分割掩膜时，再尝试 `grabcut`
 - `roi.texture_denoise_method`
   纹理专用去噪方式，推荐 `bilateral`
 - `roi.texture_illumination_correction`
@@ -348,6 +352,12 @@ seat-defect-inspection train-yolo --config configs/seat_defect_inspection.multim
   最终检测结果 JSON
 - `debug_dir`
   检测调试图目录
+- `save_debug_artifacts`
+  是否保存调试图；设为 `false` 时不输出任何中间图
+- `debug_artifact_mode`
+  调试图档位；`standard` 默认只保留 `raw / detections / roi / overlay`，`full` 额外输出 `preprocessed / roi_texture / foreground_weight / target_mask / ignore_mask / valid_mask / heatmap`
+
+排查 ROI 或 PatchCore 不稳定时，先切到 `debug_artifact_mode=full`，重点看 `roi.png`、`roi_texture.png`、`valid_mask.png`、`heatmap.png`、`overlay.png` 这 5 张图；只看最终 `overlay.png` 很容易误判问题出在模型，而不是掩膜或纹理输入。
 
 ## 当前实现边界
 
