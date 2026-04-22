@@ -71,6 +71,7 @@ seat-defect-inspection inspect \
 
 1. 先用 `capture` 采集正常样本。
 2. 正常样本进入各机位 `train_good_dir`，再执行 `train-patchcore`。
+   注意：`train_good_dir` 保存的是相机原图，真正训练 PatchCore 时仍会复用正式链路，经过 OpenCV、YOLO、ROI 和纹理准备后再进入模型。
 3. 单独准备 YOLO 数据集并执行 `train-yolo`。
 4. 把每个机位的 `patchcore_model_path` 和 YOLO `model_path` 配好后，执行 `inspect`。
 
@@ -90,6 +91,8 @@ seat-defect-inspection inspect \
   `capture` 命令采图输出
 - `outputs/seat_defect_inspection/debug`
   `inspect` 过程中的调试图输出
+- `<output_json_path 同目录>/<output_json_path.stem>_history`
+  `inspect` 历史结果归档目录；`output_json_path` 继续保留为最新结果
 - `outputs/seat_defect_inspection/yolo_training`
   YOLO 训练输出
 
@@ -351,15 +354,15 @@ seat-defect-inspection train-yolo --config configs/seat_defect_inspection.multim
 - `capture_dir`
   采图输出目录
 - `output_json_path`
-  最终检测结果 JSON
+  最新一次检测结果 JSON；同目录下还会自动归档历史结果，避免被覆盖
 - `debug_dir`
   检测调试图目录
 - `save_debug_artifacts`
   是否保存调试图；设为 `false` 时不输出任何中间图
 - `debug_artifact_mode`
-  调试图档位；`standard` 默认只保留 `raw / detections / roi / overlay`，`full` 额外输出 `preprocessed / roi_texture / foreground_weight / target_mask / ignore_mask / valid_mask / heatmap`
+  调试图档位；`standard` 默认保留 `raw / detections / roi / patchcore_input / overlay`，`full` 额外输出 `preprocessed / roi_texture / foreground_weight / target_mask / ignore_mask / valid_mask / heatmap`
 
-排查 ROI 或 PatchCore 不稳定时，先切到 `debug_artifact_mode=full`，重点看 `roi.png`、`roi_texture.png`、`valid_mask.png`、`heatmap.png`、`overlay.png` 这 5 张图；只看最终 `overlay.png` 很容易误判问题出在模型，而不是掩膜或纹理输入。
+排查 ROI 或 PatchCore 不稳定时，先切到 `debug_artifact_mode=full`，重点看 `roi.png`、`roi_texture.png`、`patchcore_input.png`、`valid_mask.png`、`heatmap.png`、`overlay.png` 这几张图；其中 `patchcore_input.png` 才是 PatchCore 真正吃进去的图。
 
 当前 `train-yolo` 固定使用 `yolo11m-seg.pt` 这条分割训练链路，数据集标签也必须是分割多边形格式，而不是普通检测框格式。命令启动前会先做一次基础校验，尽量把错误拦在训练前。
 

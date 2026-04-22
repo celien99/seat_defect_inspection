@@ -9,6 +9,7 @@ _DEBUG_ARTIFACT_GROUPS: dict[str, tuple[str, ...]] = {
         "raw",
         "detections",
         "roi",
+        "patchcore_input",
         "overlay",
     ),
     "full": (
@@ -17,6 +18,7 @@ _DEBUG_ARTIFACT_GROUPS: dict[str, tuple[str, ...]] = {
         "detections",
         "roi",
         "roi_texture",
+        "patchcore_input",
         "foreground_weight",
         "target_mask",
         "ignore_mask",

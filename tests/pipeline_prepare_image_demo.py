@@ -4,7 +4,7 @@ from pathlib import Path
 
 import cv2
 
-from demo_utils import write_image, write_mask
+from demo_utils import ensure_raw_input_path, write_image, write_mask
 from seat_defect_inspection.config import (
     AlignmentConfig,
     CameraConfig,
@@ -20,7 +20,7 @@ from seat_defect_inspection.service import _CameraPipeline, _render_detections
 # 1. 单张图片进入当前项目链路
 # 2. YOLO 识别成功后，OpenCV 中间层处理结果是什么
 # 3. ROI 精修后输出了哪些中间结果
-IMAGE_PATH = "runs/segment/outputs/yolo_debug/demo_preprocessed/preprocessed.jpg"
+IMAGE_PATH = "datasets/seat_defect/images/val/1.png"
 YOLO_MODEL_PATH: str | None = "best.pt"
 DEVICE = "cpu"
 OUTPUT_DIR = "outputs/pipeline_prepare_image_demo"
@@ -118,7 +118,7 @@ def _build_camera() -> CameraConfig:
 
 
 def main() -> None:
-    image_path = Path(IMAGE_PATH)
+    image_path = ensure_raw_input_path(Path(IMAGE_PATH))
     image = cv2.imread(str(image_path))
     if image is None:
         raise FileNotFoundError(f"读取图片失败：{image_path}")

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from seat_defect_inspection.config import AlignmentConfig, CameraConfig, DetectionConfig, FusionConfig, PatchCoreConfig, QualityGuardConfig, RoiRefineConfig
+from seat_defect_inspection.config import AlignmentConfig, CameraConfig, ColorBranchConfig, DetectionConfig, FusionConfig, PatchCoreConfig, QualityGuardConfig, RoiRefineConfig
 from seat_defect_inspection.detection import DetectionService
 from seat_defect_inspection.fusion import fuse_camera_results, should_early_stop_on_ng
 from seat_defect_inspection.patchcore import PatchCoreService, _decide_patchcore_anomaly
@@ -236,6 +236,58 @@ def test_legacy_patchcore_bundle_without_color_profile_loads(tmp_path) -> None:
 
     assert bundle.color_profile is None
     assert bundle.patchcore.threshold == 1.0
+
+
+def test_inspection_service_rejects_missing_color_profile_when_color_branch_enabled(tmp_path) -> None:
+    model_path = tmp_path / "legacy_patchcore.npz"
+    np.savez_compressed(
+        model_path,
+        memory_bank=np.zeros((4, 8), dtype=np.float32),
+        feature_mean=np.zeros((8,), dtype=np.float32),
+        feature_std=np.ones((8,), dtype=np.float32),
+        meta_json=np.array(
+            json.dumps(
+                {
+                    "image_size": 256,
+                    "patch_size": 32,
+                    "stride": 16,
+                    "max_memory": 128,
+                    "threshold_quantile": 0.99,
+                    "threshold": 1.0,
+                }
+            )
+        ),
+    )
+
+    camera = CameraConfig(
+        camera_id="cam_0",
+        source="0",
+        patchcore_model_path=str(model_path),
+        color_branch=ColorBranchConfig(enabled=True),
+    )
+    service = InspectionService(
+        SimpleNamespace(
+            cameras=[camera],
+            seat_models=[],
+            default_seat_model_id=None,
+            output_json_path="results.json",
+            debug_dir="debug",
+            capture_dir="capture",
+            save_debug_artifacts=False,
+            debug_artifact_mode="standard",
+            capture_retries=1,
+            part_id="seat_demo",
+            fusion=FusionConfig(),
+        )
+    )
+
+    try:
+        service._load_model_bundle(camera, None)
+    except RuntimeError as exc:
+        assert "颜色分支" in str(exc)
+        assert "train-patchcore" in str(exc)
+        return
+    raise AssertionError("expected RuntimeError for missing color profile")
 
 
 def test_camera_pipeline_quality_uses_roi_instead_of_full_frame() -> None:

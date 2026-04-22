@@ -189,11 +189,7 @@ class InspectionService:
                         skipped_reason_counter[prepared.rejection_reason or "roi_missing"] += 1
                         continue
 
-                    texture_image = (
-                        prepared.roi.texture_ready_image
-                        if prepared.roi.texture_ready_image is not None
-                        else prepared.roi.aligned_roi_image
-                    )
+                    texture_image = _select_patchcore_input(prepared.roi)
                     patchcore_samples.append(
                         (
                             texture_image,
@@ -520,11 +516,7 @@ class InspectionService:
 
         # 纹理分支始终优先，颜色分支是可选叠加分支。
         model_bundle = self._load_model_bundle(camera, seat_model_id)
-        texture_input = (
-            prepared.roi.texture_ready_image
-            if prepared.roi.texture_ready_image is not None
-            else prepared.roi.aligned_roi_image
-        )
+        texture_input = _select_patchcore_input(prepared.roi)
         texture_result = model_bundle.patchcore.predict(
             texture_input,
             prepared.roi.valid_mask,
@@ -661,6 +653,16 @@ class InspectionService:
         if bundle is not None:
             return bundle
         loaded = PatchCoreService.load_bundle(camera.patchcore_model_path)
+        # 颜色分支一旦在配置中声明为启用，就不能在运行时静默退化。
+        if (
+            camera.color_branch.enabled
+            and not camera.color_insensitive_mode
+            and loaded.color_profile is None
+        ):
+            raise RuntimeError(
+                f"机位 `{camera.camera_id}` 已启用颜色分支，但模型包缺少颜色参考分布。"
+                " 请重新执行 train-patchcore，或关闭颜色分支 / 启用 color_insensitive_mode。"
+            )
         self._model_cache[cache_key] = loaded
         return loaded
 
@@ -742,6 +744,14 @@ class InspectionService:
                     camera_dir / "roi_texture.png",
                     prepared.roi.texture_ready_image,
                 )
+            patchcore_input = _select_patchcore_input(prepared.roi)
+            _save_selected_image(
+                artifact_paths,
+                selected_artifacts,
+                "patchcore_input",
+                camera_dir / "patchcore_input.png",
+                patchcore_input,
+            )
             if prepared.roi.foreground_weight is not None:
                 _save_selected_mask(
                     artifact_paths,
@@ -786,7 +796,7 @@ class InspectionService:
                     selected_artifacts,
                     "overlay",
                     camera_dir / "overlay.png",
-                    _overlay_heatmap(prepared.roi.aligned_roi_image, texture_result.heatmap),
+                    _overlay_heatmap(_select_patchcore_input(prepared.roi), texture_result.heatmap),
                 )
 
         return artifact_paths
@@ -803,6 +813,15 @@ def _save_selected_image(
         return
     _write_image(path, image)
     artifact_paths[key] = str(path)
+
+
+def _select_patchcore_input(roi) -> Any:
+    """统一返回 PatchCore 真正消费的图像，避免调试图与推理输入脱节。"""
+    return (
+        roi.texture_ready_image
+        if roi.texture_ready_image is not None
+        else roi.aligned_roi_image
+    )
 
 
 def _save_selected_mask(

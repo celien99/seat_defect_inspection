@@ -34,6 +34,7 @@ seat-defect-inspection inspect --config configs/seat_defect_inspection.mvs.json 
 
 1. Capture normal samples with `capture`.
 2. Save or copy them into each camera `train_good_dir`.
+   Note: `train_good_dir` stores raw camera images, but `train-patchcore` still replays the production preprocessing, YOLO, ROI, and texture-preparation pipeline before fitting PatchCore.
 3. Run `train-patchcore`.
 4. Prepare a YOLO dataset and run `train-yolo`.
 5. Configure the resulting weights and run `inspect`.
@@ -46,4 +47,5 @@ The project now standardizes on `yolo11m-seg.pt`. YOLO segmentation masks are co
 - `models/seat_defect_inspection/<camera_id>_patchcore.npz`
 - `outputs/seat_defect_inspection/capture`
 - `outputs/seat_defect_inspection/debug`
+- `<output_json_path sibling>/<output_json_path.stem>_history`
 - `outputs/seat_defect_inspection/yolo_training`

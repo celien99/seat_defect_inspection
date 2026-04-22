@@ -8,6 +8,7 @@ def test_standard_artifact_mode_keeps_only_core_outputs() -> None:
         "raw",
         "detections",
         "roi",
+        "patchcore_input",
         "overlay",
     }
 
@@ -19,6 +20,7 @@ def test_full_artifact_mode_keeps_all_debug_outputs() -> None:
         "detections",
         "roi",
         "roi_texture",
+        "patchcore_input",
         "foreground_weight",
         "target_mask",
         "ignore_mask",

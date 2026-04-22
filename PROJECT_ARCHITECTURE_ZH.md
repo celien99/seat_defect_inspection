@@ -120,11 +120,10 @@ flowchart TD
 
 | 符号 | 类型 | 作用 | 上游调用 | 下游调用 |
 | --- | --- | --- | --- | --- |
-| `load_config` | 函数 | 加载主检测配置 | CLI | `_build_camera_config` `_build_seat_model_config` |
-| `load_yolo_training_config` | 函数 | 加载 YOLO 训练配置 | CLI | `_select_seat_model_payload` `_build_yolo_training_config` |
-| `_build_seat_model_config` | 函数 | 构造 `SeatModelConfig` | `load_config` | `_build_camera_config` |
-| `_build_yolo_training_config` | 函数 | 构造 `YoloTrainingConfig` | `load_yolo_training_config` | `_resolve_local_path` |
-| `_build_camera_config` | 函数 | 构造 `CameraConfig` | `load_config` | `_build_box` |
+| `load_config` | 函数 | 加载主检测配置 | CLI | `_load_inspection_payload` `_build_dataclass` |
+| `load_yolo_training_config` | 函数 | 加载 YOLO 训练配置 | CLI | `_resolve_yolo_training_payload` `_build_dataclass` |
+| `_build_dataclass` | 函数 | 按 dataclass 结构递归构造配置对象 | `load_config` `load_yolo_training_config` | `_normalize_payload` `_coerce_value` |
+| `_normalize_payload` | 函数 | 处理默认值、路径与 seat_model_id 注入 | `_build_dataclass` | `_resolve_*` 系列 |
 | `_select_seat_model_payload` | 函数 | 选择具体型号配置块 | `load_yolo_training_config` | 无 |
 | `_resolve_*` 系列 | 函数 | 路径和 source 解析 | 构造配置时 | 无 |
 
@@ -424,10 +423,10 @@ cli.main
    - `ColorConsistencyService.predict(aligned_roi_image, valid_mask)`
 10. 根据纹理分支与颜色分支结果生成单机位 `OK / NG / REJECT`。
 11. 调用 `_save_artifacts` 按 `debug_artifact_mode` 保存调试图。
-    默认 `standard` 仅输出 `raw.png detections.png roi.png overlay.png`；
+    默认 `standard` 输出 `raw.png detections.png roi.png patchcore_input.png overlay.png`；
     `full` 会额外输出 `preprocessed.png roi_texture.png foreground_weight.png target_mask.png ignore_mask.png valid_mask.png heatmap.png`。
 12. 所有机位处理完成后，调用 `fuse_camera_results`。
-13. 最终结果通过 `export_inspection_report` 输出。
+13. 最终结果通过 `export_inspection_report` 输出；固定路径保留最新结果，历史结果按型号/工件/帧号归档。
 
 ### 6.3 `train-patchcore` 训练流程
 
@@ -666,7 +665,7 @@ cli.main
 补充建议：
 
 1. 排查 ROI 或 PatchCore 漂移时，先把 `debug_artifact_mode` 切到 `full`
-2. 优先查看 `roi.png`、`roi_texture.png`、`valid_mask.png`、`heatmap.png`、`overlay.png`
+2. 优先查看 `roi.png`、`roi_texture.png`、`patchcore_input.png`、`valid_mask.png`、`heatmap.png`、`overlay.png`
 3. 只要 ROI 掩膜、`valid_mask` 生成逻辑或纹理增强链路发生变化，就必须重训对应机位的 PatchCore 模型
 
 ## 11. 重新评估后的结论

@@ -56,12 +56,23 @@ def load_camera(
 def resolve_image_path(*, image_path: str | None, image_dir: str) -> Path:
     # 不指定单张图片时，默认取目录里的第一张。
     if image_path:
-        return Path(image_path)
+        return ensure_raw_input_path(Path(image_path))
 
     image_paths = list_images(Path(image_dir))
     if not image_paths:
         raise FileNotFoundError(f"没有找到图片：{image_dir}")
-    return image_paths[0]
+    return ensure_raw_input_path(image_paths[0])
+
+
+def ensure_raw_input_path(image_path: Path | str) -> Path:
+    # demo 只能接原始输入图，不能直接吃 yolo_debug 这类已经叠加可视化的产物。
+    path = Path(image_path)
+    if "yolo_debug" in path.as_posix():
+        raise ValueError(
+            f"禁止把 YOLO 调试可视化结果当作链路输入：{path}。"
+            " 请改用相机原图或数据集原图。"
+        )
+    return path
 
 
 def write_image(path: Path, image: np.ndarray) -> None:

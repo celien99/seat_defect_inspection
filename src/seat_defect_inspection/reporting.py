@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import re
+from datetime import datetime
 from pathlib import Path
 
 from .schemas import (
@@ -28,6 +30,10 @@ def export_inspection_report(result: InspectionResult, output_path: str) -> Path
         "camera_results": [_camera_result_to_dict(item) for item in result.camera_results],
     }
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    # 固定路径继续保留为“最新结果”，同时按型号/工件/帧号归档，避免历史结果被覆盖。
+    archive_path = _build_inspection_archive_path(path, result)
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    archive_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     return path
 
 
@@ -74,7 +80,8 @@ def _camera_result_to_dict(result: CameraInspectionResult) -> dict:
             if result.quality is not None
             else None
         ),
-        "target_box": _box_to_dict(result.crop_box),
+        "target_box": _resolve_target_box(result),
+        "crop_box": _box_to_dict(result.crop_box),
         "texture_result": (
             {
                 "score": result.texture_result.score,
@@ -133,3 +140,24 @@ def _box_to_dict(box: BoundingBox | None) -> dict[str, float] | None:
         "x2": box.x2,
         "y2": box.y2,
     }
+
+
+def _resolve_target_box(result: CameraInspectionResult) -> dict[str, float] | None:
+    detection = result.detection
+    if detection is None or detection.target is None:
+        return None
+    return _box_to_dict(detection.target.bounding_box)
+
+
+def _build_inspection_archive_path(base_path: Path, result: InspectionResult) -> Path:
+    history_root = base_path.parent / f"{base_path.stem}_history"
+    seat_model_dir = _sanitize_path_component(result.seat_model_id or "default")
+    part_dir = _sanitize_path_component(result.part_id or "unknown_part")
+    report_id = result.frame_id or result.timestamp or datetime.now().astimezone().strftime("%Y%m%d_%H%M%S_%f")
+    filename = f"{_sanitize_path_component(report_id)}.json"
+    return history_root / seat_model_dir / part_dir / filename
+
+
+def _sanitize_path_component(value: str) -> str:
+    normalized = re.sub(r"[\\\\/:*?\"<>|]+", "_", value).strip()
+    return normalized or "unknown"

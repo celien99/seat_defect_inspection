@@ -6,7 +6,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from demo_utils import write_image, write_mask
+from demo_utils import ensure_raw_input_path, write_image, write_mask
 from seat_defect_inspection.config import (
     AlignmentConfig,
     CameraConfig,
@@ -24,9 +24,9 @@ from seat_defect_inspection.service import _CameraPipeline, _overlay_heatmap, _r
 # 1. 单张图片进入当前项目里的 YOLO + OpenCV + ROI 链路
 # 2. 把处理后的结果交给 PatchCore 模型
 # 3. 如果本地没有 PatchCore 模型，就先用少量样本拟合一个 demo 模型
-IMAGE_PATH = "runs/segment/outputs/yolo_debug/demo_preprocessed/preprocessed.jpg"
+IMAGE_PATH = "datasets/seat_defect/images/val/1.png"
 FALLBACK_IMAGE_PATHS = [
-    "runs/segment/outputs/yolo_debug/demo_preprocessed/preprocessed.jpg",
+    "datasets/seat_defect/images/val/2.png",
 ]
 YOLO_MODEL_PATH: str | None = "best.pt"
 PATCHCORE_MODEL_PATH = "outputs/patchcore_single_image_inference/patchcore_demo_model.npz"
@@ -149,7 +149,7 @@ def _build_camera() -> CameraConfig:
 def _resolve_image_path() -> Path:
     candidate_paths = [IMAGE_PATH, *FALLBACK_IMAGE_PATHS]
     for candidate in candidate_paths:
-        path = Path(candidate)
+        path = ensure_raw_input_path(Path(candidate))
         if path.exists():
             return path
     raise FileNotFoundError(f"读取图片失败，候选路径都不存在：{candidate_paths}")
@@ -168,7 +168,7 @@ def _resolve_patchcore_service(
     skipped_image_paths: list[str] = []
 
     for train_image_path_str in TRAIN_IMAGE_PATHS:
-        train_image_path = Path(train_image_path_str)
+        train_image_path = ensure_raw_input_path(Path(train_image_path_str))
         train_image = cv2.imread(str(train_image_path))
         if train_image is None:
             skipped_image_paths.append(str(train_image_path))
@@ -258,7 +258,7 @@ def main() -> None:
     write_image(sample_dir / "heatmap.png", cv2.applyColorMap(heatmap, cv2.COLORMAP_JET))
     write_image(
         sample_dir / "overlay.png",
-        _overlay_heatmap(prepared.roi.aligned_roi_image, result.heatmap),
+        _overlay_heatmap(patchcore_input, result.heatmap),
     )
 
     summary = {
