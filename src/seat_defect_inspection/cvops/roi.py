@@ -8,8 +8,8 @@ from typing import Any
 import cv2
 import numpy as np
 
-from .config import RoiRefineConfig
-from .schemas import BoundingBox, DetectionObject, DetectionResult, RoiRefineResult
+from ..config import RoiRefineConfig
+from ..schemas import BoundingBox, DetectionObject, DetectionResult, RoiRefineResult
 
 
 class RoiRefineEngine:

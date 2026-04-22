@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-from .config import YoloTrainingConfig
+from ..config import YoloTrainingConfig
 
 IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".webp"}
 REQUIRED_DATASET_SPLITS = ("train", "val")

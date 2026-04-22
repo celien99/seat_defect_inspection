@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from seat_defect_inspection.debug_artifacts import resolve_debug_artifact_names
+from seat_defect_inspection.cvops import resolve_debug_artifact_names
 
 
 def test_standard_artifact_mode_keeps_only_core_outputs() -> None:

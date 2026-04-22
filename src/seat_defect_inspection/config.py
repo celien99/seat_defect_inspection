@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .debug_artifacts import DEFAULT_DEBUG_ARTIFACT_MODE
+from .cvops import DEFAULT_DEBUG_ARTIFACT_MODE
 from .schemas import BoundingBox
 
 
@@ -21,7 +21,29 @@ class QualityGuardConfig:
 
 @dataclass(slots=True)
 class PreprocessConfig:
-    """YOLO 前的 OpenCV 预处理参数。"""
+    """YOLO 前的 OpenCV 预处理参数。
+    resize_width: 缩放宽度。
+    resize_height: 缩放高度。
+    denoise_method: 去噪方法。
+    gaussian_kernel_size: 高斯核大小。
+    bilateral_diameter: 双边滤波直径。
+    bilateral_sigma_color: 双边滤波颜色标准差。
+    bilateral_sigma_space: 双边滤波空间标准差。
+    white_balance_method: 白平衡方法。
+    max_white_balance_gain: 最大白平衡增益。
+    apply_illumination_correction: 是否应用光照校正。
+    illumination_blur_kernel_size: 光照模糊核大小。
+    illumination_strength: 光照强度。
+    apply_clahe: 是否应用 CLAHE。
+    clahe_clip_limit: CLAHE 截断限制。
+    clahe_tile_grid_size: CLAHE 网格大小。
+    gamma: 伽马值。
+    sharpen: 是否应用锐化。
+    sharpen_sigma: 锐化核大小。
+    sharpen_amount: 锐化强度。
+    camera_matrix: 相机矩阵。
+    distortion_coeffs: 畸变系数。
+    """
 
     resize_width: int | None = None
     resize_height: int | None = None
@@ -60,7 +82,33 @@ class AlignmentConfig:
 
 @dataclass(slots=True)
 class RoiRefineConfig:
-    """ROI 精修与掩膜生成配置。"""
+    """ROI 精修与掩膜生成配置。
+    crop_expand_ratio: 扩框比例。
+    crop_shrink_ratio: 缩框比例。
+    mask_mode: 掩膜模式。
+    morphology_kernel_size: 形态学核大小。
+    ignore_dilate_kernel_size: 忽略区域膨胀核大小。
+    edge_ignore_pixels: 边缘忽略像素数。
+    texture_denoise_method: 纹理去噪方法。
+    texture_gaussian_kernel_size: 纹理高斯核大小。
+    texture_bilateral_diameter: 纹理双边滤波直径。
+    texture_bilateral_sigma_color: 纹理双边滤波颜色标准差。
+    texture_bilateral_sigma_space: 纹理双边滤波空间标准差。
+    apply_texture_clahe: 是否应用纹理 CLAHE。
+    texture_clahe_clip_limit: 纹理 CLAHE 截断限制。
+    texture_clahe_tile_grid_size: 纹理 CLAHE 网格大小。
+    texture_illumination_correction: 是否应用纹理光照校正。
+    texture_illumination_blur_kernel_size: 纹理光照模糊核大小。
+    texture_illumination_strength: 纹理光照强度。
+    mask_feather_kernel_size: 掩膜羽化核大小。
+    edge_enhance_method: 边缘增强方法。
+    edge_enhance_weight: 边缘增强权重。
+    suppress_background: 是否抑制背景。
+    background_fill_mode: 背景填充模式。
+    background_blur_kernel_size: 背景模糊核大小。
+    safe_margin_erode_kernel_size: 安全边距腐蚀核大小。
+    alignment: 对齐配置。
+    """
 
     crop_expand_ratio: float = 0.05
     crop_shrink_ratio: float = 0.0
@@ -96,7 +144,7 @@ class DetectionConfig:
     model_path: str | None = None
     target_class: str = "seat"
     ignore_classes: list[str] = field(default_factory=list)
-    confidence: float = 0.25
+    confidence: float = 0.5
     iou: float = 0.45
     device: str = "cpu"
     fallback_box: BoundingBox | None = None
@@ -104,7 +152,54 @@ class DetectionConfig:
 
 @dataclass(slots=True)
 class PatchCoreConfig:
-    """PatchCore 风格模型与 patch 过滤配置。"""
+    """PatchCore 风格模型与 patch 过滤配置。
+    backend: 模型后端，可选值为 "handcrafted" 或 "patchcore"。
+    image_size: 输入图像大小。
+    patch_size: 补丁大小。
+    stride: 步长。
+    max_memory: 最大内存。
+    threshold_quantile: 阈值量化。
+    texture_input: 纹理输入。
+    min_target_coverage: 最小目标覆盖率。
+    max_ignore_overlap: 最大忽略重叠。
+    min_valid_patch_ratio: 最小有效补丁比例。
+    decision_score_margin: 决策得分边际。
+    strong_patch_score_ratio: 强补丁得分比例。
+    min_strong_patch_count: 最小强补丁数量。
+    min_strong_component_count: 最小强组件数量。
+    min_strong_patch_ratio: 最小强补丁比例。
+    min_strong_component_ratio: 最小强组件比例。
+    critical_score_margin: 关键得分边际。
+    critical_peak_score_margin: 关键峰值得分边际。
+    critical_min_component_patch_count: 关键最小组件补丁数量。
+    backbone_name: 骨干网络名称。
+    feature_layers: 特征层。
+    backbone_pretrained: 骨干网络预训练。
+    backbone_weights_path: 骨干网络权重路径。
+    backbone_device: 骨干网络设备。
+    feature_pool_kernel_size: 特征池化核大小。
+    coreset_sampling_ratio: 核心集采样比例。
+    texture_input: 纹理输入。
+    min_target_coverage: 最小目标覆盖率。
+    max_ignore_overlap: 最大忽略重叠。
+    min_valid_patch_ratio: 最小有效补丁比例。
+    decision_score_margin: 决策得分边际。
+    strong_patch_score_ratio: 强补丁得分比例。
+    min_strong_patch_count: 最小强补丁数量。
+    min_strong_component_count: 最小强组件数量。
+    min_strong_patch_ratio: 最小强补丁比例。
+    min_strong_component_ratio: 最小强组件比例。
+    critical_score_margin: 关键得分边际。
+    critical_peak_score_margin: 关键峰值得分边际。
+    critical_min_component_patch_count: 关键最小组件补丁数量。
+    backbone_name: 骨干网络名称。
+    feature_layers: 特征层。
+    backbone_pretrained: 骨干网络预训练。
+    backbone_weights_path: 骨干网络权重路径。
+    backbone_device: 骨干网络设备。
+    feature_pool_kernel_size: 特征池化核大小。
+    coreset_sampling_ratio: 核心集采样比例。
+    """
 
     backend: str = "handcrafted"
     image_size: int = 256

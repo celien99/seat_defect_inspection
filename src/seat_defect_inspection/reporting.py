@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from datetime import datetime
 from pathlib import Path
@@ -14,12 +13,12 @@ from .schemas import (
     CaptureSummary,
     InspectionResult,
 )
+from .util import write_json
 
 
 def export_inspection_report(result: InspectionResult, output_path: str) -> Path:
     """写出一次检测任务的结果 JSON。"""
     path = Path(output_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "part_id": result.part_id,
         "frame_id": result.frame_id,
@@ -29,18 +28,16 @@ def export_inspection_report(result: InspectionResult, output_path: str) -> Path
         "seat_model_id": result.seat_model_id,
         "camera_results": [_camera_result_to_dict(item) for item in result.camera_results],
     }
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    write_json(path, payload)
     # 固定路径继续保留为“最新结果”，同时按型号/工件/帧号归档，避免历史结果被覆盖。
     archive_path = _build_inspection_archive_path(path, result)
-    archive_path.parent.mkdir(parents=True, exist_ok=True)
-    archive_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    write_json(archive_path, payload)
     return path
 
 
 def export_capture_manifest(summary: CaptureSummary) -> Path:
     """写出一次采图任务的 manifest。"""
     path = Path(summary.manifest_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "part_id": summary.part_id,
         "run_id": summary.run_id,
@@ -51,7 +48,7 @@ def export_capture_manifest(summary: CaptureSummary) -> Path:
         "failure_count": sum(1 for item in summary.records if item.status != "OK"),
         "records": [_capture_record_to_dict(item) for item in summary.records],
     }
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    write_json(path, payload)
     return path
 
 

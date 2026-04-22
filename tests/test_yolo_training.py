@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 
-from seat_defect_inspection.yolo_training import _prepare_training_dataset
+from seat_defect_inspection.yolo.training import _prepare_training_dataset
 
 
 def _write_dataset(

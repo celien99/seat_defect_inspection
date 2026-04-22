@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from seat_defect_inspection.labelme_to_yolo import convert_labelme_split
+from seat_defect_inspection.yolo import convert_labelme_split
 
 
 def test_convert_labelme_split_writes_segmentation_polygon_labels(tmp_path: Path) -> None:

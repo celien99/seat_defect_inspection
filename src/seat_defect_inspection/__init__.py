@@ -50,7 +50,7 @@ _LAZY_EXPORTS = {
     "capture_samples": (".service", "capture_samples"),
     "run_inspection": (".service", "run_inspection"),
     "train_patchcore_models": (".service", "train_patchcore_models"),
-    "train_yolo_model": (".yolo_training", "train_yolo_model"),
+    "train_yolo_model": (".yolo", "train_yolo_model"),
 }
 
 

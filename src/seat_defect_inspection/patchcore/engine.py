@@ -32,8 +32,8 @@ except ImportError:  # pragma: no cover - fallback for minimal runtime
     wide_resnet50_2 = None
 
 from .color_branch import ColorReferenceProfile
-from .config import PatchCoreConfig
-from .schemas import TextureAnomalyResult
+from ..config import PatchCoreConfig
+from ..schemas import TextureAnomalyResult
 
 IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".webp"}
 IMAGENET_MEAN = np.asarray([0.485, 0.456, 0.406], dtype=np.float32)

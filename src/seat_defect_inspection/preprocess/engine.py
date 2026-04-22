@@ -5,7 +5,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from .config import PreprocessConfig
+from ..config import PreprocessConfig
 
 
 class PreprocessEngine:

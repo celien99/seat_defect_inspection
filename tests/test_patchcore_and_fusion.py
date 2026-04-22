@@ -6,11 +6,10 @@ from types import SimpleNamespace
 import numpy as np
 
 from seat_defect_inspection.config import AlignmentConfig, CameraConfig, ColorBranchConfig, DetectionConfig, FusionConfig, PatchCoreConfig, QualityGuardConfig, RoiRefineConfig
-from seat_defect_inspection.detection import DetectionService
+from seat_defect_inspection.cvops import ImageQualityGuard, RoiRefineEngine
 from seat_defect_inspection.fusion import fuse_camera_results, should_early_stop_on_ng
 from seat_defect_inspection.patchcore import PatchCoreService, _decide_patchcore_anomaly
-from seat_defect_inspection.quality import ImageQualityGuard
-from seat_defect_inspection.roi import RoiRefineEngine
+from seat_defect_inspection.yolo import DetectionService
 from seat_defect_inspection.runtime_config import load_yolo_training_config
 from seat_defect_inspection.schemas import BoundingBox, CameraInspectionResult, DetectionResult, DetectionObject, FramePacket, RoiRefineResult, TextureAnomalyResult
 from seat_defect_inspection.service import InspectionService, PreparedCameraSample, _CameraPipeline

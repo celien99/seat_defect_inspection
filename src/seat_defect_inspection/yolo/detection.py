@@ -7,8 +7,8 @@ from typing import Any
 import cv2
 import numpy as np
 
-from .config import DetectionConfig
-from .schemas import BoundingBox, DetectionObject, DetectionResult
+from ..config import DetectionConfig
+from ..schemas import BoundingBox, DetectionObject, DetectionResult
 
 YOLO_SEGMENT_TASK = "segment"
 

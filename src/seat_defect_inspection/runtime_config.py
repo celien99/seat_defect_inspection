@@ -22,7 +22,7 @@ from .config import (
     SeatModelConfig,
     YoloTrainingConfig,
 )
-from .debug_artifacts import resolve_debug_artifact_names
+from .cvops import resolve_debug_artifact_names
 from .schemas import BoundingBox
 
 _SUPPORTED_PATCHCORE_BACKENDS = {"full", "handcrafted"}

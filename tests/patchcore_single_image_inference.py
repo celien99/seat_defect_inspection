@@ -16,9 +16,10 @@ from seat_defect_inspection.config import (
     QualityGuardConfig,
     RoiRefineConfig,
 )
+from seat_defect_inspection.cvops.debug_artifacts import _overlay_heatmap, _render_detections
 from seat_defect_inspection.patchcore import PatchCoreService
 from seat_defect_inspection.schemas import BoundingBox
-from seat_defect_inspection.service import _CameraPipeline, _overlay_heatmap, _render_detections
+from seat_defect_inspection.service import _CameraPipeline
 
 # 这个脚本只做：
 # 1. 单张图片进入当前项目里的 YOLO + OpenCV + ROI 链路

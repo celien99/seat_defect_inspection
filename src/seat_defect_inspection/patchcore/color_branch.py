@@ -9,8 +9,8 @@ from typing import Iterable
 import cv2
 import numpy as np
 
-from .config import ColorBranchConfig
-from .schemas import ColorAnomalyResult
+from ..config import ColorBranchConfig
+from ..schemas import ColorAnomalyResult
 
 
 @dataclass(slots=True)
