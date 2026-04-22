@@ -90,6 +90,36 @@ def test_patchcore_rejects_isolated_small_response() -> None:
     assert decision_mode == "none"
 
 
+def test_patchcore_threshold_uses_sample_exclusive_calibration() -> None:
+    config = PatchCoreConfig(
+        backend="handcrafted",
+        image_size=4,
+        patch_size=4,
+        stride=4,
+        max_memory=2,
+        texture_input="gray",
+        coreset_sampling_ratio=1.0,
+    )
+    service = PatchCoreService(config)
+
+    target_mask = np.ones((4, 4), dtype=np.uint8)
+    ignore_mask = np.zeros((4, 4), dtype=np.uint8)
+    dark = np.zeros((4, 4, 3), dtype=np.uint8)
+    bright = np.full((4, 4, 3), 255, dtype=np.uint8)
+
+    summary = service.fit(
+        [
+            (dark, target_mask, ignore_mask),
+            (bright, target_mask, ignore_mask),
+        ]
+    )
+
+    assert float(summary["threshold"]) > 1e-3
+    dark_score = service.predict(dark, target_mask, ignore_mask).score
+    bright_score = service.predict(bright, target_mask, ignore_mask).score
+    assert float(summary["threshold"]) > max(dark_score, bright_score)
+
+
 def test_fusion_ng_can_override_reject() -> None:
     fusion = FusionConfig(
         reject_on_any_reject=True,

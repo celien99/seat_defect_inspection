@@ -90,3 +90,49 @@ def test_prepare_training_dataset_rejects_detect_task_in_dataset_yaml(tmp_path: 
         assert "segment" in str(exc)
         return
     raise AssertionError("expected ValueError for detect task")
+
+
+def test_prepare_training_dataset_rejects_unknown_class_id(tmp_path: Path) -> None:
+    dataset_yaml = _write_dataset(
+        tmp_path,
+        train_label="1 0.10 0.10 0.80 0.10 0.80 0.85 0.12 0.88\n",
+        val_label="1 0.10 0.10 0.80 0.10 0.80 0.85 0.12 0.88\n",
+    )
+
+    try:
+        _prepare_training_dataset(dataset_yaml, tmp_path / "runs")
+    except ValueError as exc:
+        assert "类别 id" in str(exc)
+        assert "names" in str(exc)
+        return
+    raise AssertionError("expected ValueError for unknown class id")
+
+
+def test_prepare_training_dataset_rejects_out_of_range_coordinates(tmp_path: Path) -> None:
+    dataset_yaml = _write_dataset(
+        tmp_path,
+        train_label="0 0.10 0.10 1.20 0.10 0.80 0.85 0.12 0.88\n",
+        val_label="0 0.10 0.10 1.20 0.10 0.80 0.85 0.12 0.88\n",
+    )
+
+    try:
+        _prepare_training_dataset(dataset_yaml, tmp_path / "runs")
+    except ValueError as exc:
+        assert "[0, 1]" in str(exc)
+        return
+    raise AssertionError("expected ValueError for out-of-range coordinates")
+
+
+def test_prepare_training_dataset_rejects_non_finite_coordinates(tmp_path: Path) -> None:
+    dataset_yaml = _write_dataset(
+        tmp_path,
+        train_label="0 0.10 0.10 inf 0.10 0.80 0.85 0.12 0.88\n",
+        val_label="0 0.10 0.10 inf 0.10 0.80 0.85 0.12 0.88\n",
+    )
+
+    try:
+        _prepare_training_dataset(dataset_yaml, tmp_path / "runs")
+    except ValueError as exc:
+        assert "非有限" in str(exc)
+        return
+    raise AssertionError("expected ValueError for non-finite coordinates")

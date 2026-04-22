@@ -231,3 +231,67 @@ def test_load_config_rejects_full_patchcore_without_backbone_weights(tmp_path: P
         assert "cam_0" in message
         return
     raise AssertionError("expected ValueError for full patchcore without backbone weights")
+
+
+def test_load_config_rejects_duplicate_camera_ids(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "seat_defect_inspection": {
+                    "cameras": [
+                        {
+                            "camera_id": "cam_0",
+                            "source": "0",
+                            "patchcore_model_path": "model_a.npz",
+                        },
+                        {
+                            "camera_id": "cam_0",
+                            "source": "1",
+                            "patchcore_model_path": "model_b.npz",
+                        },
+                    ],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        load_config(str(config_path))
+    except ValueError as exc:
+        message = str(exc)
+        assert "重复 camera_id" in message
+        assert "cam_0" in message
+        return
+    raise AssertionError("expected ValueError for duplicate camera_id")
+
+
+def test_load_config_rejects_unknown_nested_field(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "seat_defect_inspection": {
+                    "cameras": [
+                        {
+                            "camera_id": "cam_0",
+                            "source": "0",
+                            "patchcore_model_path": "model.npz",
+                            "unexpected_field": True,
+                        }
+                    ],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        load_config(str(config_path))
+    except ValueError as exc:
+        message = str(exc)
+        assert "CameraConfig" in message
+        assert "unexpected_field" in message
+        return
+    raise AssertionError("expected ValueError for unknown nested config field")

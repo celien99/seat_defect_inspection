@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -78,7 +79,8 @@ def _prepare_training_dataset(
     loaded = yaml.safe_load(data_config_path.read_text(encoding="utf-8")) or {}
     if not isinstance(loaded, dict):
         raise TypeError(f"YOLO 数据集配置格式错误：{data_config_path}")
-    if not isinstance(loaded.get("names"), dict) or not loaded["names"]:
+    valid_class_ids = _extract_valid_class_ids(loaded.get("names"), data_config_path)
+    if not valid_class_ids:
         raise ValueError(f"YOLO 数据集配置缺少有效的 `names`：{data_config_path}")
     explicit_task = str(loaded.get("task", "")).strip().lower()
     if explicit_task and explicit_task not in {"segment", "seg", "segmentation"}:
@@ -104,7 +106,12 @@ def _prepare_training_dataset(
         split_path = _resolve_path(dataset_root, str(split_value))
         resolved[split_name] = str(split_path)
         if split_name in REQUIRED_DATASET_SPLITS:
-            _validate_dataset_split(split_name, split_path, dataset_root)
+            _validate_dataset_split(
+                split_name,
+                split_path,
+                dataset_root,
+                valid_class_ids=valid_class_ids,
+            )
 
     target_dir = project_root / "_resolved_dataset_configs"
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -114,6 +121,26 @@ def _prepare_training_dataset(
         encoding="utf-8",
     )
     return dataset_root, target_path
+
+
+def _extract_valid_class_ids(raw_names: Any, data_config_path: Path) -> set[int]:
+    if isinstance(raw_names, list):
+        return set(range(len(raw_names)))
+    if not isinstance(raw_names, dict):
+        raise ValueError(f"YOLO 数据集配置缺少有效的 `names`：{data_config_path}")
+
+    valid_class_ids: set[int] = set()
+    for raw_key in raw_names:
+        try:
+            class_id = int(raw_key)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"YOLO 数据集配置 `names` 包含非法类别 id：{data_config_path}"
+            ) from exc
+        if class_id < 0:
+            raise ValueError(f"YOLO 数据集配置 `names` 包含负数类别 id：{data_config_path}")
+        valid_class_ids.add(class_id)
+    return valid_class_ids
 
 
 def _resolve_path(base_dir: Path, value: str) -> Path:
@@ -127,6 +154,8 @@ def _validate_dataset_split(
     split_name: str,
     image_dir: Path,
     dataset_root: Path,
+    *,
+    valid_class_ids: set[int],
 ) -> None:
     if not image_dir.exists():
         raise FileNotFoundError(f"YOLO 数据集 `{split_name}` 路径不存在：{image_dir}")
@@ -141,7 +170,11 @@ def _validate_dataset_split(
     label_files = sorted(path for path in label_dir.rglob("*.txt") if path.is_file())
     if not label_files:
         raise ValueError(f"YOLO 数据集 `{split_name}` 标签目录为空：{label_dir}")
-    _validate_label_files(label_files, split_name=split_name)
+    _validate_label_files(
+        label_files,
+        split_name=split_name,
+        valid_class_ids=valid_class_ids,
+    )
 
 
 def _infer_label_dir(image_dir: Path, dataset_root: Path) -> Path:
@@ -164,7 +197,12 @@ def _has_supported_file(folder: Path, suffixes: set[str]) -> bool:
     return False
 
 
-def _validate_label_files(label_files: list[Path], *, split_name: str) -> None:
+def _validate_label_files(
+    label_files: list[Path],
+    *,
+    split_name: str,
+    valid_class_ids: set[int],
+) -> None:
     inspected = 0
     for label_file in label_files:
         content = label_file.read_text(encoding="utf-8").strip()
@@ -172,7 +210,12 @@ def _validate_label_files(label_files: list[Path], *, split_name: str) -> None:
             continue
         inspected += 1
         for line in content.splitlines():
-            _validate_label_line(line, label_file=label_file, split_name=split_name)
+            _validate_label_line(
+                line,
+                label_file=label_file,
+                split_name=split_name,
+                valid_class_ids=valid_class_ids,
+            )
         if inspected >= 20:
             return
     if inspected > 0:
@@ -183,7 +226,13 @@ def _validate_label_files(label_files: list[Path], *, split_name: str) -> None:
     )
 
 
-def _validate_label_line(line: str, *, label_file: Path, split_name: str) -> None:
+def _validate_label_line(
+    line: str,
+    *,
+    label_file: Path,
+    split_name: str,
+    valid_class_ids: set[int],
+) -> None:
     tokens = line.split()
     if not tokens:
         return
@@ -191,14 +240,22 @@ def _validate_label_line(line: str, *, label_file: Path, split_name: str) -> Non
         values = [float(item) for item in tokens]
     except ValueError as exc:
         raise ValueError(f"YOLO 标签文件存在非数字内容：{label_file}") from exc
+    if not all(math.isfinite(item) for item in values):
+        raise ValueError(f"YOLO 标签文件存在非有限数值：{label_file}")
     if values[0] < 0 or int(values[0]) != values[0]:
         raise ValueError(f"YOLO 标签文件类别 id 非法：{label_file}")
+    class_id = int(values[0])
+    if class_id not in valid_class_ids:
+        raise ValueError(f"YOLO 标签文件类别 id 超出 `names` 范围：{label_file}")
 
     coord_count = len(values) - 1
     if coord_count < 6 or coord_count % 2 != 0:
         raise ValueError(
             f"YOLO 数据集 `{split_name}` 标签不是分割多边形格式：{label_file}"
         )
+    for coordinate in values[1:]:
+        if coordinate < 0.0 or coordinate > 1.0:
+            raise ValueError(f"YOLO 标签文件坐标超出 [0, 1] 范围：{label_file}")
 
 
 def _load_yolo_model(config: YoloTrainingConfig, yolo_cls) -> tuple[Any, str, bool]:

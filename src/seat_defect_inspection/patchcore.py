@@ -80,7 +80,6 @@ class PatchCoreService:
     ) -> dict[str, float | int | str]:
         """使用正常 ROI 样本和掩膜训练模型。"""
         raw_embeddings: list[np.ndarray] = []
-        image_scores: list[float] = []
         sample_count = 0
 
         for image, target_mask, ignore_mask in samples:
@@ -93,7 +92,7 @@ class PatchCoreService:
             )
             if len(embeddings) == 0:
                 continue
-            raw_embeddings.append(embeddings)
+            raw_embeddings.append(embeddings.astype(np.float32))
             sample_count += 1
 
         if not raw_embeddings:
@@ -102,16 +101,33 @@ class PatchCoreService:
         stacked = np.concatenate(raw_embeddings, axis=0).astype(np.float32)
         self.feature_mean = stacked.mean(axis=0).astype(np.float32)
         self.feature_std = (stacked.std(axis=0) + 1e-6).astype(np.float32)
-        normalized = self._normalize(stacked)
+        normalized_samples = [self._normalize(embeddings) for embeddings in raw_embeddings]
+        normalized = np.concatenate(normalized_samples, axis=0).astype(np.float32)
         target_bank_size = _determine_memory_bank_size(
             normalized,
             self.config,
         )
-        self.memory_bank = coreset_subsample(normalized, target_bank_size)
+        selected_indices = coreset_subsample_indices(normalized, target_bank_size)
+        self.memory_bank = normalized[selected_indices]
 
-        for embeddings in raw_embeddings:
-            score, _ = self.score_embeddings(self._normalize(embeddings))
+        image_scores: list[float] = []
+        sample_start = 0
+        for embeddings in normalized_samples:
+            sample_end = sample_start + len(embeddings)
+            calibration_indices = selected_indices[
+                (selected_indices < sample_start) | (selected_indices >= sample_end)
+            ]
+            if calibration_indices.size > 0:
+                calibration_bank = normalized[calibration_indices]
+                score, _ = self.score_embeddings(embeddings, memory_bank=calibration_bank)
+            else:
+                calibration_bank = _exclude_embedding_slice(normalized, sample_start, sample_end)
+                if len(calibration_bank) > 0:
+                    score, _ = self.score_embeddings(embeddings, memory_bank=calibration_bank)
+                else:
+                    score, _ = _score_embeddings_leave_one_out(embeddings)
             image_scores.append(score)
+            sample_start = sample_end
 
         score_array = np.asarray(image_scores, dtype=np.float32)
         self.threshold = max(
@@ -209,8 +225,15 @@ class PatchCoreService:
             decision_mode=decision_mode,
         )
 
-    def score_embeddings(self, embeddings: np.ndarray) -> tuple[float, np.ndarray]:
-        patch_scores = min_distance_to_bank(embeddings, self.memory_bank)
+    def score_embeddings(
+        self,
+        embeddings: np.ndarray,
+        memory_bank: np.ndarray | None = None,
+    ) -> tuple[float, np.ndarray]:
+        active_bank = self.memory_bank if memory_bank is None else memory_bank
+        if active_bank is None or len(active_bank) == 0:
+            raise RuntimeError("PatchCore memory bank 为空，无法计算分数")
+        patch_scores = min_distance_to_bank(embeddings, active_bank)
         image_score = float(np.percentile(patch_scores, 99))
         return image_score, patch_scores
 
@@ -784,10 +807,10 @@ def _determine_memory_bank_size(
     return min(len(embeddings), max(1, min(config.max_memory, ratio_target)))
 
 
-def coreset_subsample(embeddings: np.ndarray, max_points: int) -> np.ndarray:
-    """Greedy coreset selection to keep diverse normal patches."""
+def coreset_subsample_indices(embeddings: np.ndarray, max_points: int) -> np.ndarray:
+    """Greedy coreset selection returning the chosen row indices."""
     if len(embeddings) <= max_points:
-        return embeddings
+        return np.arange(len(embeddings), dtype=np.int32)
 
     rng = np.random.default_rng(42)
     first_index = int(rng.integers(0, len(embeddings)))
@@ -800,7 +823,20 @@ def coreset_subsample(embeddings: np.ndarray, max_points: int) -> np.ndarray:
         next_distances = np.linalg.norm(embeddings - embeddings[next_index], axis=1)
         min_distances = np.minimum(min_distances, next_distances)
 
-    return embeddings[np.asarray(chosen_indices, dtype=np.int32)]
+    return np.asarray(chosen_indices, dtype=np.int32)
+
+
+def coreset_subsample(embeddings: np.ndarray, max_points: int) -> np.ndarray:
+    """Greedy coreset selection to keep diverse normal patches."""
+    return embeddings[coreset_subsample_indices(embeddings, max_points)]
+
+
+def _exclude_embedding_slice(embeddings: np.ndarray, start: int, end: int) -> np.ndarray:
+    if start <= 0:
+        return embeddings[end:]
+    if end >= len(embeddings):
+        return embeddings[:start]
+    return np.concatenate((embeddings[:start], embeddings[end:]), axis=0)
 
 
 def min_distance_to_bank(
@@ -815,6 +851,18 @@ def min_distance_to_bank(
         distances = np.linalg.norm(chunk[:, None, :] - memory_bank[None, :, :], axis=2)
         scores.append(distances.min(axis=1))
     return np.concatenate(scores).astype(np.float32)
+
+
+def _score_embeddings_leave_one_out(embeddings: np.ndarray) -> tuple[float, np.ndarray]:
+    if len(embeddings) <= 1:
+        patch_scores = np.zeros((len(embeddings),), dtype=np.float32)
+        return 0.0, patch_scores
+
+    distances = np.linalg.norm(embeddings[:, None, :] - embeddings[None, :, :], axis=2)
+    np.fill_diagonal(distances, np.inf)
+    patch_scores = distances.min(axis=1).astype(np.float32)
+    image_score = float(np.percentile(patch_scores, 99))
+    return image_score, patch_scores
 
 
 def normalize_map(heatmap: np.ndarray) -> np.ndarray:
