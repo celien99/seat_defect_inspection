@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .cvops import DEFAULT_DEBUG_ARTIFACT_MODE
+# 这里只依赖调试图默认档位常量，避免导入 cvops 包形成循环依赖。
+from .debug_artifacts import DEFAULT_DEBUG_ARTIFACT_MODE
 from .schemas import BoundingBox
 
 
@@ -144,7 +145,8 @@ class DetectionConfig:
     model_path: str | None = None
     target_class: str = "seat"
     ignore_classes: list[str] = field(default_factory=list)
-    confidence: float = 0.5
+    # 保持与历史版本一致，避免结构重构时悄悄改变 YOLO 检测策略。
+    confidence: float = 0.25
     iou: float = 0.45
     device: str = "cpu"
     fallback_box: BoundingBox | None = None

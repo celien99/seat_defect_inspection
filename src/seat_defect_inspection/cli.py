@@ -7,8 +7,6 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from .runtime_config import load_config, load_yolo_training_config
-from .service import capture_samples, run_inspection, train_patchcore_models
-from .yolo import train_yolo_model
 
 DEFAULT_CONFIG_PATH = str(
     Path(__file__).resolve().parents[2] / "configs" / "seat_defect_inspection.mvs.json",
@@ -127,6 +125,8 @@ def _add_seat_model_argument(parser: argparse.ArgumentParser, *, help_text: str)
 
 def _run_train_patchcore(args: argparse.Namespace) -> None:
     """执行 PatchCore 训练命令并打印摘要。"""
+    from .service import train_patchcore_models
+
     config = load_config(args.config)
     summaries = train_patchcore_models(config, seat_model_id=args.seat_model_id)
     # 训练可能覆盖多个型号，这里压成一行输出，便于命令行快速查看。
@@ -147,6 +147,8 @@ def _run_train_patchcore(args: argparse.Namespace) -> None:
 
 def _run_capture(args: argparse.Namespace) -> None:
     """执行采图命令并打印摘要。"""
+    from .service import capture_samples
+
     config = load_config(args.config)
     summary = capture_samples(
         config,
@@ -168,6 +170,8 @@ def _run_capture(args: argparse.Namespace) -> None:
 
 def _run_inspect(args: argparse.Namespace) -> None:
     """执行检测命令并打印摘要。"""
+    from .service import run_inspection
+
     config = load_config(args.config)
     result = run_inspection(
         config,
@@ -182,6 +186,8 @@ def _run_inspect(args: argparse.Namespace) -> None:
 
 def _run_train_yolo(args: argparse.Namespace) -> None:
     """执行 YOLO 训练命令并打印摘要。"""
+    from .yolo import train_yolo_model
+
     config = load_yolo_training_config(args.config, seat_model_id=args.seat_model_id)
     summary = train_yolo_model(config)
     print(

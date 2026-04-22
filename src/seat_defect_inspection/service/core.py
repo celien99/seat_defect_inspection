@@ -90,50 +90,6 @@ class InspectionService:
         # 模型按“型号 + 机位”缓存，避免重复读盘。
         self._model_cache: dict[tuple[str, str], LoadedModelBundle] = {}
 
-    def train_patchcore_models(self, seat_model_id: str | None = None) -> list[dict[str, Any]]:
-        """按机位训练 PatchCore 模型。"""
-        from .training import train_patchcore_models as _train_patchcore_models
-
-        return _train_patchcore_models(self, seat_model_id=seat_model_id)
-
-    def capture(
-        self,
-        part_id: str | None = None,
-        *,
-        output_dir: str | None = None,
-        seat_model_id: str | None = None,
-        save_to_train_good_dir: bool = False,
-        count: int = 1,
-        interval_ms: int = 0,
-    ):
-        """采图并落盘。"""
-        from .capture import capture_samples as _capture_samples
-
-        return _capture_samples(
-            self,
-            part_id=part_id,
-            output_dir=output_dir,
-            seat_model_id=seat_model_id,
-            save_to_train_good_dir=save_to_train_good_dir,
-            count=count,
-            interval_ms=interval_ms,
-        )
-
-    def run_inspection(
-        self,
-        part_id: str | None = None,
-        *,
-        seat_model_id: str | None = None,
-    ):
-        """执行一次完整检测。"""
-        from .inspection import run_inspection as _run_inspection
-
-        return _run_inspection(
-            self,
-            part_id=part_id,
-            seat_model_id=seat_model_id,
-        )
-
     def _resolve_training_scope(self, seat_model_id: str | None) -> list[str | None]:
         """解析本次训练要覆盖的型号范围。"""
         if not self.config.seat_models:

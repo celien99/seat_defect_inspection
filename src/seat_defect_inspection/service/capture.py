@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from media_inputs import infer_source_kind
 
@@ -12,11 +13,13 @@ from ..config import CameraConfig
 from ..reporting import export_capture_manifest
 from ..schemas import CaptureRecord, CaptureSummary, FramePacket
 from ..util import build_model_scoped_root, write_image
-from .core import InspectionService
+
+if TYPE_CHECKING:
+    from .core import InspectionService
 
 
 def capture_samples(
-    service: InspectionService,
+    service: "InspectionService",
     part_id: str | None = None,
     *,
     output_dir: str | None = None,

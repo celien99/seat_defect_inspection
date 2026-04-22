@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from importlib import import_module
 from typing import Any
+from typing import TYPE_CHECKING
 
 from ..config import InspectionConfig
 from ..schemas import CaptureSummary, InspectionResult
-from .core import InspectionService, PreparedCameraSample, _CameraPipeline
+
+if TYPE_CHECKING:
+    from .core import InspectionService, PreparedCameraSample, _CameraPipeline
 
 __all__ = [
     "InspectionService",
@@ -17,13 +21,36 @@ __all__ = [
     "train_patchcore_models",
 ]
 
+_LAZY_EXPORTS = {
+    "InspectionService": (".core", "InspectionService"),
+    "PreparedCameraSample": (".core", "PreparedCameraSample"),
+    "_CameraPipeline": (".core", "_CameraPipeline"),
+}
+
+
+def __getattr__(name: str):
+    """延迟导入核心服务对象，避免入口层把 OpenCV 依赖提前拉起。"""
+    if name not in _LAZY_EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module_name, attr_name = _LAZY_EXPORTS[name]
+    value = getattr(import_module(module_name, __name__), attr_name)
+    globals()[name] = value
+    return value
+
 
 def train_patchcore_models(
     config: InspectionConfig,
     seat_model_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """训练全部机位的 PatchCore 模型。"""
-    return InspectionService(config).train_patchcore_models(seat_model_id=seat_model_id)
+    # 入口层只做路由，具体训练逻辑留在 training.py。
+    from .core import InspectionService
+    from .training import train_patchcore_models as _train_patchcore_models
+
+    return _train_patchcore_models(
+        InspectionService(config),
+        seat_model_id=seat_model_id,
+    )
 
 
 def capture_samples(
@@ -37,7 +64,12 @@ def capture_samples(
     interval_ms: int = 0,
 ) -> CaptureSummary:
     """抓取并落盘全部启用机位的图像。"""
-    return InspectionService(config).capture(
+    # 入口层只做路由，具体采图逻辑留在 capture.py。
+    from .core import InspectionService
+    from .capture import capture_samples as _capture_samples
+
+    return _capture_samples(
+        InspectionService(config),
         part_id=part_id,
         output_dir=output_dir,
         seat_model_id=seat_model_id,
@@ -54,7 +86,12 @@ def run_inspection(
     seat_model_id: str | None = None,
 ) -> InspectionResult:
     """执行一次完整检测。"""
-    return InspectionService(config).run_inspection(
+    # 入口层只做路由，具体检测逻辑留在 inspection.py。
+    from .core import InspectionService
+    from .inspection import run_inspection as _run_inspection
+
+    return _run_inspection(
+        InspectionService(config),
         part_id=part_id,
         seat_model_id=seat_model_id,
     )

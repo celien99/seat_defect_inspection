@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import cv2
 import numpy as np
@@ -12,11 +12,13 @@ import numpy as np
 from ..config import CameraConfig
 from ..patchcore import ColorConsistencyService, list_images
 from ..util import format_reason_counter, select_patchcore_input, write_json
-from .core import InspectionService, _CameraPipeline
+
+if TYPE_CHECKING:
+    from .core import InspectionService, _CameraPipeline
 
 
 def train_patchcore_models(
-    service: InspectionService,
+    service: "InspectionService",
     seat_model_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """按机位训练 PatchCore 模型。"""
@@ -40,7 +42,7 @@ def _train_one_camera(
     *,
     seat_model_id: str | None,
     camera: CameraConfig,
-    pipeline: _CameraPipeline,
+    pipeline: "_CameraPipeline",
 ) -> dict[str, Any]:
     """训练单个机位的 PatchCore 模型，并按需补充颜色分支。"""
     if not camera.train_good_dir:

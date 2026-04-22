@@ -2,7 +2,7 @@
 
 `seat_defect_inspection` is a standalone subproject for automotive seat defect inspection.
 
-It provides:
+It currently provides:
 
 - multi-camera image capture
 - one PatchCore model per camera
@@ -49,3 +49,85 @@ The project now standardizes on `yolo11m-seg.pt`. YOLO segmentation masks are co
 - `outputs/seat_defect_inspection/debug`
 - `<output_json_path sibling>/<output_json_path.stem>_history`
 - `outputs/seat_defect_inspection/yolo_training`
+
+## Code Layout
+
+The project has been split by responsibility rather than kept in a few oversized files.
+
+```text
+src/seat_defect_inspection/
+├── cli.py
+├── acquisition.py
+├── config.py
+├── debug_artifacts.py
+├── fusion.py
+├── reporting.py
+├── runtime_config.py
+├── runtime_config_parsers.py
+├── runtime_config_camera_parsers.py
+├── runtime_config_values.py
+├── schemas.py
+├── util.py
+├── cvops/
+│   ├── quality.py
+│   ├── roi.py
+│   ├── roi_geometry.py
+│   ├── roi_texture.py
+│   └── debug_artifacts.py
+├── preprocess/
+│   └── engine.py
+├── patchcore/
+│   ├── engine.py
+│   ├── features.py
+│   ├── scoring.py
+│   └── color_branch.py
+├── service/
+│   ├── __init__.py
+│   ├── core.py
+│   ├── capture.py
+│   ├── inspection.py
+│   ├── inspection_camera.py
+│   └── training.py
+└── yolo/
+    ├── __init__.py
+    ├── detection.py
+    ├── training.py
+    ├── dataset_validation.py
+    └── labelme_to_yolo.py
+```
+
+## Module Responsibilities
+
+- `cli.py`: command routing only. Business modules are imported lazily inside each command handler.
+- `runtime_config.py`: config file entry and top-level validation.
+- `runtime_config_parsers.py`: inspection-level and seat-model-level parsing.
+- `runtime_config_camera_parsers.py`: camera sub-config parsing for preprocess, ROI, PatchCore, and YOLO detection.
+- `runtime_config_values.py`: shared parsing helpers and path resolution.
+- `service/__init__.py`: thin public routing layer.
+- `service/core.py`: shared service context, caches, and `_CameraPipeline`.
+- `service/capture.py`: capture workflow.
+- `service/inspection.py`: multi-camera inspection orchestration and early-stop handling.
+- `service/inspection_camera.py`: single-camera inspection details.
+- `service/training.py`: PatchCore training workflow.
+- `cvops/`: OpenCV middle layer for quality gating, ROI refinement, geometry helpers, texture preparation, and debug artifacts.
+- `preprocess/engine.py`: image preprocessing chain before YOLO and ROI refinement.
+- `patchcore/engine.py`: PatchCore lifecycle orchestration.
+- `patchcore/features.py`: handcrafted and full-backbone feature extraction.
+- `patchcore/scoring.py`: memory bank sampling, distance scoring, evidence analysis, and final decision rules.
+- `patchcore/color_branch.py`: LAB-based color consistency branch.
+- `yolo/detection.py`: YOLO inference and fallback box handling.
+- `yolo/training.py`: YOLO training entry.
+- `yolo/dataset_validation.py`: dataset preflight and label validation.
+
+## Main Runtime Flow
+
+`inspect` now follows a deliberately thin orchestration path:
+
+1. `cli.py` loads config and routes to `service.run_inspection`.
+2. `service/__init__.py` creates `InspectionService`.
+3. `service/inspection.py` loops over enabled cameras and handles fail-fast decisions.
+4. `service/inspection_camera.py` runs one camera through `_CameraPipeline`, PatchCore, optional color branch, and debug artifact export.
+5. `fusion.py` merges per-camera results.
+6. `reporting.py` writes the final report.
+
+For a more detailed architecture and flow breakdown, see [PROJECT_ARCHITECTURE_ZH.md](./PROJECT_ARCHITECTURE_ZH.md).

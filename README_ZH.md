@@ -75,7 +75,7 @@ seat-defect-inspection inspect \
 3. 单独准备 YOLO 数据集并执行 `train-yolo`。
 4. 把每个机位的 `patchcore_model_path` 和 YOLO `model_path` 配好后，执行 `inspect`。
 
-如果你已经训练过 PatchCore 模型，而最近又修改了 ROI 掩膜、`valid_mask` 相关参数、纹理增强链路，或把 `patchcore.backend` 从 `full` 随机 backbone 改成 `handcrafted`，必须重新执行 `train-patchcore`。旧模型对应的训练分布已经失效，继续拿来跑 `inspect` 没有参考价值。
+如果你已经训练过 PatchCore 模型，而最近又修改了 ROI 掩膜、`valid_mask` 相关参数、纹理增强链路，或把 `patchcore.backend` 从 `full` 改成 `handcrafted`，必须重新执行 `train-patchcore`。旧模型对应的训练分布已经失效，继续拿来跑 `inspect` 没有参考价值。
 
 如果现场还没有 YOLO 权重，可以先把 `detection.model_path` 设为 `null`，继续使用 `fallback_box` 走完整流程。
 
@@ -96,113 +96,131 @@ seat-defect-inspection inspect \
 - `outputs/seat_defect_inspection/yolo_training`
   YOLO 训练输出
 
-## 文件结构与模块职责
+## 当前文件结构
+
+现在的拆分原则是“主入口只做编排，细节按功能放到同包文件中”，不再把主流程、ROI、PatchCore、YOLO 训练和配置解析都堆在几个超大文件里。
 
 ```text
 seat_defect_inspection/
 ├── PROJECT_ARCHITECTURE_ZH.md
 ├── README.md
 ├── README_ZH.md
-├── pyproject.toml
-├── requirements.txt
 ├── configs/
 │   ├── seat_defect_inspection.mvs.json
 │   ├── seat_defect_inspection.multimodel.example.json
 │   └── seat_defect_yolo.dataset.example.yaml
 └── src/
     ├── media_inputs/
-    │   ├── __init__.py
-    │   └── core.py
     ├── mvsCamera/
-    │   ├── __init__.py
-    │   ├── frame_source.py
-    │   ├── camera_controller.py
-    │   ├── pixel_utils.py
-    │   ├── MvCameraControl.dll
-    │   └── sdk/
-    ├── seat_defect_inspection/
-    │   ├── __init__.py
-    │   ├── __main__.py
-    │   ├── cli.py
-    │   ├── service.py
-    │   ├── acquisition.py
-    │   ├── quality.py
-    │   ├── preprocess.py
-    │   ├── detection.py
-    │   ├── roi.py
-    │   ├── patchcore.py
-    │   ├── color_branch.py
-    │   ├── fusion.py
-    │   ├── reporting.py
-    │   ├── runtime_config.py
-    │   ├── config.py
-    │   ├── schemas.py
-    │   └── yolo_training.py
-    └── seat_defect_inspection.egg-info/
+    └── seat_defect_inspection/
+        ├── __init__.py
+        ├── __main__.py
+        ├── cli.py
+        ├── acquisition.py
+        ├── config.py
+        ├── debug_artifacts.py
+        ├── fusion.py
+        ├── reporting.py
+        ├── runtime_config.py
+        ├── runtime_config_parsers.py
+        ├── runtime_config_camera_parsers.py
+        ├── runtime_config_values.py
+        ├── schemas.py
+        ├── util.py
+        ├── cvops/
+        │   ├── __init__.py
+        │   ├── debug_artifacts.py
+        │   ├── quality.py
+        │   ├── roi.py
+        │   ├── roi_geometry.py
+        │   └── roi_texture.py
+        ├── preprocess/
+        │   ├── __init__.py
+        │   └── engine.py
+        ├── patchcore/
+        │   ├── __init__.py
+        │   ├── color_branch.py
+        │   ├── engine.py
+        │   ├── features.py
+        │   └── scoring.py
+        ├── service/
+        │   ├── __init__.py
+        │   ├── capture.py
+        │   ├── core.py
+        │   ├── inspection.py
+        │   ├── inspection_camera.py
+        │   └── training.py
+        └── yolo/
+            ├── __init__.py
+            ├── dataset_validation.py
+            ├── detection.py
+            ├── labelme_to_yolo.py
+            └── training.py
 ```
 
-- `README.md` / `README_ZH.md`
-  项目英文/中文说明、命令示例、配置约定和落地边界。
-- `PROJECT_ARCHITECTURE_ZH.md`
-  项目整体评估、模块职责、核心类/函数/属性说明，以及 `capture / inspect / train-patchcore / train-yolo` 的完整调用链文档。
-- `pyproject.toml`
-  打包配置、最小依赖定义，以及 `seat-defect-inspection` CLI 入口声明。
-- `requirements.txt`
-  轻量依赖清单，便于快速安装运行环境。
-- `configs/seat_defect_inspection.mvs.json`
-  当前 5 路 MVS 相机示例配置，定义机位源、PatchCore 路径、YOLO 配置和输出目录。
-- `configs/seat_defect_inspection.multimodel.example.json`
-  多型号路由配置示例，演示如何按 `seat_model_id` 选择整套机位与模型。
-- `configs/seat_defect_yolo.dataset.example.yaml`
-  YOLO 训练数据集 YAML 示例，定义 train/val/test 路径和类别名。
-- `src/seat_defect_inspection/__main__.py`
-  模块启动入口，支持 `python -m seat_defect_inspection`。
-- `src/seat_defect_inspection/cli.py`
-  命令行分发层，统一收口 `capture`、`inspect`、`train-patchcore`、`train-yolo`。
-- `src/seat_defect_inspection/service.py`
-  项目主编排层，负责把采图、质量判断、预处理、检测、ROI、PatchCore、颜色分支和多机位融合串成完整业务流程。
-- `src/seat_defect_inspection/acquisition.py`
-  单机位采图服务，把图片、视频、普通摄像头和 MVS 工业相机统一包装成 `FramePacket`。
-- `src/seat_defect_inspection/quality.py`
-  图像质量守卫，负责模糊、过暗、过曝、黑白帧过滤。
-- `src/seat_defect_inspection/preprocess.py`
-  OpenCV 预处理层，负责去噪、畸变矫正、灰世界白平衡、光照场校正、CLAHE 和锐化。
-- `src/seat_defect_inspection/detection.py`
-  YOLO 检测层，负责主座椅目标和忽略区域检测；无权重时退回到静态 `fallback_box`。
-- `src/seat_defect_inspection/roi.py`
-  ROI 精修层，负责扩框裁剪、GrabCut/分割掩膜、忽略区掩膜、对齐、前景羽化、背景压制和纹理增强图生成。
-- `src/seat_defect_inspection/patchcore.py`
-  PatchCore 异常检测实现，当前同时支持完整 CNN 特征版 `full` 后端和轻量 `handcrafted` 兜底后端，包含训练、记忆库压缩、模型保存/加载和热力图生成。
-- `src/seat_defect_inspection/color_branch.py`
-  颜色一致性分支，基于 LAB 统计量做正常颜色分布建模和异常评分。
-- `src/seat_defect_inspection/fusion.py`
-  多机位融合策略层，把各机位 `OK/NG/REJECT` 结果汇总成最终判定。
-- `src/seat_defect_inspection/reporting.py`
-  结果输出层，负责写出采图 manifest 和最终检测 JSON 报告。
-- `src/seat_defect_inspection/runtime_config.py`
-  JSON 配置加载层，负责把配置文件解析为程序内部 dataclass，并解析本地路径。
-- `src/seat_defect_inspection/config.py`
-  配置数据结构定义，描述质量、预处理、检测、ROI、PatchCore、颜色分支和 YOLO 训练参数。
-- `src/seat_defect_inspection/schemas.py`
-  流程中的核心数据结构定义，例如 `BoundingBox`、`DetectionResult`、`InspectionResult`。
-- `src/seat_defect_inspection/yolo_training.py`
-  YOLO 训练封装层，调用 Ultralytics 完成训练并落盘训练摘要。
-- `src/seat_defect_inspection/__init__.py`
-  对外导出的公共 API，便于外部脚本直接复用项目能力。
-- `src/media_inputs/core.py`
-  通用媒体输入中间层，统一图片、视频、普通摄像头和 MVS 工业相机的读取接口。
-- `src/mvsCamera/frame_source.py`
-  `mvs://` 源解析与 OpenCV 风格采图适配层，把海康相机封装成统一取流对象。
-- `src/mvsCamera/camera_controller.py`
-  海康 MVS 核心控制器，负责 SDK 初始化、设备枚举、按 SN/IP/MAC 选机、设置参数和取流。
-- `src/mvsCamera/pixel_utils.py`
-  工业相机像素格式与底层缓冲区辅助函数。
-- `src/mvsCamera/sdk/`
-  海康 MVS Python ctypes 封装和头文件映射，属于底层 SDK 绑定层。
-- `src/mvsCamera/MvCameraControl.dll`
-  海康 MVS 控制库，当前仓库放的是 Windows DLL。
-- `src/seat_defect_inspection.egg-info/`
-  安装或打包时生成的元数据目录，不属于核心业务逻辑。
+## 模块职责
+
+- `cli.py`
+  命令行分发层，只做参数解析和命令路由；业务模块在命令函数内部延迟导入。
+- `runtime_config.py`
+  配置文件入口和顶层校验。
+- `runtime_config_parsers.py`
+  主配置、型号配置、融合配置、YOLO 训练配置解析。
+- `runtime_config_camera_parsers.py`
+  相机子配置解析，覆盖质量、预处理、检测、ROI、PatchCore、颜色分支。
+- `runtime_config_values.py`
+  通用字段读取、类型转换和路径解析小工具。
+- `service/__init__.py`
+  对外主流程入口，只负责路由到采图、检测、训练模块。
+- `service/core.py`
+  `InspectionService`、上下文缓存和 `_CameraPipeline`。
+- `service/capture.py`
+  多机位采图流程。
+- `service/inspection.py`
+  多机位检测编排、fail-fast 和最终结果落盘。
+- `service/inspection_camera.py`
+  单机位完整检测细节，包括 PatchCore、颜色分支和调试图挂载。
+- `service/training.py`
+  PatchCore 训练流程。
+- `cvops/`
+  OpenCV 中间层，负责质量门控、ROI 精修、几何辅助、纹理准备和调试产物保存。
+- `preprocess/engine.py`
+  预处理链路，负责去噪、白平衡、光照校正、CLAHE、锐化等。
+- `patchcore/engine.py`
+  PatchCore 主流程编排，负责训练、推理、模型保存和加载。
+- `patchcore/features.py`
+  特征提取细节，包含 `handcrafted` 和 `full` 两种后端。
+- `patchcore/scoring.py`
+  记忆库采样、最近邻距离、证据分析和最终判定规则。
+- `patchcore/color_branch.py`
+  LAB 统计量颜色分支。
+- `yolo/detection.py`
+  YOLO 检测与 `fallback_box` 兜底。
+- `yolo/training.py`
+  YOLO 训练入口。
+- `yolo/dataset_validation.py`
+  数据集预检和标签格式校验。
+- `util.py`
+  公共小工具，例如 PatchCore 输入选择、JSON/图像写盘等。
+
+## 主流程调用关系
+
+当前 `inspect` 主流程已经压成“薄编排 + 细节下沉”的结构：
+
+1. `cli.py` 加载配置并路由到 `service.run_inspection`
+2. `service/__init__.py` 创建 `InspectionService`
+3. `service/inspection.py` 负责多机位循环、采图异常处理、fail-fast 和最终融合
+4. `service/inspection_camera.py` 负责单机位准备、PatchCore、颜色分支和调试图保存
+5. `fusion.py` 负责多机位结果融合
+6. `reporting.py` 负责结果落盘
+
+训练流程也是同样思路：
+
+1. `cli.py` 路由到 `service.train_patchcore_models`
+2. `service/training.py` 负责遍历型号与机位
+3. `service/core.py` 里的 `_CameraPipeline.prepare_image` 复用线上链路
+4. `patchcore/engine.py` + `patchcore/features.py` + `patchcore/scoring.py` 完成 PatchCore 训练
+5. `patchcore/color_branch.py` 按需补充颜色参考分布
 
 ## 配置文件
 
@@ -214,160 +232,10 @@ seat_defect_inspection/
   YOLO 数据集配置示例
 
 说明：
+
 - 当前 JSON 中大部分路径都是相对配置文件目录解析的；放在 `configs/` 下的配置文件如果要指向仓库根目录，推荐使用 `../models/...`、`../outputs/...`、`../data/...` 这种写法。
+- 现在配置解析链已经拆开：入口校验在 `runtime_config.py`，主解析在 `runtime_config_parsers.py`，相机子配置解析在 `runtime_config_camera_parsers.py`，公共小工具在 `runtime_config_values.py`。
 
-## 多型号路由
+## 更多架构细节
 
-当现场存在多个座椅型号时，推荐使用 `seat_models` 而不是把所有型号塞进同一组 `cameras`。
-
-推荐结构：
-
-```json
-{
-  "seat_defect_inspection": {
-    "default_seat_model_id": "seat_model_a",
-    "seat_models": [
-      {
-        "seat_model_id": "seat_model_a",
-        "display_name": "座椅型号A",
-        "cameras": [
-          {
-            "camera_id": "cam_front",
-            "patchcore_model_path": "../models/.../seat_model_a/cam_front_patchcore.npz"
-          }
-        ]
-      },
-      {
-        "seat_model_id": "seat_model_b",
-        "display_name": "座椅型号B",
-        "cameras": [
-          {
-            "camera_id": "cam_front",
-            "patchcore_model_path": "../models/.../seat_model_b/cam_front_patchcore.npz"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-运行时可通过 `--seat-model-id` 选择对应整套流程：
-
-```bash
-seat-defect-inspection inspect \
-  --config configs/seat_defect_inspection.multimodel.example.json \
-  --seat-model-id seat_model_a \
-  --part-id seat_000001
-```
-
-同样支持：
-
-```bash
-seat-defect-inspection capture --config configs/seat_defect_inspection.multimodel.example.json --seat-model-id seat_model_a
-seat-defect-inspection train-patchcore --config configs/seat_defect_inspection.multimodel.example.json --seat-model-id seat_model_a
-seat-defect-inspection train-yolo --config configs/seat_defect_inspection.multimodel.example.json --seat-model-id seat_model_a
-```
-
-## 颜色不敏感模式
-
-为了让“同型号不同颜色”尽量共用同一套流程，当前版本新增了 `color_insensitive_mode`。它主要做三件事：
-
-- 关闭颜色一致性分支对最终结果的干扰，避免把合法颜色差异直接打成异常
-- PatchCore 保持使用亮度主导的纹理输入，弱化色度变化影响
-- ROI 阶段额外生成 `roi_texture.png`，通过 OpenCV 的局部 CLAHE、光照展平、双边滤波、Scharr 边缘增强、前景羽化和背景压制，压低背景和非 ROI 因素
-
-典型配置：
-
-```json
-{
-  "color_insensitive_mode": true,
-  "roi": {
-    "suppress_background": true,
-    "background_fill_mode": "median",
-    "texture_denoise_method": "bilateral"
-  },
-  "color_branch": {
-    "enabled": false
-  }
-}
-```
-
-## OpenCV 增强链路
-
-当前项目推荐把 OpenCV 当作真正的中间层，而不是只做一层简单 resize/blur。现阶段默认链路已经增强为：
-
-- 原图 -> 去噪 -> 灰世界白平衡 -> 大核光照校正 -> CLAHE -> YOLO
-- YOLO ROI -> 分割掩膜 / full mask / GrabCut -> 掩膜清理 -> ROI 对齐 -> ROI 局部 CLAHE -> ROI 光照展平 -> 双边滤波 -> Scharr 纹理增强 -> 前景羽化 -> 背景压制 -> PatchCore
-
-把 `debug_artifact_mode` 设为 `full` 时，调试目录会额外输出 `foreground_weight.png`，用于观察 ROI 边界是否被平滑压制到位。
-
-如果你调整了这些 OpenCV 链路参数，尤其是 ROI 纹理增强和背景抑制部分，建议重新训练对应机位的 PatchCore 模型，避免训练分布和推理分布不一致。
-
-## 配置重点
-
-每个机位至少要关注这些字段：
-
-- `source`
-  输入源。可以是 `mvs://...`、本地图片、视频或普通摄像头编号
-- `train_good_dir`
-  PatchCore 正常样本目录
-- `patchcore_model_path`
-  当前机位 PatchCore 模型输出路径
-- `patchcore.backend`
-  默认建议先用 `handcrafted` 跑通 ROI 和 PatchCore 闭环；只有在已经准备好 ImageNet 预训练权重或本地 backbone 权重时，才建议切到 `full`
-- `patchcore.backbone_name` / `patchcore.feature_layers`
-  完整 PatchCore 的 backbone 和取特征层，当前推荐 `wide_resnet50_2 + [layer2, layer3]`
-- `patchcore.backbone_weights_path` / `patchcore.backbone_pretrained`
-  完整 PatchCore 的特征权重来源。正式产线建议提供本地 ImageNet 预训练权重或预先缓存 torchvision 权重；不要使用随机初始化 backbone 做 `full` 后端训练
-- `detection.model_path`
-  YOLO segmentation 权重路径；当前项目应使用 `yolo11m-seg.pt` 或分割训练产物。没有时可先设为 `null`
-- `detection.fallback_box`
-  YOLO 不可用时的兜底框
-- `color_insensitive_mode`
-  是否启用颜色不敏感模式。开启后更适合同型号多颜色共流程
-- `preprocess.white_balance_method`
-  相机前端颜色漂移抑制方式，推荐 `gray_world`
-- `preprocess.apply_illumination_correction`
-  是否启用大核光照校正，用来压平阴影和热点
-- `roi.suppress_background`
-  是否对 ROI 外区域做背景抑制
-- `roi.background_fill_mode`
-  ROI 外背景填充策略，推荐 `median` 或 `blur`
-- `roi.mask_mode`
-  当前更推荐先用 `full` 跑稳整条链路；只有在检测框背景干扰明显且没有可用分割掩膜时，再尝试 `grabcut`
-- `roi.texture_denoise_method`
-  纹理专用去噪方式，推荐 `bilateral`
-- `roi.texture_illumination_correction`
-  是否对 ROI 内部再做一次亮度展平
-- `roi.mask_feather_kernel_size`
-  前景羽化大小，用来减弱 ROI 边缘硬切带来的干扰
-- `roi.edge_enhance_method` / `roi.edge_enhance_weight`
-  纹理增强方式和强度，推荐 `scharr` + `0.12~0.20`
-
-顶层最常用字段：
-
-- `default_seat_model_id`
-  多型号配置下的默认型号
-- `seat_models`
-  多型号整套路由配置
-- `capture_dir`
-  采图输出目录
-- `output_json_path`
-  最新一次检测结果 JSON；同目录下还会自动归档历史结果，避免被覆盖
-- `debug_dir`
-  检测调试图目录
-- `save_debug_artifacts`
-  是否保存调试图；设为 `false` 时不输出任何中间图
-- `debug_artifact_mode`
-  调试图档位；`standard` 默认保留 `raw / detections / roi / patchcore_input / overlay`，`full` 额外输出 `preprocessed / roi_texture / foreground_weight / target_mask / ignore_mask / valid_mask / heatmap`
-
-排查 ROI 或 PatchCore 不稳定时，先切到 `debug_artifact_mode=full`，重点看 `roi.png`、`roi_texture.png`、`patchcore_input.png`、`valid_mask.png`、`heatmap.png`、`overlay.png` 这几张图；其中 `patchcore_input.png` 才是 PatchCore 真正吃进去的图。
-
-当前 `train-yolo` 固定使用 `yolo11m-seg.pt` 这条分割训练链路，数据集标签也必须是分割多边形格式，而不是普通检测框格式。命令启动前会先做一次基础校验，尽量把错误拦在训练前。
-
-## 当前实现边界
-
-- 已完成独立项目化、命令收口、配置整理、PatchCore/YOLO/采图闭环
-- 已接通 `src/mvsCamera/` SDK 代码路径
-- 未做真机 MVS 现场联调，本次不包含相机硬件实测
+如果需要看更细的模块说明、主流程时序、关键缓存和阅读路径，请继续看 [PROJECT_ARCHITECTURE_ZH.md](./PROJECT_ARCHITECTURE_ZH.md)。
