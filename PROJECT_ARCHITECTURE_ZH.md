@@ -3,7 +3,7 @@
 本文档用于同步当前 `seat_defect_inspection` 项目在再次拆分后的真实结构，重点说明：
 
 - 现在的目录与模块职责
-- `capture / inspect / train-patchcore / train-yolo` 四条主流程
+- `capture / inspect / inspect-folder / train-patchcore / train-yolo` 五条主流程
 - 主流程拆分后哪些文件负责“编排”，哪些文件负责“细节”
 - 当前关键缓存与维护建议
 
@@ -43,6 +43,7 @@ seat_defect_inspection/
         │   ├── common.py
         │   ├── capture.py
         │   ├── inspect.py
+        │   ├── inspect_folder.py
         │   ├── train_patchcore.py
         │   └── train_yolo.py
         ├── acquisition.py
@@ -60,6 +61,13 @@ seat_defect_inspection/
         ├── preprocess/
         ├── patchcore/
         ├── service/
+        │   ├── __init__.py
+        │   ├── capture.py
+        │   ├── core.py
+        │   ├── inspection.py
+        │   ├── inspection_camera.py
+        │   ├── offline_inspection.py
+        │   └── training.py
         └── yolo/
 ```
 
@@ -73,7 +81,7 @@ seat_defect_inspection/
 | OpenCV 中间层 | `cvops/` `preprocess/` | 图像质量门控、OpenCV 预处理、ROI 精修、纹理准备、调试图输出 |
 | 检测层 | `yolo/detection.py` | YOLO 目标/忽略区检测与 fallback box |
 | 异常检测层 | `patchcore/` | PatchCore 训练/推理、特征提取、打分判定、颜色分支 |
-| 主流程编排层 | `service/` | 采图、训练、检测三条业务主链路 |
+| 主流程编排层 | `service/` | 采图、训练、在线检测、离线批测四条业务主链路 |
 | 融合与输出层 | `fusion.py` `reporting.py` | 多机位结果融合与落盘 |
 | 公共结构/工具 | `schemas.py` `util.py` | 流程数据结构和通用辅助函数 |
 
@@ -106,6 +114,12 @@ seat_defect_inspection/
   - 颜色分支推理
   - 调试图挂载
   - REJECT 结果构造
+- `service/offline_inspection.py`
+  离线图片文件夹检测流程，负责：
+  - 识别输入目录布局
+  - 为每个样本绑定各机位图片
+  - 复用 `run_inspection` 批量跑完整检测链
+  - 输出批量汇总 `summary.json`
 - `service/training.py`
   PatchCore 训练流程。
 
@@ -193,6 +207,7 @@ PatchCore 现在不再堆在一个文件里：
 | `run_train_patchcore_command` | `train-patchcore` 命令入口 |
 | `run_train_yolo_command` | `train-yolo` 命令入口 |
 | `run_inspect_command` | `inspect` 命令入口 |
+| `run_inspect_folder_command` | `inspect-folder` 离线批测入口 |
 | `main` | 程序入口 |
 
 ### 5.2 配置层
@@ -383,7 +398,15 @@ PatchCore 现在不再堆在一个文件里：
 | `train_patchcore_models` | 按型号/机位训练 PatchCore |
 | `_train_one_camera` | 单机位训练流程 |
 
-## 6. 四条主流程
+文件：`src/seat_defect_inspection/service/offline_inspection.py`
+
+| 符号 | 作用 |
+| --- | --- |
+| `inspect_image_folder` | 离线图片文件夹批量检测主流程 |
+| `_discover_offline_samples` | 自动识别目录布局并解析样本 |
+| `_discover_camera_layout_samples` | 解析“按机位分目录”布局 |
+
+## 6. 五条主流程
 
 ### 6.1 `capture`
 
@@ -469,6 +492,27 @@ cli.main
 3. `yolo/training.py` 加载 Ultralytics 模型。
 4. 调用 `model.train(...)`。
 5. 输出 `best.pt / last.pt / training_summary.json`。
+
+### 6.5 `inspect-folder`
+
+```text
+cli.main
+  -> cli_commands/inspect_folder.py:run_inspect_folder_command
+  -> runtime_config.load_config
+  -> service.inspect_image_folder
+  -> InspectionService(config)
+  -> service/offline_inspection.py:inspect_image_folder
+  -> service/inspection.py:run_inspection
+```
+
+内部顺序：
+
+1. 先解析当前型号下的启用机位列表。
+2. 自动识别输入目录是单样本、按样本分目录，还是按机位分目录。
+3. 为每个离线样本绑定各机位图片路径。
+4. 把图片路径临时写回各机位 `source`，复用现有 `run_inspection` 主流程。
+5. 每个样本仍然走 `preprocess -> YOLO -> ROI -> PatchCore -> fusion -> report`。
+6. 额外输出一次批量汇总 `summary.json`。
 
 ## 7. 当前最关键的几个入口
 

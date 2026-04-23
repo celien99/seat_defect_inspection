@@ -28,6 +28,7 @@ seat-defect-inspection capture --config configs/seat_defect_inspection.mvs.json 
 seat-defect-inspection train-patchcore --config configs/seat_defect_inspection.mvs.json
 seat-defect-inspection train-yolo --config configs/seat_defect_inspection.mvs.json
 seat-defect-inspection inspect --config configs/seat_defect_inspection.mvs.json --part-id seat_000001
+seat-defect-inspection inspect-folder --config configs/seat_defect_inspection.mvs.json --input-dir offline_samples
 ```
 
 ## Recommended Workflow
@@ -37,9 +38,35 @@ seat-defect-inspection inspect --config configs/seat_defect_inspection.mvs.json 
    Note: `train_good_dir` stores raw camera images, but `train-patchcore` still replays the production preprocessing and mask-driven ROI preparation pipeline before fitting PatchCore.
 3. Run `train-patchcore`.
 4. Prepare a YOLO dataset and run `train-yolo`.
-5. Configure the resulting weights and run `inspect`.
+5. Configure the resulting weights and run `inspect` for live cameras, or `inspect-folder` for offline batch verification.
 
 The project now standardizes on `yolo11m-seg.pt`. YOLO segmentation masks are consumed directly to crop the target ROI and build valid/ignore masks. The current ROI layer keeps only the lightweight crop, resize, and mask-cleanup steps instead of the older heavy local enhancement chain.
+
+`train-patchcore` is already an offline workflow. As long as each camera `train_good_dir` points to a local image folder, PatchCore training does not require any real camera device.
+
+`inspect-folder` is the new offline verification path. It reuses the same preprocess, YOLO, ROI, PatchCore, fusion, report, and debug-artifact chain as production `inspect`, but swaps live camera sources for local files.
+
+Supported `inspect-folder` input layouts:
+
+```text
+offline_samples/
+├── sample_001/
+│   ├── cam_0.jpg
+│   └── cam_1.jpg
+└── sample_002/
+    ├── cam_0.jpg
+    └── cam_1.jpg
+```
+
+```text
+offline_samples/
+├── cam_0/
+│   ├── sample_001.jpg
+│   └── sample_002.jpg
+└── cam_1/
+    ├── sample_001.jpg
+    └── sample_002.jpg
+```
 
 ## Key Paths
 
@@ -61,6 +88,7 @@ src/seat_defect_inspection/
 │   ├── common.py
 │   ├── capture.py
 │   ├── inspect.py
+│   ├── inspect_folder.py
 │   ├── train_patchcore.py
 │   └── train_yolo.py
 ├── acquisition.py
@@ -93,6 +121,7 @@ src/seat_defect_inspection/
 │   ├── capture.py
 │   ├── inspection.py
 │   ├── inspection_camera.py
+│   ├── offline_inspection.py
 │   └── training.py
 └── yolo/
     ├── __init__.py
@@ -115,6 +144,7 @@ src/seat_defect_inspection/
 - `service/capture.py`: capture workflow.
 - `service/inspection.py`: multi-camera inspection orchestration and early-stop handling.
 - `service/inspection_camera.py`: single-camera inspection details.
+- `service/offline_inspection.py`: offline batch inspection from local image folders.
 - `service/training.py`: PatchCore training workflow.
 - `cvops/`: OpenCV middle layer for quality gating, ROI refinement, geometry helpers, texture preparation, and debug artifacts.
 - `preprocess/engine.py`: image preprocessing chain before YOLO and ROI refinement.

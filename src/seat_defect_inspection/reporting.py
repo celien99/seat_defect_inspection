@@ -30,7 +30,7 @@ def export_inspection_report(result: InspectionResult, output_path: str) -> Path
     }
     write_json(path, payload)
     # 固定路径继续保留为“最新结果”，同时按型号/工件/帧号归档，避免历史结果被覆盖。
-    archive_path = _build_inspection_archive_path(path, result)
+    archive_path = resolve_inspection_archive_path(path, result)
     write_json(archive_path, payload)
     return path
 
@@ -146,7 +146,8 @@ def _resolve_target_box(result: CameraInspectionResult) -> dict[str, float] | No
     return _box_to_dict(detection.target.bounding_box)
 
 
-def _build_inspection_archive_path(base_path: Path, result: InspectionResult) -> Path:
+def resolve_inspection_archive_path(base_path: Path, result: InspectionResult) -> Path:
+    """根据结果对象推导历史归档路径，便于批量流程复用。"""
     history_root = base_path.parent / f"{base_path.stem}_history"
     seat_model_dir = _sanitize_path_component(result.seat_model_id or "default")
     part_dir = _sanitize_path_component(result.part_id or "unknown_part")

@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from .cli_commands import (
     register_capture_command,
     register_inspect_command,
+    register_inspect_folder_command,
     register_train_patchcore_command,
     register_train_yolo_command,
 )
@@ -23,6 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     register_train_patchcore_command(subparsers)
     register_capture_command(subparsers)
     register_inspect_command(subparsers)
+    register_inspect_folder_command(subparsers)
     register_train_yolo_command(subparsers)
     return parser
 

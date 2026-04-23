@@ -79,22 +79,31 @@
           "alignment": {
             "enabled": false,
             "method": "resize",
-            "output_width": 256,
-            "output_height": 256
+            "output_width": 320,
+            "output_height": 320
           }
         },
         "patchcore": {
           "backend": "handcrafted",
-          "image_size": 256,
-          "patch_size": 32,
-          "stride": 16,
+          "image_size": 320,
+          "patch_size": 16,
+          "stride": 8,
           "max_memory": 512,
-          "threshold_quantile": 0.99,
+          "threshold_quantile": 0.95,
           "coreset_sampling_ratio": 0.1,
           "texture_input": "lab_l",
-          "min_target_coverage": 0.6,
+          "min_target_coverage": 0.5,
           "max_ignore_overlap": 0.1,
-          "min_valid_patch_ratio": 0.4
+          "min_valid_patch_ratio": 0.3,
+          "decision_score_margin": 0.9,
+          "strong_patch_score_ratio": 0.8,
+          "min_strong_patch_count": 2,
+          "min_strong_component_count": 1,
+          "min_strong_patch_ratio": 0.005,
+          "min_strong_component_ratio": 0.003,
+          "critical_score_margin": 0.8,
+          "critical_peak_score_margin": 0.9,
+          "critical_min_component_patch_count": 1
         },
         "color_branch": {
           "enabled": false,
@@ -167,22 +176,31 @@
           "alignment": {
             "enabled": false,
             "method": "resize",
-            "output_width": 256,
-            "output_height": 256
+            "output_width": 320,
+            "output_height": 320
           }
         },
         "patchcore": {
           "backend": "handcrafted",
-          "image_size": 256,
-          "patch_size": 32,
-          "stride": 16,
+          "image_size": 320,
+          "patch_size": 16,
+          "stride": 8,
           "max_memory": 512,
-          "threshold_quantile": 0.99,
+          "threshold_quantile": 0.95,
           "coreset_sampling_ratio": 0.1,
           "texture_input": "lab_l",
-          "min_target_coverage": 0.6,
+          "min_target_coverage": 0.5,
           "max_ignore_overlap": 0.1,
-          "min_valid_patch_ratio": 0.4
+          "min_valid_patch_ratio": 0.3,
+          "decision_score_margin": 0.9,
+          "strong_patch_score_ratio": 0.8,
+          "min_strong_patch_count": 2,
+          "min_strong_component_count": 1,
+          "min_strong_patch_ratio": 0.005,
+          "min_strong_component_ratio": 0.003,
+          "critical_score_margin": 0.8,
+          "critical_peak_score_margin": 0.9,
+          "critical_min_component_patch_count": 1
         },
         "color_branch": {
           "enabled": false,
@@ -255,22 +273,31 @@
           "alignment": {
             "enabled": false,
             "method": "resize",
-            "output_width": 256,
-            "output_height": 256
+            "output_width": 320,
+            "output_height": 320
           }
         },
         "patchcore": {
           "backend": "handcrafted",
-          "image_size": 256,
-          "patch_size": 32,
-          "stride": 16,
+          "image_size": 320,
+          "patch_size": 16,
+          "stride": 8,
           "max_memory": 512,
-          "threshold_quantile": 0.99,
+          "threshold_quantile": 0.95,
           "coreset_sampling_ratio": 0.1,
           "texture_input": "lab_l",
-          "min_target_coverage": 0.6,
+          "min_target_coverage": 0.5,
           "max_ignore_overlap": 0.1,
-          "min_valid_patch_ratio": 0.4
+          "min_valid_patch_ratio": 0.3,
+          "decision_score_margin": 0.9,
+          "strong_patch_score_ratio": 0.8,
+          "min_strong_patch_count": 2,
+          "min_strong_component_count": 1,
+          "min_strong_patch_ratio": 0.005,
+          "min_strong_component_ratio": 0.003,
+          "critical_score_margin": 0.8,
+          "critical_peak_score_margin": 0.9,
+          "critical_min_component_patch_count": 1
         },
         "color_branch": {
           "enabled": false,
@@ -343,22 +370,31 @@
           "alignment": {
             "enabled": false,
             "method": "resize",
-            "output_width": 256,
-            "output_height": 256
+            "output_width": 320,
+            "output_height": 320
           }
         },
         "patchcore": {
           "backend": "handcrafted",
-          "image_size": 256,
-          "patch_size": 32,
-          "stride": 16,
+          "image_size": 320,
+          "patch_size": 16,
+          "stride": 8,
           "max_memory": 512,
-          "threshold_quantile": 0.99,
+          "threshold_quantile": 0.95,
           "coreset_sampling_ratio": 0.1,
           "texture_input": "lab_l",
-          "min_target_coverage": 0.6,
+          "min_target_coverage": 0.5,
           "max_ignore_overlap": 0.1,
-          "min_valid_patch_ratio": 0.4
+          "min_valid_patch_ratio": 0.3,
+          "decision_score_margin": 0.9,
+          "strong_patch_score_ratio": 0.8,
+          "min_strong_patch_count": 2,
+          "min_strong_component_count": 1,
+          "min_strong_patch_ratio": 0.005,
+          "min_strong_component_ratio": 0.003,
+          "critical_score_margin": 0.8,
+          "critical_peak_score_margin": 0.9,
+          "critical_min_component_patch_count": 1
         },
         "color_branch": {
           "enabled": false,
@@ -431,22 +467,31 @@
           "alignment": {
             "enabled": false,
             "method": "resize",
-            "output_width": 256,
-            "output_height": 256
+            "output_width": 320,
+            "output_height": 320
           }
         },
         "patchcore": {
           "backend": "handcrafted",
-          "image_size": 256,
-          "patch_size": 32,
-          "stride": 16,
+          "image_size": 320,
+          "patch_size": 16,
+          "stride": 8,
           "max_memory": 512,
-          "threshold_quantile": 0.99,
+          "threshold_quantile": 0.95,
           "coreset_sampling_ratio": 0.1,
           "texture_input": "lab_l",
-          "min_target_coverage": 0.6,
+          "min_target_coverage": 0.5,
           "max_ignore_overlap": 0.1,
-          "min_valid_patch_ratio": 0.4
+          "min_valid_patch_ratio": 0.3,
+          "decision_score_margin": 0.9,
+          "strong_patch_score_ratio": 0.8,
+          "min_strong_patch_count": 2,
+          "min_strong_component_count": 1,
+          "min_strong_patch_ratio": 0.005,
+          "min_strong_component_ratio": 0.003,
+          "critical_score_margin": 0.8,
+          "critical_peak_score_margin": 0.9,
+          "critical_min_component_patch_count": 1
         },
         "color_branch": {
           "enabled": false,

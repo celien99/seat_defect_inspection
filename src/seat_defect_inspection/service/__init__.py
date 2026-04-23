@@ -17,6 +17,7 @@ __all__ = [
     "PreparedCameraSample",
     "_CameraPipeline",
     "capture_samples",
+    "inspect_image_folder",
     "run_inspection",
     "train_patchcore_models",
 ]
@@ -94,4 +95,26 @@ def run_inspection(
         InspectionService(config),
         part_id=part_id,
         seat_model_id=seat_model_id,
+    )
+
+
+def inspect_image_folder(
+    config: InspectionConfig,
+    input_dir: str,
+    *,
+    seat_model_id: str | None = None,
+    output_dir: str | None = None,
+    part_id: str | None = None,
+) -> dict[str, Any]:
+    """从本地图片文件夹批量执行离线检测。"""
+    # 离线批测仍然复用同一套服务骨架，只是把机位输入换成本地图片。
+    from .core import InspectionService
+    from .offline_inspection import inspect_image_folder as _inspect_image_folder
+
+    return _inspect_image_folder(
+        InspectionService(config),
+        input_dir=input_dir,
+        seat_model_id=seat_model_id,
+        output_dir=output_dir,
+        part_id=part_id,
     )

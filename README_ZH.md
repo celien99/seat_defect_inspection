@@ -67,19 +67,40 @@ seat-defect-inspection inspect \
   --part-id seat_000001
 ```
 
+离线图片文件夹批量检测：
+
+```bash
+seat-defect-inspection inspect-folder \
+  --config configs/seat_defect_inspection.mvs.json \
+  --input-dir offline_samples
+```
+
 ## 推荐工作流
 
 1. 先用 `capture` 采集正常样本。
 2. 正常样本进入各机位 `train_good_dir`，再执行 `train-patchcore`。
    注意：`train_good_dir` 保存的是相机原图，真正训练 PatchCore 时仍会复用正式链路，先走整图 `preprocess`，再走 YOLO 掩膜驱动的 ROI 裁剪与有效区构造。
 3. 单独准备 YOLO 数据集并执行 `train-yolo`。
-4. 把每个机位的 `patchcore_model_path` 和 YOLO `model_path` 配好后，执行 `inspect`。
+4. 把每个机位的 `patchcore_model_path` 和 YOLO `model_path` 配好后，在线上跑 `inspect`，在线下批测跑 `inspect-folder`。
 
 如果你已经训练过 PatchCore 模型，而最近又修改了 `preprocess`、ROI 掩膜、`valid_mask` 相关参数，或把 `patchcore.backend` 从 `full` 改成 `handcrafted`，必须重新执行 `train-patchcore`。旧模型对应的训练分布已经失效，继续拿来跑 `inspect` 没有参考价值。
 
 如果现场还没有 YOLO 权重，可以先把 `detection.model_path` 设为 `null`，继续使用 `fallback_box` 走完整流程。
 
 项目现在统一使用 `yolo11m-seg.pt`。代码会直接消费 YOLO segmentation mask 来裁剪目标区域，并构造 `target_mask / ignore_mask / valid_mask`。当前 ROI 层已经压成轻量链路，主要保留裁剪、缩放和掩膜清理，不再承载之前那套重的局部增强流程。
+
+`train-patchcore` 本身就是离线训练流程。只要每个机位的 `train_good_dir` 指向本地图片目录，就不需要连接真机。
+
+`inspect-folder` 是新增的离线批量验证命令。它复用线上 `inspect` 的同一套 `preprocess -> YOLO -> ROI -> PatchCore -> fusion -> report` 链路，只是把机位输入从真机切换成图片文件夹。
+
+`inspect-folder` 目前支持三种输入组织方式：
+
+1. 单样本目录：
+   根目录直接放每个机位一张图，例如 `cam_0.jpg`、`cam_1.jpg`。
+2. 按样本分目录：
+   `offline_samples/sample_001/cam_0.jpg`、`offline_samples/sample_001/cam_1.jpg`。
+3. 按机位分目录：
+   `offline_samples/cam_0/sample_001.jpg`、`offline_samples/cam_1/sample_001.jpg`。
 
 ## 目录约定
 
@@ -121,6 +142,7 @@ seat_defect_inspection/
         │   ├── common.py
         │   ├── capture.py
         │   ├── inspect.py
+        │   ├── inspect_folder.py
         │   ├── train_patchcore.py
         │   └── train_yolo.py
         ├── acquisition.py
@@ -156,6 +178,7 @@ seat_defect_inspection/
         │   ├── core.py
         │   ├── inspection.py
         │   ├── inspection_camera.py
+        │   ├── offline_inspection.py
         │   └── training.py
         └── yolo/
             ├── __init__.py
@@ -189,6 +212,8 @@ seat_defect_inspection/
   多机位检测编排、fail-fast 和最终结果落盘。
 - `service/inspection_camera.py`
   单机位完整检测细节，包括 PatchCore、颜色分支和调试图挂载。
+- `service/offline_inspection.py`
+  离线图片文件夹批量检测流程，复用现有检测主链，只替换输入源。
 - `service/training.py`
   PatchCore 训练流程。
 - `cvops/`
@@ -222,6 +247,8 @@ seat_defect_inspection/
 4. `service/inspection_camera.py` 负责单机位准备、PatchCore、颜色分支和调试图保存
 5. `fusion.py` 负责多机位结果融合
 6. `reporting.py` 负责结果落盘
+
+离线批测则走同一套检测链，只是入口换成 `cli_commands/inspect_folder.py`，并由 `service/offline_inspection.py` 负责把图片文件夹解析成每个样本的机位输入。
 
 训练流程也是同样思路：
 
