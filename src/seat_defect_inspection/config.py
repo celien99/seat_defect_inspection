@@ -258,6 +258,7 @@ class YoloTrainingConfig:
     cache: bool = False
     pretrained: bool = True
     seat_model_id: str | None = None
+    preprocess: PreprocessConfig | None = None
 
 
 @dataclass(slots=True)

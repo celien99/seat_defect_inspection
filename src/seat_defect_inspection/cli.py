@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
+from .config import InspectionConfig, PreprocessConfig
 from .runtime_config import load_config, load_yolo_training_config
 
 DEFAULT_CONFIG_PATH = str(
@@ -18,7 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="汽车座椅缺陷检测独立项目入口",
     )
-    # 仍然按命令顺序手写展开，避免再套一层命令注册框架。
+    # 继续手写命令展开，避免再叠一层命令注册抽象。
     subparsers = parser.add_subparsers(required=True)
     _build_train_patchcore_parser(subparsers)
     _build_capture_parser(subparsers)
@@ -61,7 +63,7 @@ def _build_capture_parser(subparsers) -> None:
     parser.add_argument(
         "--save-to-train-good-dir",
         action="store_true",
-        help="同时把图像拷贝到各机位的 train_good_dir",
+        help="同时把图像复制到各机位的 train_good_dir",
     )
     parser.add_argument(
         "--count",
@@ -96,7 +98,7 @@ def _build_train_yolo_parser(subparsers) -> None:
     """注册 YOLO 训练命令。"""
     parser = subparsers.add_parser(
         "train-yolo",
-        help="训练用于座椅定位的 YOLO 模型",
+        help="训练用于座椅定位的 YOLO 分割模型",
     )
     parser.set_defaults(run=_run_train_yolo)
     _add_config_argument(parser, help_text="包含 yolo_training 配置块的 JSON 路径")
@@ -189,11 +191,67 @@ def _run_train_yolo(args: argparse.Namespace) -> None:
     from .yolo import train_yolo_model
 
     config = load_yolo_training_config(args.config, seat_model_id=args.seat_model_id)
+    inspection_config = _try_load_inspection_config(args.config)
+    if config.preprocess is None and inspection_config is not None:
+        preprocess = _resolve_yolo_training_preprocess(
+            inspection_config,
+            args.seat_model_id,
+        )
+        if preprocess is not None:
+            config = replace(config, preprocess=preprocess)
+
     summary = train_yolo_model(config)
     print(
         f"YOLO 训练完成，型号：{summary.get('seat_model_id') or 'default'}，"
         f"最佳权重：{summary['best_weights_path']}，输出目录：{summary['save_dir']}",
     )
+
+
+def _try_load_inspection_config(path: str) -> InspectionConfig | None:
+    """尽量加载完整检测配置，失败时回退到仅使用 yolo_training 配置。"""
+    try:
+        return load_config(path)
+    except Exception:
+        return None
+
+
+def _resolve_yolo_training_preprocess(
+    config: InspectionConfig,
+    seat_model_id: str | None,
+) -> PreprocessConfig | None:
+    """从当前型号对应机位里推导一份统一的 preprocess。"""
+    cameras = _resolve_training_cameras(config, seat_model_id)
+    if not cameras:
+        return None
+
+    preprocess = cameras[0].preprocess
+    if all(camera.preprocess == preprocess for camera in cameras[1:]):
+        return preprocess
+
+    raise ValueError(
+        "train-yolo 检测到多个机位的 preprocess 配置不一致。"
+        " 请在 yolo_training.preprocess 中显式配置一份统一预处理，"
+        "或先统一相关机位的 preprocess 参数。"
+    )
+
+
+def _resolve_training_cameras(
+    config: InspectionConfig,
+    seat_model_id: str | None,
+):
+    """解析 train-yolo 当前应参考的机位列表。"""
+    if config.seat_models:
+        resolved_id = (
+            seat_model_id
+            or config.default_seat_model_id
+            or config.seat_models[0].seat_model_id
+        )
+        for seat_model in config.seat_models:
+            if seat_model.seat_model_id == resolved_id:
+                return [camera for camera in seat_model.cameras if camera.enabled]
+        available = ", ".join(item.seat_model_id for item in config.seat_models)
+        raise ValueError(f"未知 seat_model_id `{resolved_id}`，可选值：{available}")
+    return [camera for camera in config.cameras if camera.enabled]
 
 
 def main(argv: Sequence[str] | None = None) -> None:

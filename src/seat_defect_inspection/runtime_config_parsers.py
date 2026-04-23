@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import FusionConfig, InspectionConfig, SeatModelConfig, YoloTrainingConfig
-from .runtime_config_camera_parsers import _parse_camera_config
+from .runtime_config_camera_parsers import _parse_camera_config, _parse_preprocess_config
 from .runtime_config_values import (
     _bool_or_default,
     _ensure_list,
@@ -187,6 +187,14 @@ def _parse_yolo_training_config(
         cache=_bool_or_default(payload.get("cache"), defaults.cache),
         pretrained=_bool_or_default(payload.get("pretrained"), defaults.pretrained),
         seat_model_id=resolved_seat_model_id,
+        preprocess=(
+            _parse_preprocess_config(
+                payload.get("preprocess"),
+                scope=f"{scope}.preprocess",
+            )
+            if payload.get("preprocess") is not None
+            else None
+        ),
     )
 
 
