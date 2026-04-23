@@ -71,15 +71,15 @@ seat-defect-inspection inspect \
 
 1. 先用 `capture` 采集正常样本。
 2. 正常样本进入各机位 `train_good_dir`，再执行 `train-patchcore`。
-   注意：`train_good_dir` 保存的是相机原图，真正训练 PatchCore 时仍会复用正式链路，经过 OpenCV、YOLO、ROI 和纹理准备后再进入模型。
+   注意：`train_good_dir` 保存的是相机原图，真正训练 PatchCore 时仍会复用正式链路，先走整图 `preprocess`，再走 YOLO 掩膜驱动的 ROI 裁剪与有效区构造。
 3. 单独准备 YOLO 数据集并执行 `train-yolo`。
 4. 把每个机位的 `patchcore_model_path` 和 YOLO `model_path` 配好后，执行 `inspect`。
 
-如果你已经训练过 PatchCore 模型，而最近又修改了 ROI 掩膜、`valid_mask` 相关参数、纹理增强链路，或把 `patchcore.backend` 从 `full` 改成 `handcrafted`，必须重新执行 `train-patchcore`。旧模型对应的训练分布已经失效，继续拿来跑 `inspect` 没有参考价值。
+如果你已经训练过 PatchCore 模型，而最近又修改了 `preprocess`、ROI 掩膜、`valid_mask` 相关参数，或把 `patchcore.backend` 从 `full` 改成 `handcrafted`，必须重新执行 `train-patchcore`。旧模型对应的训练分布已经失效，继续拿来跑 `inspect` 没有参考价值。
 
 如果现场还没有 YOLO 权重，可以先把 `detection.model_path` 设为 `null`，继续使用 `fallback_box` 走完整流程。
 
-项目现在统一使用 `yolo11m-seg.pt`。代码会直接消费 YOLO segmentation mask 来生成 ROI 前景掩膜，但它替代的只是前景掩膜生成，不是整个 ROI/OpenCV 链路；PatchCore 仍然需要规则矩形 ROI、对齐、`valid_mask` 清理和纹理增强。
+项目现在统一使用 `yolo11m-seg.pt`。代码会直接消费 YOLO segmentation mask 来裁剪目标区域，并构造 `target_mask / ignore_mask / valid_mask`。当前 ROI 层已经压成轻量链路，主要保留裁剪、缩放和掩膜清理，不再承载之前那套重的局部增强流程。
 
 ## 目录约定
 
@@ -116,6 +116,13 @@ seat_defect_inspection/
         ├── __init__.py
         ├── __main__.py
         ├── cli.py
+        ├── cli_commands/
+        │   ├── __init__.py
+        │   ├── common.py
+        │   ├── capture.py
+        │   ├── inspect.py
+        │   ├── train_patchcore.py
+        │   └── train_yolo.py
         ├── acquisition.py
         ├── config.py
         ├── debug_artifacts.py
@@ -161,7 +168,9 @@ seat_defect_inspection/
 ## 模块职责
 
 - `cli.py`
-  命令行分发层，只做参数解析和命令路由；业务模块在命令函数内部延迟导入。
+  命令行薄入口，只负责组装子命令解析树。
+- `cli_commands/`
+  按命令拆分的入口目录；每个文件各自维护参数注册和业务路由，不再把所有指令堆在 `cli.py`。
 - `runtime_config.py`
   配置文件入口和顶层校验。
 - `runtime_config_parsers.py`
@@ -207,7 +216,7 @@ seat_defect_inspection/
 
 当前 `inspect` 主流程已经压成“薄编排 + 细节下沉”的结构：
 
-1. `cli.py` 加载配置并路由到 `service.run_inspection`
+1. `cli.py` 组装命令树，`cli_commands/inspect.py` 加载配置并路由到 `service.run_inspection`
 2. `service/__init__.py` 创建 `InspectionService`
 3. `service/inspection.py` 负责多机位循环、采图异常处理、fail-fast 和最终融合
 4. `service/inspection_camera.py` 负责单机位准备、PatchCore、颜色分支和调试图保存
@@ -216,7 +225,7 @@ seat_defect_inspection/
 
 训练流程也是同样思路：
 
-1. `cli.py` 路由到 `service.train_patchcore_models`
+1. `cli.py` 组装命令树，`cli_commands/train_patchcore.py` 路由到 `service.train_patchcore_models`
 2. `service/training.py` 负责遍历型号与机位
 3. `service/core.py` 里的 `_CameraPipeline.prepare_image` 复用线上链路
 4. `patchcore/engine.py` + `patchcore/features.py` + `patchcore/scoring.py` 完成 PatchCore 训练

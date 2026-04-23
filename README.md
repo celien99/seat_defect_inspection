@@ -34,12 +34,12 @@ seat-defect-inspection inspect --config configs/seat_defect_inspection.mvs.json 
 
 1. Capture normal samples with `capture`.
 2. Save or copy them into each camera `train_good_dir`.
-   Note: `train_good_dir` stores raw camera images, but `train-patchcore` still replays the production preprocessing, YOLO, ROI, and texture-preparation pipeline before fitting PatchCore.
+   Note: `train_good_dir` stores raw camera images, but `train-patchcore` still replays the production preprocessing and mask-driven ROI preparation pipeline before fitting PatchCore.
 3. Run `train-patchcore`.
 4. Prepare a YOLO dataset and run `train-yolo`.
 5. Configure the resulting weights and run `inspect`.
 
-The project now standardizes on `yolo11m-seg.pt`. YOLO segmentation masks are consumed directly for ROI mask generation, but PatchCore still needs a rectangular ROI plus the existing alignment, valid-mask cleanup, and texture preprocessing stages.
+The project now standardizes on `yolo11m-seg.pt`. YOLO segmentation masks are consumed directly to crop the target ROI and build valid/ignore masks. The current ROI layer keeps only the lightweight crop, resize, and mask-cleanup steps instead of the older heavy local enhancement chain.
 
 ## Key Paths
 
@@ -57,6 +57,12 @@ The project has been split by responsibility rather than kept in a few oversized
 ```text
 src/seat_defect_inspection/
 ├── cli.py
+├── cli_commands/
+│   ├── common.py
+│   ├── capture.py
+│   ├── inspect.py
+│   ├── train_patchcore.py
+│   └── train_yolo.py
 ├── acquisition.py
 ├── config.py
 ├── debug_artifacts.py
@@ -98,7 +104,8 @@ src/seat_defect_inspection/
 
 ## Module Responsibilities
 
-- `cli.py`: command routing only. Business modules are imported lazily inside each command handler.
+- `cli.py`: CLI bootstrap only. It assembles subcommands and keeps the entry thin.
+- `cli_commands/`: one command per file, including argument registration and routing to the matching business flow.
 - `runtime_config.py`: config file entry and top-level validation.
 - `runtime_config_parsers.py`: inspection-level and seat-model-level parsing.
 - `runtime_config_camera_parsers.py`: camera sub-config parsing for preprocess, ROI, PatchCore, and YOLO detection.
@@ -123,7 +130,7 @@ src/seat_defect_inspection/
 
 `inspect` now follows a deliberately thin orchestration path:
 
-1. `cli.py` loads config and routes to `service.run_inspection`.
+1. `cli.py` assembles the parser, and `cli_commands/inspect.py` loads config and routes to `service.run_inspection`.
 2. `service/__init__.py` creates `InspectionService`.
 3. `service/inspection.py` loops over enabled cameras and handles fail-fast decisions.
 4. `service/inspection_camera.py` runs one camera through `_CameraPipeline`, PatchCore, optional color branch, and debug artifact export.

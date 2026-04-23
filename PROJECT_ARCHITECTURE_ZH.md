@@ -38,6 +38,13 @@ seat_defect_inspection/
         ├── __init__.py
         ├── __main__.py
         ├── cli.py
+        ├── cli_commands/
+        │   ├── __init__.py
+        │   ├── common.py
+        │   ├── capture.py
+        │   ├── inspect.py
+        │   ├── train_patchcore.py
+        │   └── train_yolo.py
         ├── acquisition.py
         ├── config.py
         ├── debug_artifacts.py
@@ -60,7 +67,7 @@ seat_defect_inspection/
 
 | 分层 | 文件/目录 | 作用 |
 | --- | --- | --- |
-| 命令入口层 | `cli.py` | 解析命令参数，路由到主流程 |
+| 命令入口层 | `cli.py` `cli_commands/` | `cli.py` 只组装命令树，每个子命令分别在独立文件里维护 |
 | 配置层 | `config.py` `runtime_config.py` `runtime_config_parsers.py` `runtime_config_camera_parsers.py` `runtime_config_values.py` | dataclass 定义、配置加载、字段解析、路径解析、顶层校验 |
 | 采图层 | `acquisition.py` `media_inputs/` `mvsCamera/` | 统一图片、视频、普通摄像头、MVS 相机输入 |
 | OpenCV 中间层 | `cvops/` `preprocess/` | 图像质量门控、OpenCV 预处理、ROI 精修、纹理准备、调试图输出 |
@@ -176,15 +183,16 @@ PatchCore 现在不再堆在一个文件里：
 
 ### 5.1 入口层
 
-文件：`src/seat_defect_inspection/cli.py`
+文件：`src/seat_defect_inspection/cli.py` `src/seat_defect_inspection/cli_commands/*.py`
 
 | 符号 | 作用 |
 | --- | --- |
 | `build_parser` | 构建 CLI 命令树 |
-| `_run_capture` | `capture` 命令入口 |
-| `_run_train_patchcore` | `train-patchcore` 命令入口 |
-| `_run_train_yolo` | `train-yolo` 命令入口 |
-| `_run_inspect` | `inspect` 命令入口 |
+| `register_*_command` | 各子命令的参数注册入口 |
+| `run_capture_command` | `capture` 命令入口 |
+| `run_train_patchcore_command` | `train-patchcore` 命令入口 |
+| `run_train_yolo_command` | `train-yolo` 命令入口 |
+| `run_inspect_command` | `inspect` 命令入口 |
 | `main` | 程序入口 |
 
 ### 5.2 配置层
@@ -381,7 +389,7 @@ PatchCore 现在不再堆在一个文件里：
 
 ```text
 cli.main
-  -> _run_capture
+  -> cli_commands/capture.py:run_capture_command
   -> runtime_config.load_config
   -> service.capture_samples
   -> InspectionService(config)
@@ -400,7 +408,7 @@ cli.main
 
 ```text
 cli.main
-  -> _run_inspect
+  -> cli_commands/inspect.py:run_inspect_command
   -> runtime_config.load_config
   -> service.run_inspection
   -> InspectionService(config)
@@ -427,7 +435,7 @@ cli.main
 
 ```text
 cli.main
-  -> _run_train_patchcore
+  -> cli_commands/train_patchcore.py:run_train_patchcore_command
   -> runtime_config.load_config
   -> service.train_patchcore_models
   -> InspectionService(config)
@@ -448,7 +456,7 @@ cli.main
 
 ```text
 cli.main
-  -> _run_train_yolo
+  -> cli_commands/train_yolo.py:run_train_yolo_command
   -> runtime_config.load_yolo_training_config
   -> yolo.train_yolo_model
   -> yolo/training.py:train_yolo_model
@@ -468,7 +476,7 @@ cli.main
 
 | 优先级 | 文件 | 符号 | 原因 |
 | --- | --- | --- | --- |
-| 1 | `cli.py` | `main` 和 `_run_*` | 所有命令都从这里进 |
+| 1 | `cli.py` `cli_commands/` | `main`、`register_*_command`、`run_*_command` | 所有命令都从这里进 |
 | 2 | `runtime_config.py` | `load_config` | 配置到运行对象的第一入口 |
 | 3 | `service/core.py` | `InspectionService` | 总编排服务和共享缓存都在这里 |
 | 4 | `service/core.py` | `_CameraPipeline.prepare_image` | 线上/训练共用的单机位图像链路 |
@@ -496,12 +504,13 @@ cli.main
 ### 9.1 想快速读懂整体结构
 
 1. `src/seat_defect_inspection/cli.py`
-2. `src/seat_defect_inspection/runtime_config.py`
-3. `src/seat_defect_inspection/service/core.py`
-4. `src/seat_defect_inspection/service/inspection.py`
-5. `src/seat_defect_inspection/service/inspection_camera.py`
-6. `src/seat_defect_inspection/cvops/roi.py`
-7. `src/seat_defect_inspection/patchcore/engine.py`
+2. `src/seat_defect_inspection/cli_commands/inspect.py`
+3. `src/seat_defect_inspection/runtime_config.py`
+4. `src/seat_defect_inspection/service/core.py`
+5. `src/seat_defect_inspection/service/inspection.py`
+6. `src/seat_defect_inspection/service/inspection_camera.py`
+7. `src/seat_defect_inspection/cvops/roi.py`
+8. `src/seat_defect_inspection/patchcore/engine.py`
 
 ### 9.2 现场排查时按问题读
 
@@ -541,6 +550,6 @@ ROI 或 PatchCore 不稳定：
 2. PatchCore 不再堆在一个大文件里，而是拆成 `engine / features / scoring / color_branch`。
 3. 配置解析不再混在一个大文件里，而是拆成 `runtime_config / runtime_config_parsers / runtime_config_camera_parsers / runtime_config_values`。
 4. YOLO 训练也拆出了独立的数据集校验文件 `dataset_validation.py`。
-5. `cli.py`、`service/__init__.py`、`yolo/__init__.py` 都尽量保持为薄入口，并通过延迟导入降低不必要耦合。
+5. `cli.py`、`cli_commands/`、`service/__init__.py`、`yolo/__init__.py` 都尽量保持为薄入口，并通过按职责拆分降低不必要耦合。
 
 这套结构更接近“按功能分文件、入口只做编排”的维护方式，后续继续改 ROI、PatchCore、YOLO 训练或配置解析时，影响面会更集中，也更容易做减法。
