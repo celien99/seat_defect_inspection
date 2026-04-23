@@ -73,7 +73,6 @@ def _parse_camera_config(payload: dict[str, Any], config_dir: Path, *, scope: st
         ),
         roi=_parse_roi_refine_config(
             payload.get("roi"),
-            config_dir,
             scope=f"{scope}.roi",
         ),
         patchcore=_parse_patchcore_config(
@@ -187,7 +186,7 @@ def _parse_preprocess_config(payload: Any, *, scope: str) -> PreprocessConfig:
     )
 
 
-def _parse_alignment_config(payload: Any, config_dir: Path, *, scope: str) -> AlignmentConfig:
+def _parse_alignment_config(payload: Any, *, scope: str) -> AlignmentConfig:
     """解析 ROI 对齐配置。"""
     defaults = AlignmentConfig()
     if payload is None:
@@ -195,19 +194,12 @@ def _parse_alignment_config(payload: Any, config_dir: Path, *, scope: str) -> Al
     payload = _expect_dict(payload, scope)
     _reject_unknown_keys(payload, _field_names(AlignmentConfig), scope)
     return AlignmentConfig(
-        enabled=_bool_or_default(payload.get("enabled"), defaults.enabled),
-        method=_string_or_default(payload.get("method"), defaults.method),
-        template_image_path=_resolve_optional_local_path(
-            config_dir,
-            _optional_string(payload.get("template_image_path")),
-        ),
         output_width=_int_or_default(payload.get("output_width"), defaults.output_width),
         output_height=_int_or_default(payload.get("output_height"), defaults.output_height),
-        ecc_iterations=_int_or_default(payload.get("ecc_iterations"), defaults.ecc_iterations),
     )
 
 
-def _parse_roi_refine_config(payload: Any, config_dir: Path, *, scope: str) -> RoiRefineConfig:
+def _parse_roi_refine_config(payload: Any, *, scope: str) -> RoiRefineConfig:
     """解析 ROI 精修配置。"""
     defaults = RoiRefineConfig()
     if payload is None:
@@ -223,94 +215,12 @@ def _parse_roi_refine_config(payload: Any, config_dir: Path, *, scope: str) -> R
             payload.get("crop_shrink_ratio"),
             defaults.crop_shrink_ratio,
         ),
-        mask_mode=_string_or_default(payload.get("mask_mode"), defaults.mask_mode),
-        morphology_kernel_size=_int_or_default(
-            payload.get("morphology_kernel_size"),
-            defaults.morphology_kernel_size,
-        ),
-        ignore_dilate_kernel_size=_int_or_default(
-            payload.get("ignore_dilate_kernel_size"),
-            defaults.ignore_dilate_kernel_size,
-        ),
         edge_ignore_pixels=_int_or_default(
             payload.get("edge_ignore_pixels"),
             defaults.edge_ignore_pixels,
         ),
-        texture_denoise_method=_string_or_default(
-            payload.get("texture_denoise_method"),
-            defaults.texture_denoise_method,
-        ),
-        texture_gaussian_kernel_size=_int_or_default(
-            payload.get("texture_gaussian_kernel_size"),
-            defaults.texture_gaussian_kernel_size,
-        ),
-        texture_bilateral_diameter=_int_or_default(
-            payload.get("texture_bilateral_diameter"),
-            defaults.texture_bilateral_diameter,
-        ),
-        texture_bilateral_sigma_color=_float_or_default(
-            payload.get("texture_bilateral_sigma_color"),
-            defaults.texture_bilateral_sigma_color,
-        ),
-        texture_bilateral_sigma_space=_float_or_default(
-            payload.get("texture_bilateral_sigma_space"),
-            defaults.texture_bilateral_sigma_space,
-        ),
-        apply_texture_clahe=_bool_or_default(
-            payload.get("apply_texture_clahe"),
-            defaults.apply_texture_clahe,
-        ),
-        texture_clahe_clip_limit=_float_or_default(
-            payload.get("texture_clahe_clip_limit"),
-            defaults.texture_clahe_clip_limit,
-        ),
-        texture_clahe_tile_grid_size=_int_or_default(
-            payload.get("texture_clahe_tile_grid_size"),
-            defaults.texture_clahe_tile_grid_size,
-        ),
-        texture_illumination_correction=_bool_or_default(
-            payload.get("texture_illumination_correction"),
-            defaults.texture_illumination_correction,
-        ),
-        texture_illumination_blur_kernel_size=_int_or_default(
-            payload.get("texture_illumination_blur_kernel_size"),
-            defaults.texture_illumination_blur_kernel_size,
-        ),
-        texture_illumination_strength=_float_or_default(
-            payload.get("texture_illumination_strength"),
-            defaults.texture_illumination_strength,
-        ),
-        mask_feather_kernel_size=_int_or_default(
-            payload.get("mask_feather_kernel_size"),
-            defaults.mask_feather_kernel_size,
-        ),
-        edge_enhance_method=_string_or_default(
-            payload.get("edge_enhance_method"),
-            defaults.edge_enhance_method,
-        ),
-        edge_enhance_weight=_float_or_default(
-            payload.get("edge_enhance_weight"),
-            defaults.edge_enhance_weight,
-        ),
-        suppress_background=_bool_or_default(
-            payload.get("suppress_background"),
-            defaults.suppress_background,
-        ),
-        background_fill_mode=_string_or_default(
-            payload.get("background_fill_mode"),
-            defaults.background_fill_mode,
-        ),
-        background_blur_kernel_size=_int_or_default(
-            payload.get("background_blur_kernel_size"),
-            defaults.background_blur_kernel_size,
-        ),
-        safe_margin_erode_kernel_size=_int_or_default(
-            payload.get("safe_margin_erode_kernel_size"),
-            defaults.safe_margin_erode_kernel_size,
-        ),
         alignment=_parse_alignment_config(
             payload.get("alignment"),
-            config_dir,
             scope=f"{scope}.alignment",
         ),
     )

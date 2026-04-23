@@ -128,7 +128,11 @@ def save_debug_artifacts(
                 selected_artifacts,
                 "overlay",
                 camera_dir / "overlay.png",
-                _overlay_heatmap(select_patchcore_input(prepared.roi), texture_result.heatmap),
+                _overlay_heatmap(
+                    select_patchcore_input(prepared.roi),
+                    texture_result.heatmap,
+                    texture_result=texture_result,
+                ),
             )
 
     return artifact_paths
@@ -236,7 +240,60 @@ def _draw_segmentation_mask(image: Any, mask: np.ndarray, color: tuple[int, int,
         cv2.drawContours(image, contours, -1, color, 2, cv2.LINE_AA)
 
 
-def _overlay_heatmap(image: Any, heatmap: np.ndarray) -> Any:
+def _overlay_heatmap(
+    image: Any,
+    heatmap: np.ndarray,
+    *,
+    texture_result: Any | None = None,
+) -> Any:
     """把热力图叠加到 ROI 或纹理输入图上。"""
+    base_image = _ensure_color_image(image)
     color_map = cv2.applyColorMap(np.uint8(np.clip(heatmap, 0.0, 1.0) * 255), cv2.COLORMAP_JET)
-    return cv2.addWeighted(image, 0.65, color_map, 0.35, 0.0)
+    overlay = cv2.addWeighted(base_image, 0.65, color_map, 0.35, 0.0)
+    if texture_result is not None:
+        _draw_texture_metrics(overlay, texture_result)
+    return overlay
+
+
+def _ensure_color_image(image: Any) -> np.ndarray:
+    """统一把单通道图转成 BGR，便于叠加彩色热力图与文字。"""
+    array = np.asarray(image)
+    if array.ndim == 2:
+        return cv2.cvtColor(array, cv2.COLOR_GRAY2BGR)
+    return array.copy()
+
+
+def _draw_texture_metrics(image: np.ndarray, texture_result: Any) -> None:
+    """把关键判定数值直接写到调试叠图上，避免只看颜色误判。"""
+    lines = [
+        (
+            f"score={float(getattr(texture_result, 'score', 0.0)):.3f} "
+            f"thr={float(getattr(texture_result, 'threshold', 0.0)):.3f} "
+            f"dec={float(getattr(texture_result, 'decision_threshold', 0.0)):.3f}"
+        ),
+        (
+            f"peak={float(getattr(texture_result, 'peak_patch_score', 0.0)):.3f} "
+            f"strong={int(getattr(texture_result, 'strong_patch_count', 0))} "
+            f"comp={int(getattr(texture_result, 'largest_component_patch_count', 0))}"
+        ),
+        (
+            f"mode={str(getattr(texture_result, 'decision_mode', 'none'))} "
+            f"anom={bool(getattr(texture_result, 'is_anomaly', False))}"
+        ),
+    ]
+    line_height = 24
+    block_height = 10 + line_height * len(lines)
+    cv2.rectangle(image, (8, 8), (min(image.shape[1] - 8, 540), 8 + block_height), (0, 0, 0), -1)
+
+    for index, text in enumerate(lines):
+        y = 30 + index * line_height
+        cv2.putText(
+            image,
+            text,
+            (16, y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (255, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )

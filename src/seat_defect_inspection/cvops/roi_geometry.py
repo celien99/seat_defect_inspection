@@ -72,7 +72,7 @@ def _mask_to_box(mask: Any, image_shape: tuple[int, int]) -> BoundingBox | None:
 
 
 def _box_to_ints(box: BoundingBox) -> tuple[int, int, int, int]:
-    """把浮点框稳定转换成整型裁剪坐标。"""
+    """把浮点框稳定转换成整数裁剪坐标。"""
     return (
         max(0, int(round(box.x1))),
         max(0, int(round(box.y1))),
@@ -95,40 +95,3 @@ def _crop_mask(mask: Any, crop_box: BoundingBox) -> np.ndarray:
         height, width = _crop_shape(crop_box)
         return np.zeros((height, width), dtype=np.uint8)
     return (cropped > 0).astype(np.uint8)
-
-
-def _grabcut_foreground(roi_image: Any) -> np.ndarray:
-    """在没有分割掩膜时，用 GrabCut 估计前景。"""
-    height, width = roi_image.shape[:2]
-    margin_x = max(2, width // 20)
-    margin_y = max(2, height // 20)
-    rect = (
-        margin_x,
-        margin_y,
-        max(1, width - 2 * margin_x),
-        max(1, height - 2 * margin_y),
-    )
-    mask = np.zeros((height, width), dtype=np.uint8)
-    bg_model = np.zeros((1, 65), dtype=np.float64)
-    fg_model = np.zeros((1, 65), dtype=np.float64)
-    try:
-        cv2.grabCut(roi_image, mask, rect, bg_model, fg_model, 3, cv2.GC_INIT_WITH_RECT)
-        return np.where(
-            (mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD),
-            1,
-            0,
-        ).astype(np.uint8)
-    except cv2.error:
-        return np.ones((height, width), dtype=np.uint8)
-
-
-def _clean_mask(mask: np.ndarray, kernel_size: int, dilate: bool = False) -> np.ndarray:
-    """对目标或忽略掩膜做基础形态学清理。"""
-    normalized = (mask > 0).astype(np.uint8)
-    if kernel_size <= 1:
-        return normalized
-    kernel = np.ones((kernel_size, kernel_size), dtype=np.uint8)
-    if dilate:
-        return cv2.dilate(normalized, kernel, iterations=1)
-    cleaned = cv2.morphologyEx(normalized, cv2.MORPH_OPEN, kernel)
-    return cv2.morphologyEx(cleaned, cv2.MORPH_CLOSE, kernel)

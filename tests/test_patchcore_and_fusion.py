@@ -9,6 +9,7 @@ from seat_defect_inspection.config import AlignmentConfig, CameraConfig, ColorBr
 from seat_defect_inspection.cvops import ImageQualityGuard, RoiRefineEngine
 from seat_defect_inspection.fusion import fuse_camera_results, should_early_stop_on_ng
 from seat_defect_inspection.patchcore import PatchCoreService, _decide_patchcore_anomaly
+from seat_defect_inspection.patchcore.scoring import _analyze_patch_evidence
 from seat_defect_inspection.yolo import DetectionService
 from seat_defect_inspection.runtime_config import load_yolo_training_config
 from seat_defect_inspection.schemas import BoundingBox, CameraInspectionResult, DetectionResult, DetectionObject, FramePacket, RoiRefineResult, TextureAnomalyResult
@@ -87,6 +88,70 @@ def test_patchcore_rejects_isolated_small_response() -> None:
 
     assert is_anomaly is False
     assert decision_mode == "none"
+
+
+def test_patchcore_peak_rule_triggers_for_small_local_defect() -> None:
+    config = PatchCoreConfig()
+    evidence = {
+        "peak_patch_score": 1.60,
+        "strong_patch_count": 2,
+        "largest_component_patch_count": 2,
+        "strong_patch_ratio": 0.008,
+        "largest_component_patch_ratio": 0.008,
+    }
+
+    is_anomaly, decision_mode = _decide_patchcore_anomaly(
+        score=0.72,
+        threshold=1.0,
+        evidence=evidence,
+        config=config,
+    )
+
+    assert is_anomaly is True
+    assert decision_mode == "peak_rule"
+
+
+def test_patchcore_peak_rule_rejects_single_patch_noise() -> None:
+    config = PatchCoreConfig(critical_min_component_patch_count=1)
+    evidence = {
+        "peak_patch_score": 1.60,
+        "strong_patch_count": 1,
+        "largest_component_patch_count": 1,
+        "strong_patch_ratio": 0.01,
+        "largest_component_patch_ratio": 0.01,
+    }
+
+    is_anomaly, decision_mode = _decide_patchcore_anomaly(
+        score=0.72,
+        threshold=1.0,
+        evidence=evidence,
+        config=config,
+    )
+
+    assert is_anomaly is False
+    assert decision_mode == "none"
+
+
+def test_patchcore_strong_patch_floor_respects_ratio() -> None:
+    config = PatchCoreConfig(strong_patch_score_ratio=0.8)
+    patch_map = np.asarray(
+        [
+            [0.0, 3.2],
+            [3.3, 0.0],
+        ],
+        dtype=np.float32,
+    )
+
+    evidence = _analyze_patch_evidence(
+        patch_map,
+        score=1.0,
+        threshold=4.0,
+        valid_patch_count=4,
+        config=config,
+    )
+
+    assert int(evidence["strong_patch_count"]) == 2
+    assert int(evidence["largest_component_patch_count"]) == 2
 
 
 def test_patchcore_threshold_uses_sample_exclusive_calibration() -> None:
@@ -339,9 +404,6 @@ def test_camera_pipeline_quality_uses_roi_instead_of_full_frame() -> None:
             fallback_box=BoundingBox(70.0, 70.0, 130.0, 130.0),
         ),
         roi=RoiRefineConfig(
-            mask_mode="full",
-            morphology_kernel_size=1,
-            ignore_dilate_kernel_size=1,
             edge_ignore_pixels=0,
         ),
     )
@@ -392,7 +454,7 @@ def test_handcrafted_patchcore_fit_predict_and_reload(tmp_path) -> None:
     assert reloaded_result.total_patch_count >= reloaded_result.valid_patch_count > 0
 
 
-def test_roi_valid_mask_uses_safe_texture_margin() -> None:
+def test_roi_valid_mask_respects_edge_ignore_pixels() -> None:
     image = np.full((64, 64, 3), 127, dtype=np.uint8)
     detection = DetectionResult(
         target=DetectionObject(
@@ -403,13 +465,8 @@ def test_roi_valid_mask_uses_safe_texture_margin() -> None:
     )
     engine = RoiRefineEngine(
         RoiRefineConfig(
-            mask_mode="full",
-            morphology_kernel_size=1,
-            ignore_dilate_kernel_size=1,
-            edge_ignore_pixels=0,
-            safe_margin_erode_kernel_size=7,
+            edge_ignore_pixels=7,
             alignment=AlignmentConfig(
-                enabled=False,
                 output_width=64,
                 output_height=64,
             ),
@@ -438,12 +495,8 @@ def test_roi_crop_prefers_segmentation_mask_bounds() -> None:
         RoiRefineConfig(
             crop_expand_ratio=0.0,
             crop_shrink_ratio=0.0,
-            mask_mode="full",
-            morphology_kernel_size=1,
-            ignore_dilate_kernel_size=1,
             edge_ignore_pixels=0,
             alignment=AlignmentConfig(
-                enabled=False,
                 output_width=64,
                 output_height=64,
             ),

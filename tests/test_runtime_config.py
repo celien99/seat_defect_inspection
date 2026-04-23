@@ -36,8 +36,8 @@ def test_load_config_normalizes_nested_paths_and_default_seat_model(tmp_path: Pa
                                     },
                                     "roi": {
                                         "alignment": {
-                                            "enabled": True,
-                                            "template_image_path": "templates/alignment.png",
+                                            "output_width": 320,
+                                            "output_height": 320,
                                         }
                                     },
                                     "patchcore": {
@@ -78,9 +78,8 @@ def test_load_config_normalizes_nested_paths_and_default_seat_model(tmp_path: Pa
     assert camera.detection.fallback_box is not None
     assert camera.detection.fallback_box.x1 == 1
     assert camera.detection.fallback_box.y2 == 40
-    assert camera.roi.alignment.template_image_path == str(
-        (tmp_path / "templates/alignment.png").resolve()
-    )
+    assert camera.roi.alignment.output_width == 320
+    assert camera.roi.alignment.output_height == 320
     assert camera.patchcore.backbone_weights_path == str(
         (tmp_path / "models/backbone.pth").resolve()
     )

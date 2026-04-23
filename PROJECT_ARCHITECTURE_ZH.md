@@ -132,9 +132,7 @@ seat_defect_inspection/
 - `cvops/roi.py`
   ROI 主流程编排。
 - `cvops/roi_geometry.py`
-  ROI 裁剪、框扩张、掩膜裁切、GrabCut 等几何/掩膜辅助。
-- `cvops/roi_texture.py`
-  ROI 纹理增强链路，例如 CLAHE、光照展平、边缘增强、背景压制。
+  ROI 裁剪、框扩张、掩膜裁切等几何/掩膜辅助。
 - `cvops/debug_artifacts.py`
   调试图生成与保存细节。
 
@@ -279,17 +277,7 @@ PatchCore 现在不再堆在一个文件里：
 | --- | --- |
 | `_expand_box` | 扩框/缩框 |
 | `_crop_mask` | 掩膜裁切 |
-| `_grabcut_foreground` | GrabCut 前景提取 |
-
-文件：`src/seat_defect_inspection/cvops/roi_texture.py`
-
-| 符号 | 作用 |
-| --- | --- |
-| `_apply_masked_clahe` | ROI 局部 CLAHE |
-| `_apply_masked_illumination_correction` | ROI 光照展平 |
-| `_denoise_texture_image` | 纹理图去噪 |
-| `_enhance_texture_edges` | 纹理边缘增强 |
-| `_suppress_background` | 背景压制 |
+| `_resolve_crop_source_box` | 优先根据分割掩膜确定裁剪范围 |
 
 ### 5.5 YOLO 层
 
@@ -575,9 +563,8 @@ ROI 或 PatchCore 不稳定：
 
 1. `src/seat_defect_inspection/cvops/roi.py`
 2. `src/seat_defect_inspection/cvops/roi_geometry.py`
-3. `src/seat_defect_inspection/cvops/roi_texture.py`
-4. `src/seat_defect_inspection/patchcore/engine.py`
-5. `src/seat_defect_inspection/patchcore/scoring.py`
+3. `src/seat_defect_inspection/patchcore/engine.py`
+4. `src/seat_defect_inspection/patchcore/scoring.py`
 
 训练和线上结果不一致：
 

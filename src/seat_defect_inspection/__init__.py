@@ -54,10 +54,16 @@ _LAZY_EXPORTS = {
 }
 
 
-def __getattr__(name: str):
+def _load_lazy_export(name: str):
+    """按需加载重依赖导出，避免顶层导入时把整条主流程一起拉起。"""
     if name not in _LAZY_EXPORTS:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     module_name, attr_name = _LAZY_EXPORTS[name]
     value = getattr(import_module(module_name, __name__), attr_name)
     globals()[name] = value
     return value
+
+
+def __getattr__(name: str):
+    """延迟暴露主流程入口，减少顶层包导入成本。"""
+    return _load_lazy_export(name)

@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from importlib import import_module
-from typing import Any
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ..config import InspectionConfig
 from ..schemas import CaptureSummary, InspectionResult
@@ -39,17 +38,23 @@ def __getattr__(name: str):
     return value
 
 
+def _create_service(config: InspectionConfig) -> "InspectionService":
+    """按需创建服务对象，避免模块导入时就把重依赖拉起来。"""
+    from .core import InspectionService
+
+    return InspectionService(config)
+
+
 def train_patchcore_models(
     config: InspectionConfig,
     seat_model_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """训练全部机位的 PatchCore 模型。"""
-    # 入口层只做路由，具体训练逻辑留在 training.py。
-    from .core import InspectionService
+    # 入口层只做轻量路由，真正逻辑仍在具体模块里。
     from .training import train_patchcore_models as _train_patchcore_models
 
     return _train_patchcore_models(
-        InspectionService(config),
+        _create_service(config),
         seat_model_id=seat_model_id,
     )
 
@@ -65,12 +70,11 @@ def capture_samples(
     interval_ms: int = 0,
 ) -> CaptureSummary:
     """抓取并落盘全部启用机位的图像。"""
-    # 入口层只做路由，具体采图逻辑留在 capture.py。
-    from .core import InspectionService
+    # 入口层只做轻量路由，真正逻辑仍在具体模块里。
     from .capture import capture_samples as _capture_samples
 
     return _capture_samples(
-        InspectionService(config),
+        _create_service(config),
         part_id=part_id,
         output_dir=output_dir,
         seat_model_id=seat_model_id,
@@ -87,12 +91,11 @@ def run_inspection(
     seat_model_id: str | None = None,
 ) -> InspectionResult:
     """执行一次完整检测。"""
-    # 入口层只做路由，具体检测逻辑留在 inspection.py。
-    from .core import InspectionService
+    # 入口层只做轻量路由，真正逻辑仍在具体模块里。
     from .inspection import run_inspection as _run_inspection
 
     return _run_inspection(
-        InspectionService(config),
+        _create_service(config),
         part_id=part_id,
         seat_model_id=seat_model_id,
     )
@@ -107,12 +110,11 @@ def inspect_image_folder(
     part_id: str | None = None,
 ) -> dict[str, Any]:
     """从本地图片文件夹批量执行离线检测。"""
-    # 离线批测仍然复用同一套服务骨架，只是把机位输入换成本地图片。
-    from .core import InspectionService
+    # 离线批测复用同一套服务骨架，只是把机位输入换成本地图片。
     from .offline_inspection import inspect_image_folder as _inspect_image_folder
 
     return _inspect_image_folder(
-        InspectionService(config),
+        _create_service(config),
         input_dir=input_dir,
         seat_model_id=seat_model_id,
         output_dir=output_dir,

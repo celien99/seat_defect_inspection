@@ -8,6 +8,11 @@ from pathlib import Path
 from typing import Any
 
 
+def _is_missing(value: Any) -> bool:
+    """统一判断“未提供值”，避免各处重复写 None / 空字符串判断。"""
+    return value is None or value == ""
+
+
 def _field_names(cls: type[Any]) -> set[str]:
     """收集 dataclass 字段名，用于提前拦截拼写错误。"""
     return {field.name for field in dataclasses.fields(cls)}
@@ -46,7 +51,7 @@ def _ensure_list(value: Any, scope: str) -> list[Any]:
 def _require_key(payload: dict[str, Any], key: str, scope: str) -> Any:
     """读取必填字段，空字符串也视为缺失。"""
     value = payload.get(key)
-    if value is None or value == "":
+    if _is_missing(value):
         raise ValueError(f"{scope} 缺少 `{key}`")
     return value
 
@@ -58,14 +63,14 @@ def _require_string(payload: dict[str, Any], key: str, scope: str) -> str:
 
 def _optional_string(value: Any) -> str | None:
     """读取可选字符串字段。"""
-    if value is None or value == "":
+    if _is_missing(value):
         return None
     return str(value)
 
 
 def _string_or_default(value: Any, default: str) -> str:
     """读取字符串字段，缺省时回退到 dataclass 默认值。"""
-    if value is None or value == "":
+    if _is_missing(value):
         return default
     return str(value)
 
@@ -86,7 +91,7 @@ def _int_or_default(value: Any, default: int) -> int:
 
 def _optional_int(value: Any) -> int | None:
     """读取可选整数字段。"""
-    if value is None or value == "":
+    if _is_missing(value):
         return None
     return int(value)
 
@@ -100,9 +105,14 @@ def _float_or_default(value: Any, default: float) -> float:
 
 def _optional_float(value: Any) -> float | None:
     """读取可选浮点字段。"""
-    if value is None or value == "":
+    if _is_missing(value):
         return None
     return float(value)
+
+
+def _has_path_separator(value: str) -> bool:
+    """判断字符串里是否已经显式带了目录层级。"""
+    return os.sep in value or (os.altsep is not None and os.altsep in value)
 
 
 def _string_list(value: Any, *, scope: str, default: list[str]) -> list[str]:
@@ -146,7 +156,7 @@ def _resolve_optional_model_path(config_dir: Path, value: str | None) -> str | N
 
 def _resolve_optional_local_path(config_dir: Path, value: str | None) -> str | None:
     """解析可选本地路径。"""
-    if not value:
+    if _is_missing(value):
         return None
     return _resolve_local_path(config_dir, value, force=True)
 
@@ -156,7 +166,7 @@ def _resolve_yolo_training_model_path(config_dir: Path, value: str) -> str:
     candidate = Path(value)
     if candidate.is_absolute():
         return str(candidate)
-    if value.startswith(".") or os.sep in value or (os.altsep is not None and os.altsep in value):
+    if value.startswith(".") or _has_path_separator(value):
         return _resolve_local_path(config_dir, value, force=True)
 
     resolved = (config_dir / candidate).resolve()
@@ -182,8 +192,6 @@ _LOCAL_PATH_SUFFIXES = {
 
 def _looks_like_local_path(value: str) -> bool:
     """判断字符串是否看起来像本地文件路径。"""
-    if value.startswith(".") or os.sep in value:
-        return True
-    if os.altsep is not None and os.altsep in value:
+    if value.startswith(".") or _has_path_separator(value):
         return True
     return Path(value).suffix.lower() in _LOCAL_PATH_SUFFIXES

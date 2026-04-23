@@ -161,8 +161,7 @@ seat_defect_inspection/
         │   ├── debug_artifacts.py
         │   ├── quality.py
         │   ├── roi.py
-        │   ├── roi_geometry.py
-        │   └── roi_texture.py
+        │   └── roi_geometry.py
         ├── preprocess/
         │   ├── __init__.py
         │   └── engine.py

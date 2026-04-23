@@ -1,4 +1,4 @@
-"""PatchCore 打分、校准与判定细节。"""
+"""PatchCore 打分、阈值校准与异常判定。"""
 
 from __future__ import annotations
 
@@ -40,13 +40,8 @@ def coreset_subsample_indices(embeddings: np.ndarray, max_points: int) -> np.nda
     return np.asarray(chosen_indices, dtype=np.int32)
 
 
-def coreset_subsample(embeddings: np.ndarray, max_points: int) -> np.ndarray:
-    """直接返回采样后的 embedding 子集。"""
-    return embeddings[coreset_subsample_indices(embeddings, max_points)]
-
-
 def _exclude_embedding_slice(embeddings: np.ndarray, start: int, end: int) -> np.ndarray:
-    """从拼接后的 embedding 中排除当前样本片段。"""
+    """从拼接后的 embedding 中排除当前样本切片。"""
     if start <= 0:
         return embeddings[end:]
     if end >= len(embeddings):
@@ -69,7 +64,7 @@ def min_distance_to_bank(
 
 
 def _score_embeddings_leave_one_out(embeddings: np.ndarray) -> tuple[float, np.ndarray]:
-    """当前样本无外部校准 bank 时，退化成样本内 leave-one-out 打分。"""
+    """缺少外部校准 bank 时，退化成样本内 leave-one-out 打分。"""
     if len(embeddings) <= 1:
         patch_scores = np.zeros((len(embeddings),), dtype=np.float32)
         return 0.0, patch_scores
@@ -91,7 +86,7 @@ def normalize_map(heatmap: np.ndarray) -> np.ndarray:
 
 
 def _positive_margin(value: float) -> float:
-    """避免阈值倍率被配成 0 或负数。"""
+    """避免阈值倍率被配置成 0 或负数。"""
     return max(float(value), 1e-6)
 
 
@@ -102,10 +97,11 @@ def _decide_patchcore_anomaly(
     evidence: dict[str, float | int],
     config: PatchCoreConfig,
 ) -> tuple[bool, str]:
-    """组合常规规则和强缺陷快路径，给出最终 NG 决策。"""
+    """组合常规规则和小缺陷快路径，给出最终异常判定。"""
     decision_threshold = float(threshold) * _positive_margin(config.decision_score_margin)
     critical_score_threshold = float(threshold) * _positive_margin(config.critical_score_margin)
     critical_peak_threshold = float(threshold) * _positive_margin(config.critical_peak_score_margin)
+    peak_min_patch_count = max(2, int(config.critical_min_component_patch_count))
 
     normal_trigger = (
         float(score) > decision_threshold
@@ -119,6 +115,12 @@ def _decide_patchcore_anomaly(
         and float(evidence["peak_patch_score"]) > critical_peak_threshold
         and int(evidence["largest_component_patch_count"]) >= int(config.critical_min_component_patch_count)
     )
+    # 小面积缺陷容易被 99 分位 image score 稀释，这里补一条“局部峰值”直通规则。
+    peak_trigger = (
+        float(evidence["peak_patch_score"]) > critical_peak_threshold
+        and int(evidence["strong_patch_count"]) >= peak_min_patch_count
+        and int(evidence["largest_component_patch_count"]) >= int(config.critical_min_component_patch_count)
+    )
 
     if normal_trigger and critical_trigger:
         return True, "normal_and_critical"
@@ -126,6 +128,8 @@ def _decide_patchcore_anomaly(
         return True, "critical_rule"
     if normal_trigger:
         return True, "normal_rule"
+    if peak_trigger:
+        return True, "peak_rule"
     return False, "none"
 
 
@@ -137,7 +141,7 @@ def _analyze_patch_evidence(
     valid_patch_count: int,
     config: PatchCoreConfig,
 ) -> dict[str, float | int]:
-    """从 patch map 中提取最终决策依赖的统计证据。"""
+    """从 patch map 中提取最终判定依赖的统计证据。"""
     peak_patch_score = float(patch_map.max()) if patch_map.size > 0 else 0.0
     if patch_map.size == 0 or valid_patch_count <= 0:
         return {
@@ -148,10 +152,10 @@ def _analyze_patch_evidence(
             "largest_component_patch_ratio": 0.0,
         }
 
-    strong_patch_floor = max(
-        float(threshold),
-        float(score) * float(np.clip(config.strong_patch_score_ratio, 0.0, 1.0)),
-    )
+    # 强 patch 门槛按比例收缩，而不是强行抬到完整 threshold，
+    # 否则小缺陷即便有明显热点，也可能永远进不到强证据统计。
+    strong_patch_ratio = float(np.clip(config.strong_patch_score_ratio, 0.0, 1.0))
+    strong_patch_floor = max(float(threshold), float(score)) * strong_patch_ratio
     strong_patch_mask = (patch_map >= strong_patch_floor).astype(np.uint8)
     strong_patch_count = int(strong_patch_mask.sum())
     if strong_patch_count == 0:

@@ -62,23 +62,8 @@
         "roi": {
           "crop_expand_ratio": 0.02,
           "crop_shrink_ratio": 0.0,
-          "mask_mode": "full",
-          "morphology_kernel_size": 5,
-          "ignore_dilate_kernel_size": 9,
           "edge_ignore_pixels": 4,
-          "apply_texture_clahe": true,
-          "texture_denoise_method": "bilateral",
-          "texture_illumination_correction": true,
-          "texture_illumination_blur_kernel_size": 41,
-          "texture_illumination_strength": 0.85,
-          "mask_feather_kernel_size": 15,
-          "edge_enhance_method": "scharr",
-          "edge_enhance_weight": 0.18,
-          "suppress_background": true,
-          "background_fill_mode": "median",
           "alignment": {
-            "enabled": false,
-            "method": "resize",
             "output_width": 320,
             "output_height": 320
           }
@@ -159,23 +144,8 @@
         "roi": {
           "crop_expand_ratio": 0.02,
           "crop_shrink_ratio": 0.0,
-          "mask_mode": "full",
-          "morphology_kernel_size": 5,
-          "ignore_dilate_kernel_size": 9,
           "edge_ignore_pixels": 4,
-          "apply_texture_clahe": true,
-          "texture_denoise_method": "bilateral",
-          "texture_illumination_correction": true,
-          "texture_illumination_blur_kernel_size": 41,
-          "texture_illumination_strength": 0.85,
-          "mask_feather_kernel_size": 15,
-          "edge_enhance_method": "scharr",
-          "edge_enhance_weight": 0.18,
-          "suppress_background": true,
-          "background_fill_mode": "median",
           "alignment": {
-            "enabled": false,
-            "method": "resize",
             "output_width": 320,
             "output_height": 320
           }
@@ -256,23 +226,8 @@
         "roi": {
           "crop_expand_ratio": 0.02,
           "crop_shrink_ratio": 0.0,
-          "mask_mode": "full",
-          "morphology_kernel_size": 5,
-          "ignore_dilate_kernel_size": 9,
           "edge_ignore_pixels": 4,
-          "apply_texture_clahe": true,
-          "texture_denoise_method": "bilateral",
-          "texture_illumination_correction": true,
-          "texture_illumination_blur_kernel_size": 41,
-          "texture_illumination_strength": 0.85,
-          "mask_feather_kernel_size": 15,
-          "edge_enhance_method": "scharr",
-          "edge_enhance_weight": 0.18,
-          "suppress_background": true,
-          "background_fill_mode": "median",
           "alignment": {
-            "enabled": false,
-            "method": "resize",
             "output_width": 320,
             "output_height": 320
           }
@@ -353,23 +308,8 @@
         "roi": {
           "crop_expand_ratio": 0.02,
           "crop_shrink_ratio": 0.0,
-          "mask_mode": "full",
-          "morphology_kernel_size": 5,
-          "ignore_dilate_kernel_size": 9,
           "edge_ignore_pixels": 4,
-          "apply_texture_clahe": true,
-          "texture_denoise_method": "bilateral",
-          "texture_illumination_correction": true,
-          "texture_illumination_blur_kernel_size": 41,
-          "texture_illumination_strength": 0.85,
-          "mask_feather_kernel_size": 15,
-          "edge_enhance_method": "scharr",
-          "edge_enhance_weight": 0.18,
-          "suppress_background": true,
-          "background_fill_mode": "median",
           "alignment": {
-            "enabled": false,
-            "method": "resize",
             "output_width": 320,
             "output_height": 320
           }
@@ -450,23 +390,8 @@
         "roi": {
           "crop_expand_ratio": 0.02,
           "crop_shrink_ratio": 0.0,
-          "mask_mode": "full",
-          "morphology_kernel_size": 5,
-          "ignore_dilate_kernel_size": 9,
           "edge_ignore_pixels": 4,
-          "apply_texture_clahe": true,
-          "texture_denoise_method": "bilateral",
-          "texture_illumination_correction": true,
-          "texture_illumination_blur_kernel_size": 41,
-          "texture_illumination_strength": 0.85,
-          "mask_feather_kernel_size": 15,
-          "edge_enhance_method": "scharr",
-          "edge_enhance_weight": 0.18,
-          "suppress_background": true,
-          "background_fill_mode": "median",
           "alignment": {
-            "enabled": false,
-            "method": "resize",
             "output_width": 320,
             "output_height": 320
           }

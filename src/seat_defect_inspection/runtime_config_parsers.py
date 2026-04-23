@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .config import FusionConfig, InspectionConfig, SeatModelConfig, YoloTrainingConfig
+from .config import CameraConfig, FusionConfig, InspectionConfig, SeatModelConfig, YoloTrainingConfig
 from .runtime_config_camera_parsers import _parse_camera_config, _parse_preprocess_config
 from .runtime_config_values import (
     _bool_or_default,
@@ -33,10 +33,11 @@ def _parse_inspection_config(payload: dict[str, Any], config_dir: Path) -> Inspe
     if not cameras_payload and not seat_models_payload:
         raise ValueError("缺陷检测配置必须包含 `cameras` 或 `seat_models`")
 
-    cameras = [
-        _parse_camera_config(item, config_dir, scope=f"{scope}.cameras[{index}]")
-        for index, item in enumerate(_ensure_list(cameras_payload, f"{scope}.cameras"))
-    ]
+    cameras = _parse_camera_list(
+        cameras_payload,
+        config_dir,
+        scope=f"{scope}.cameras",
+    )
     seat_models = [
         _parse_seat_model_config(item, config_dir, scope=f"{scope}.seat_models[{index}]")
         for index, item in enumerate(_ensure_list(seat_models_payload, f"{scope}.seat_models"))
@@ -47,15 +48,10 @@ def _parse_inspection_config(payload: dict[str, Any], config_dir: Path) -> Inspe
     if default_seat_model_id is None and seat_models:
         default_seat_model_id = seat_models[0].seat_model_id
 
-    yolo_training_payload = payload.get("yolo_training")
-    yolo_training = (
-        _parse_yolo_training_config(
-            _expect_dict(yolo_training_payload, f"{scope}.yolo_training"),
-            config_dir,
-            scope=f"{scope}.yolo_training",
-        )
-        if yolo_training_payload is not None
-        else None
+    yolo_training = _parse_optional_yolo_training(
+        payload.get("yolo_training"),
+        config_dir,
+        scope=f"{scope}.yolo_training",
     )
 
     return InspectionConfig(
@@ -100,30 +96,39 @@ def _parse_seat_model_config(payload: dict[str, Any], config_dir: Path, *, scope
     payload = _expect_dict(payload, scope)
     _reject_unknown_keys(payload, _field_names(SeatModelConfig), scope)
 
-    cameras = [
-        _parse_camera_config(item, config_dir, scope=f"{scope}.cameras[{index}]")
-        for index, item in enumerate(_ensure_list(payload.get("cameras") or [], f"{scope}.cameras"))
-    ]
+    cameras = _parse_camera_list(
+        payload.get("cameras"),
+        config_dir,
+        scope=f"{scope}.cameras",
+    )
     # 这里沿用旧行为：非空的数值型 seat_model_id 也允许转成字符串。
     seat_model_id = _require_string(payload, "seat_model_id", scope)
 
-    yolo_training_payload = payload.get("yolo_training")
-    yolo_training = (
-        _parse_yolo_training_config(
-            _expect_dict(yolo_training_payload, f"{scope}.yolo_training"),
-            config_dir,
-            scope=f"{scope}.yolo_training",
-            seat_model_id=seat_model_id,
-        )
-        if yolo_training_payload is not None
-        else None
-    )
     return SeatModelConfig(
         seat_model_id=seat_model_id,
         cameras=cameras,
         display_name=_optional_string(payload.get("display_name")),
-        yolo_training=yolo_training,
+        yolo_training=_parse_optional_yolo_training(
+            payload.get("yolo_training"),
+            config_dir,
+            scope=f"{scope}.yolo_training",
+            seat_model_id=seat_model_id,
+        ),
     )
+
+
+def _parse_camera_list(
+    payload: Any,
+    config_dir: Path,
+    *,
+    scope: str,
+) -> list[CameraConfig]:
+    """统一解析机位列表，避免顶层和 seat_model 下各写一遍。"""
+    items = _ensure_list(payload or [], scope)
+    return [
+        _parse_camera_config(item, config_dir, scope=f"{scope}[{index}]")
+        for index, item in enumerate(items)
+    ]
 
 
 def _parse_fusion_config(payload: Any, *, scope: str) -> FusionConfig:
@@ -147,6 +152,24 @@ def _parse_fusion_config(payload: Any, *, scope: str) -> FusionConfig:
             payload.get("defect_overrides_reject"),
             defaults.defect_overrides_reject,
         ),
+    )
+
+
+def _parse_optional_yolo_training(
+    payload: Any,
+    config_dir: Path,
+    *,
+    scope: str,
+    seat_model_id: str | None = None,
+) -> YoloTrainingConfig | None:
+    """统一处理可选的 yolo_training 段，少写一层 if/else。"""
+    if payload is None:
+        return None
+    return _parse_yolo_training_config(
+        _expect_dict(payload, scope),
+        config_dir,
+        scope=scope,
+        seat_model_id=seat_model_id,
     )
 
 
