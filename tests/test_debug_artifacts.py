@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import numpy as np
+
 from seat_defect_inspection.cvops import resolve_debug_artifact_names
+from seat_defect_inspection.cvops.debug_artifacts import _overlay_heatmap
 
 
 def test_standard_artifact_mode_keeps_only_core_outputs() -> None:
@@ -41,3 +44,13 @@ def test_unknown_artifact_mode_raises() -> None:
     except ValueError:
         return
     raise AssertionError("expected ValueError for unexpected debug_artifact_mode")
+
+
+def test_overlay_heatmap_keeps_clean_image_without_metrics_block() -> None:
+    base_image = np.zeros((32, 32, 3), dtype=np.uint8)
+    heatmap = np.zeros((32, 32), dtype=np.float32)
+
+    overlay = _overlay_heatmap(base_image, heatmap)
+
+    assert overlay.shape == base_image.shape
+    assert int(overlay[10, 10].sum()) > 0

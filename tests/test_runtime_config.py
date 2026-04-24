@@ -69,6 +69,7 @@ def test_load_config_normalizes_nested_paths_and_default_seat_model(tmp_path: Pa
         (tmp_path / "outputs/seat_defect_inspection/capture").resolve()
     )
     assert config.debug_artifact_mode == "standard"
+    assert config.fusion.early_stop_on_ng is False
 
     camera = config.seat_models[0].cameras[0]
     assert camera.source == str((tmp_path / "images/frame.png").resolve())

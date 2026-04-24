@@ -583,19 +583,19 @@ PatchCore 最终不是只看一个 `score > threshold`，而是综合多组证�
 当前示例配置：
 
 - `ng_strategy = any`
-- `early_stop_on_ng = true`
+- `early_stop_on_ng = false`
 - `reject_on_any_reject = true`
 - `defect_overrides_reject = true`
 
 这意味着：
 
-- 只要某个机位已经判成 `NG`
-- 且融合策略允许“任一机位 NG 即整件 NG”
-- 系统就可以提前结束剩余机位检测
+- 即使某个机位已经判成 `NG`
+- 系统仍然会继续跑完剩余机位
+- 最终报告会保留整件所有机位结果，方便现场复盘
 
 也就是说，在当前配置下：
 
-- 第一张命中缺陷的机位就可能触发整件早停
+- 不再因为首个 `NG` 提前截断后续机位检测
 
 #### 2.10.2 最终融合规则
 
@@ -908,4 +908,3 @@ prepare_image -> PatchCore / color -> camera result -> fusion -> report
 | 多机位融合         | `src/seat_defect_inspection/fusion.py`                     |
 | 报告输出          | `src/seat_defect_inspection/reporting.py`                  |
 | 调试图输出         | `src/seat_defect_inspection/cvops/debug_artifacts.py`      |
-

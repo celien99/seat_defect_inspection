@@ -10,7 +10,7 @@
     "fusion": {
       "reject_on_any_reject": true,
       "ng_strategy": "any",
-      "early_stop_on_ng": true,
+      "early_stop_on_ng": false,
       "defect_overrides_reject": true
     },
     "cameras": [

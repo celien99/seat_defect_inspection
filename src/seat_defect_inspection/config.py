@@ -186,7 +186,8 @@ class FusionConfig:
 
     reject_on_any_reject: bool = True
     ng_strategy: str = "any"
-    early_stop_on_ng: bool = True
+    # 默认输出所有机位结果，避免首个 NG 提前截断整件复盘信息。
+    early_stop_on_ng: bool = False
     defect_overrides_reject: bool = True
 
 
