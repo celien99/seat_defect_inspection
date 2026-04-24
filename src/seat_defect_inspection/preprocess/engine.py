@@ -27,10 +27,11 @@ class PreprocessEngine:
     def process(self, image):
         """Return a stabilized BGR image for the downstream pipeline."""
         processed = image.copy()
-
+        # 畸变校正
         if self._camera_matrix is not None and self._distortion_coeffs is not None:
             processed = cv2.undistort(processed, self._camera_matrix, self._distortion_coeffs)
 
+        # 缩放
         if self.config.resize_width and self.config.resize_height:
             processed = cv2.resize(
                 processed,
@@ -38,37 +39,38 @@ class PreprocessEngine:
                 interpolation=cv2.INTER_AREA,
             )
 
+        # 去噪
         processed = self._denoise(processed)
+        # 白平衡
         processed = self._white_balance(processed)
+        # 光照归一化
         processed = self._normalize_lighting(processed)
-
-        if self.config.sharpen:
-            processed = _apply_unsharp_mask(
-                processed,
-                sigma=float(self.config.sharpen_sigma),
-                amount=float(self.config.sharpen_amount),
-            )
+        # 锐化
+        processed = self._sharpen(processed)
         return processed
 
+    def _sharpen(self, image):
+        if not self.config.sharpen:
+            return image
+        return _apply_unsharp_mask(
+            image,
+            sigma=float(self.config.sharpen_sigma),
+            amount=float(self.config.sharpen_amount),
+        )
     def _denoise(self, image):
         method = self.config.denoise_method.strip().lower()
         if method == "none":
             return image
         if method == "bilateral":
+            d = int(self.config.bilateral_diameter)
             return cv2.bilateralFilter(
                 image,
-                d=max(1, int(self.config.bilateral_diameter)),
+                d=d,
                 sigmaColor=float(self.config.bilateral_sigma_color),
                 sigmaSpace=float(self.config.bilateral_sigma_space),
             )
-        return cv2.GaussianBlur(
-            image,
-            (
-                _odd_kernel(self.config.gaussian_kernel_size),
-                _odd_kernel(self.config.gaussian_kernel_size),
-            ),
-            0,
-        )
+        kernel_size = _odd_kernel(self.config.gaussian_kernel_size)
+        return cv2.GaussianBlur(image, (kernel_size, kernel_size), 0)
 
     def _white_balance(self, image):
         method = self.config.white_balance_method.strip().lower()
@@ -155,11 +157,13 @@ def _apply_unsharp_mask(
     sigma: float,
     amount: float,
 ) -> np.ndarray:
+    """反锐化掩模算法 及: 结果 = 原图 + amount x (原图 - 模糊图)"""
     normalized_amount = max(0.0, float(amount))
     if normalized_amount <= 0.0:
         return image
 
     blurred = cv2.GaussianBlur(image, (0, 0), max(0.1, float(sigma)))
+    # dst=(1+amount)×image−amount×blurred
     sharpened = cv2.addWeighted(
         image.astype(np.float32),
         1.0 + normalized_amount,

@@ -2,6 +2,8 @@
 
 `seat_defect_inspection` is a standalone subproject for automotive seat defect inspection.
 
+For a detailed Chinese walkthrough of how the main pipeline transforms each input image, see [IMAGE_PIPELINE_DETAILS_ZH.md](./IMAGE_PIPELINE_DETAILS_ZH.md).
+
 It currently provides:
 
 - multi-camera image capture
