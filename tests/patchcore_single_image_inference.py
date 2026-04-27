@@ -65,12 +65,6 @@ PREPROCESS = {
 DETECTION = {
     "model_path": YOLO_MODEL_PATH,
     "target_class": "seat",
-    "ignore_classes": [
-        "tooling",
-        "worker_hand",
-        "wire",
-        "foreign_object",
-    ],
     "confidence": 0.5,
     "iou": 0.45,
     "device": DEVICE,

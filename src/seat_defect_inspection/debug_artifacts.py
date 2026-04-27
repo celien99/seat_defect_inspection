@@ -21,7 +21,6 @@ _DEBUG_ARTIFACT_GROUPS: dict[str, tuple[str, ...]] = {
         "patchcore_input",
         "foreground_weight",
         "target_mask",
-        "ignore_mask",
         "valid_mask",
         "heatmap",
         "overlay",

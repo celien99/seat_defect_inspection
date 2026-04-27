@@ -109,12 +109,10 @@ class DetectionResult:
 
     字段：
     - target: 主目标，一般是 seat_main
-    - ignores: 需要进入忽略掩膜的干扰目标
     - all_objects: YOLO 输出的全部目标，便于调试
     """
 
     target: DetectionObject | None
-    ignores: list[DetectionObject] = field(default_factory=list)
     all_objects: list[DetectionObject] = field(default_factory=list)
 
 
@@ -128,7 +126,6 @@ class RoiRefineResult:
     - aligned_roi_image: 对齐/缩放后的标准 ROI
     - texture_ready_image: 为 PatchCore 准备的纹理增强 ROI
     - target_mask: 目标前景掩膜
-    - ignore_mask: 干扰物掩膜
     - valid_mask: 最终可用区域掩膜
     - foreground_weight: 前景羽化权重图
     - alignment_applied: 是否实际执行了 ECC 对齐
@@ -139,7 +136,6 @@ class RoiRefineResult:
     aligned_roi_image: Any
     texture_ready_image: Any | None
     target_mask: Any
-    ignore_mask: Any
     valid_mask: Any
     foreground_weight: Any | None
     alignment_applied: bool = False

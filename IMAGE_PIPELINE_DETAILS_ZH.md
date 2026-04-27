@@ -19,7 +19,7 @@ flowchart LR
     A["原始图像 / 相机帧"] --> B["AcquisitionService<br/>采集并标准化成 FramePacket"]
     B --> C["PreprocessEngine<br/>畸变校正、缩放、去噪、白平衡、光照归一、CLAHE、锐化"]
     C --> D["DetectionService<br/>YOLO 分割检测 / fallback_box"]
-    D --> E["RoiRefineEngine<br/>裁切 ROI、生成 target_mask / ignore_mask / valid_mask、缩放对齐"]
+    D --> E["RoiRefineEngine<br/>裁切 ROI、生成 target_mask / valid_mask、缩放对齐"]
     E --> F["ImageQualityGuard<br/>只在 valid_mask 前景内做质量门控"]
     F -->|通过| G["PatchCore 输入选择<br/>优先 texture_ready_image"]
     F -->|不通过| R1["REJECT"]
@@ -125,20 +125,18 @@ flowchart LR
 - 只接受 segmentation 权重，不接受普通 detect 权重。
 - 从所有检测框中：
   - 取 `target_class` 里置信度最高的一个作为主目标 `target`
-  - 把 `ignore_classes` 中的目标全部收集为 `ignores`
+  - 其余检测结果只保留在 `all_objects` 里用于调试观察，不再参与 ROI 忽略物管理
 - 如果没有 `model_path`，就退化成 `fallback_box` 静态框模式。
 
 当前示例配置中：
 
 - `target_class = seat`
-- `ignore_classes = tooling / worker_hand / wire / foreign_object`
 - `confidence = 0.5`
 - `iou = 0.45`
 
-YOLO 对图像做的事情本质上不是增强，而是“定位”和“分区”：
+YOLO 对图像做的事情本质上不是增强，而是“定位”：
 
 - 座椅主体在哪
-- 哪些区域虽然进入画面，但不应参与异常判断
 
 如果这一阶段没有找到主目标：
 
@@ -162,10 +160,9 @@ YOLO 对图像做的事情本质上不是增强，而是“定位”和“分区
 2. 扩框或缩框。
 3. 从预处理图上裁出 ROI。
 4. 构造前景掩码 `target_mask`。
-5. 构造忽略掩码 `ignore_mask`。
-6. 把 ROI 和掩码一起缩放到统一输出尺寸。
-7. 构造真正参与异常检测的 `valid_mask`。
-8. 生成给 PatchCore 用的 `texture_ready_image`。
+5. 把 ROI 和 `target_mask` 一起缩放到统一输出尺寸。
+6. 构造真正参与异常检测的 `valid_mask`。
+7. 生成给 PatchCore 用的 `texture_ready_image`。
 
 具体细节如下。
 
@@ -189,18 +186,10 @@ YOLO 对图像做的事情本质上不是增强，而是“定位”和“分区
 - 如果 YOLO 返回了分割 mask，就把 mask 裁到 ROI 内作为前景区域。
 - 如果没有分割 mask，就直接把整个 ROI 视为前景，全 1。
 
-#### 2.4.3 `ignore_mask` 怎么来
-
-- 对 `ignore_classes` 中的每个干扰目标：
-  - 如果它有分割 mask，就裁切它的 mask
-  - 如果只有框，就把框区域画进忽略掩码
-
-这样做的目的，是把夹具、手、线束、异物等从异常检测里屏蔽掉，避免误报。
-
-#### 2.4.4 统一尺寸（当前实现不是几何配准）
+#### 2.4.3 统一尺寸（当前实现不是几何配准）
 
 - 虽然字段名叫 `aligned_roi_image`，配置项也叫 `alignment`，但当前实现并没有做旋转矫正、透视矫正、ECC 配准或模板配准。
-- 当前代码实际做的是把 ROI 图像、`target_mask`、`ignore_mask` 一起 `resize` 到固定尺寸。
+- 当前代码实际做的是把 ROI 图像和 `target_mask` 一起 `resize` 到固定尺寸。
 - 图像用 `INTER_AREA`
 - mask 用 `INTER_NEAREST`
 
@@ -217,12 +206,12 @@ YOLO 对图像做的事情本质上不是增强，而是“定位”和“分区
 
 因此这里的“对齐”更准确地说是“裁切后统一尺寸”，不是复杂的几何对齐。
 
-#### 2.4.5 `valid_mask` 怎么来
+#### 2.4.4 `valid_mask` 怎么来
 
 核心公式：
 
 ```text
-valid_mask = (target_mask > 0) AND (ignore_mask == 0)
+valid_mask = target_mask > 0
 ```
 
 然后还会额外做边缘屏蔽：
@@ -238,7 +227,7 @@ valid_mask = (target_mask > 0) AND (ignore_mask == 0)
 - 如果 `target_mask` 还有内容，就退回到纯 `target_mask`
 - 如果连 `target_mask` 都没有，就退回全 1
 
-#### 2.4.6 `texture_ready_image` 是什么
+#### 2.4.5 `texture_ready_image` 是什么
 
 代码会把 `aligned_roi_image` 中 `valid_mask == 0` 的像素直接置 0，得到：
 
@@ -378,15 +367,13 @@ roi.texture_ready_image if roi.texture_ready_image is not None else roi.aligned_
 
 每个 patch 不会全部保留，而是要先过前景有效性筛选：
 
-- patch 内 `target_mask` 覆盖率必须 >= `min_target_coverage`
-- patch 内 `ignore_mask` 重叠率必须 <= `max_ignore_overlap`
+- patch 内有效前景覆盖率必须 >= `min_target_coverage`
 
 当前示例配置：
 
 - `min_target_coverage = 0.5`
-- `max_ignore_overlap = 0.1`
 
-只有通过这两个条件的 patch，才会进入 memory bank 比较。
+只有通过这个条件的 patch，才会进入 memory bank 比较。
 
 #### 2.7.3 手工特征实际提取了什么
 
@@ -671,7 +658,6 @@ debug_dir / seat_model_id / part_id / camera_id / frame_id /
 - `roi_texture.png`
 - `foreground_weight.png`
 - `target_mask.png`
-- `ignore_mask.png`
 - `valid_mask.png`
 - `heatmap.png`
 

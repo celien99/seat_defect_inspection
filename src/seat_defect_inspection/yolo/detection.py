@@ -27,7 +27,6 @@ class DetectionService:
         if self.config.model_path is None:
             return DetectionResult(
                 target=self._build_fallback_target(),
-                ignores=[],
                 all_objects=[],
             )
 
@@ -52,16 +51,9 @@ class DetectionService:
             for detection in detections
             if detection.label == self.config.target_class
         ]
-        ignore_candidates = [
-            detection
-            for detection in detections
-            if detection.label in self.config.ignore_classes
-        ]
-
         target = max(target_candidates, key=lambda item: item.confidence, default=None)
         return DetectionResult(
             target=target,
-            ignores=ignore_candidates,
             all_objects=detections,
         )
 

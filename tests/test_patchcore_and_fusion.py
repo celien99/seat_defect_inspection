@@ -634,7 +634,6 @@ def test_inspection_service_passes_valid_mask_to_patchcore() -> None:
         aligned_roi_image=np.zeros((32, 32, 3), dtype=np.uint8),
         texture_ready_image=np.zeros((32, 32, 3), dtype=np.uint8),
         target_mask=np.ones((32, 32), dtype=np.uint8),
-        ignore_mask=np.zeros((32, 32), dtype=np.uint8),
         valid_mask=np.pad(np.ones((16, 16), dtype=np.uint8), 8),
         foreground_weight=None,
     )

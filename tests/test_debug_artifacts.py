@@ -26,7 +26,6 @@ def test_full_artifact_mode_keeps_all_debug_outputs() -> None:
         "patchcore_input",
         "foreground_weight",
         "target_mask",
-        "ignore_mask",
         "valid_mask",
         "heatmap",
         "overlay",

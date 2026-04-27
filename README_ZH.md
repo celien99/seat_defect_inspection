@@ -87,7 +87,7 @@ seat-defect-inspection inspect-folder \
 
 如果现场还没有 YOLO 权重，可以先把 `detection.model_path` 设为 `null`，继续使用 `fallback_box` 走完整流程。
 
-项目现在统一使用 `yolo11m-seg.pt`。代码会直接消费 YOLO segmentation mask 来裁剪目标区域，并构造 `target_mask / ignore_mask / valid_mask`。当前 ROI 层已经压成轻量链路，主要保留裁剪、缩放和掩膜清理，不再承载之前那套重的局部增强流程。
+项目现在统一使用 `yolo11m-seg.pt`。代码会直接消费 YOLO segmentation mask 来裁剪目标区域，并构造 `target_mask / valid_mask`。当前 ROI 层已经压成轻量链路，主要保留裁剪、缩放和掩膜清理，不再承载之前那套重的局部增强流程。
 
 `train-patchcore` 本身就是离线训练流程。只要每个机位的 `train_good_dir` 指向本地图片目录，就不需要连接真机。
 

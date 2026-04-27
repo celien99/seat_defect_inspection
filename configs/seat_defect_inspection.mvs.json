@@ -43,12 +43,6 @@
         "detection": {
           "model_path": "../best.pt",
           "target_class": "seat",
-          "ignore_classes": [
-            "tooling",
-            "worker_hand",
-            "wire",
-            "foreign_object"
-          ],
           "confidence": 0.5,
           "iou": 0.45,
           "device": "cpu",
@@ -91,7 +85,7 @@
           "critical_min_component_patch_count": 1
         },
         "color_branch": {
-          "enabled": false,
+          "enabled": true,
           "threshold_quantile": 0.99,
           "min_valid_pixel_ratio": 0.4
         }
@@ -125,12 +119,6 @@
         "detection": {
           "model_path": "../best.pt",
           "target_class": "seat",
-          "ignore_classes": [
-            "tooling",
-            "worker_hand",
-            "wire",
-            "foreign_object"
-          ],
           "confidence": 0.5,
           "iou": 0.45,
           "device": "cpu",
@@ -173,7 +161,7 @@
           "critical_min_component_patch_count": 1
         },
         "color_branch": {
-          "enabled": false,
+          "enabled": true,
           "threshold_quantile": 0.99,
           "min_valid_pixel_ratio": 0.4
         }
@@ -207,12 +195,6 @@
         "detection": {
           "model_path": "../best.pt",
           "target_class": "seat",
-          "ignore_classes": [
-            "tooling",
-            "worker_hand",
-            "wire",
-            "foreign_object"
-          ],
           "confidence": 0.5,
           "iou": 0.45,
           "device": "cpu",
@@ -255,7 +237,7 @@
           "critical_min_component_patch_count": 1
         },
         "color_branch": {
-          "enabled": false,
+          "enabled": true,
           "threshold_quantile": 0.99,
           "min_valid_pixel_ratio": 0.4
         }
@@ -289,12 +271,6 @@
         "detection": {
           "model_path": "../best.pt",
           "target_class": "seat",
-          "ignore_classes": [
-            "tooling",
-            "worker_hand",
-            "wire",
-            "foreign_object"
-          ],
           "confidence": 0.5,
           "iou": 0.45,
           "device": "cpu",
@@ -337,7 +313,7 @@
           "critical_min_component_patch_count": 1
         },
         "color_branch": {
-          "enabled": false,
+          "enabled": true,
           "threshold_quantile": 0.99,
           "min_valid_pixel_ratio": 0.4
         }
@@ -371,12 +347,6 @@
         "detection": {
           "model_path": "../best.pt",
           "target_class": "seat",
-          "ignore_classes": [
-            "tooling",
-            "worker_hand",
-            "wire",
-            "foreign_object"
-          ],
           "confidence": 0.5,
           "iou": 0.45,
           "device": "cpu",
@@ -419,7 +389,7 @@
           "critical_min_component_patch_count": 1
         },
         "color_branch": {
-          "enabled": false,
+          "enabled": true,
           "threshold_quantile": 0.99,
           "min_valid_pixel_ratio": 0.4
         }

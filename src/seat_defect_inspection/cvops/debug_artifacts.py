@@ -102,13 +102,6 @@ def save_debug_artifacts(
         _save_selected_mask(
             artifact_paths,
             selected_artifacts,
-            "ignore_mask",
-            camera_dir / "ignore_mask.png",
-            prepared.roi.ignore_mask,
-        )
-        _save_selected_mask(
-            artifact_paths,
-            selected_artifacts,
             "valid_mask",
             camera_dir / "valid_mask.png",
             prepared.roi.valid_mask,
@@ -180,10 +173,14 @@ def _render_detections(image: Any, detection) -> Any:
     if detection is None:
         return image.copy()
     canvas = image.copy()
+    drawn_ids: set[int] = set()
     if detection.target is not None:
         _draw_detection(canvas, detection.target, (0, 255, 0))
-    for item in detection.ignores:
-        _draw_detection(canvas, item, (0, 0, 255))
+        drawn_ids.add(id(detection.target))
+    for item in detection.all_objects:
+        if id(item) in drawn_ids:
+            continue
+        _draw_detection(canvas, item, (0, 165, 255))
     return canvas
 
 

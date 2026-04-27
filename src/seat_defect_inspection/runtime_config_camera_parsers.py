@@ -232,6 +232,10 @@ def _parse_detection_config(payload: Any, config_dir: Path, *, scope: str) -> De
     if payload is None:
         return defaults
     payload = _expect_dict(payload, scope)
+    if "ignore_classes" in payload:
+        # 兼容旧配置：当前流程已经移除 ignore_classes 管理，旧字段直接忽略。
+        payload = dict(payload)
+        payload.pop("ignore_classes", None)
     _reject_unknown_keys(payload, _field_names(DetectionConfig), scope)
     return DetectionConfig(
         model_path=_resolve_optional_model_path(
@@ -239,11 +243,6 @@ def _parse_detection_config(payload: Any, config_dir: Path, *, scope: str) -> De
             _optional_string(payload.get("model_path")),
         ),
         target_class=_string_or_default(payload.get("target_class"), defaults.target_class),
-        ignore_classes=_string_list(
-            payload.get("ignore_classes"),
-            scope=f"{scope}.ignore_classes",
-            default=defaults.ignore_classes,
-        ),
         confidence=_float_or_default(payload.get("confidence"), defaults.confidence),
         iou=_float_or_default(payload.get("iou"), defaults.iou),
         device=_string_or_default(payload.get("device"), defaults.device),

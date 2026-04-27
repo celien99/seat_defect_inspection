@@ -83,7 +83,6 @@ class DetectionConfig:
 
     model_path: str | None = None
     target_class: str = "seat"
-    ignore_classes: list[str] = field(default_factory=list)
     # 保持与历史版本一致，避免结构重构时悄悄改变 YOLO 检测策略。
     confidence: float = 0.25
     iou: float = 0.45

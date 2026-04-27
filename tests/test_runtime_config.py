@@ -200,6 +200,36 @@ def test_load_config_rejects_unknown_debug_artifact_mode(tmp_path: Path) -> None
     raise AssertionError("expected ValueError for unknown debug_artifact_mode")
 
 
+def test_load_config_ignores_legacy_ignore_classes_field(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "seat_defect_inspection": {
+                    "cameras": [
+                        {
+                            "camera_id": "cam_0",
+                            "source": "0",
+                            "patchcore_model_path": "model.npz",
+                            "detection": {
+                                "target_class": "seat",
+                                "ignore_classes": ["wire", "tooling"],
+                            },
+                        }
+                    ],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_config(str(config_path))
+
+    camera = config.cameras[0]
+    assert camera.detection.target_class == "seat"
+    assert not hasattr(camera.detection, "ignore_classes")
+
+
 def test_load_config_rejects_full_patchcore_without_backbone_weights(tmp_path: Path) -> None:
     config_path = tmp_path / "config.json"
     config_path.write_text(

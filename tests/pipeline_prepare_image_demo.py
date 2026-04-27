@@ -51,12 +51,6 @@ PREPROCESS = {
 DETECTION = {
     "model_path": YOLO_MODEL_PATH,
     "target_class": "seat",
-    "ignore_classes": [
-        "tooling",
-        "worker_hand",
-        "wire",
-        "foreign_object",
-    ],
     "confidence": 0.5,
     "iou": 0.45,
     "device": DEVICE,
@@ -134,7 +128,6 @@ def main() -> None:
         )
         write_image(sample_dir / "patchcore_input.png", patchcore_input)
         write_mask(sample_dir / "target_mask.png", prepared.roi.target_mask)
-        write_mask(sample_dir / "ignore_mask.png", prepared.roi.ignore_mask)
         write_mask(sample_dir / "valid_mask.png", prepared.roi.valid_mask)
 
     print(f"图片路径: {image_path}")

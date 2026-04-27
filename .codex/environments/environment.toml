@@ -9,3 +9,8 @@ script = ""
 name = "运行"
 icon = "run"
 command = "conda activate yolo_env"
+
+[[actions]]
+name = "环境"
+icon = "tool"
+command = "conda activate yolo_env"

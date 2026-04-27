@@ -45,12 +45,6 @@
             "detection": {
               "model_path": "../models/seat_defect_inspection/yolo/seat_model_a_best.pt",
               "target_class": "seat",
-              "ignore_classes": [
-                "tooling",
-                "worker_hand",
-                "wire",
-                "foreign_object"
-              ],
               "fallback_box": {
                 "x1": 900.0,
                 "y1": 280.0,
@@ -109,12 +103,6 @@
             "detection": {
               "model_path": "../models/seat_defect_inspection/yolo/seat_model_b_best.pt",
               "target_class": "seat",
-              "ignore_classes": [
-                "tooling",
-                "worker_hand",
-                "wire",
-                "foreign_object"
-              ],
               "fallback_box": {
                 "x1": 860.0,
                 "y1": 260.0,
