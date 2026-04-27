@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -14,6 +15,7 @@ from seat_defect_inspection.yolo import DetectionService
 from seat_defect_inspection.runtime_config import load_yolo_training_config
 from seat_defect_inspection.schemas import BoundingBox, CameraInspectionResult, DetectionResult, DetectionObject, FramePacket, RoiRefineResult, TextureAnomalyResult
 from seat_defect_inspection.service import InspectionService, PreparedCameraSample, _CameraPipeline
+from seat_defect_inspection.service.offline_inspection import inspect_image_folder
 
 
 def _camera_result(camera_id: str, status: str) -> CameraInspectionResult:
@@ -382,6 +384,69 @@ def test_inspection_service_rejects_missing_color_profile_when_color_branch_enab
         assert "train-patchcore" in str(exc)
         return
     raise AssertionError("expected RuntimeError for missing color profile")
+
+
+def test_inspect_image_folder_restores_caller_state(tmp_path: Path, monkeypatch) -> None:
+    input_root = tmp_path / "offline"
+    expected_sources: dict[str, str] = {}
+    for camera_id in ("cam_0", "cam_1"):
+        camera_dir = input_root / camera_id
+        camera_dir.mkdir(parents=True, exist_ok=True)
+        image_path = camera_dir / f"{camera_id}.png"
+        image_path.write_bytes(b"placeholder")
+        expected_sources[camera_id] = str(image_path)
+
+    cameras = [
+        SimpleNamespace(camera_id="cam_0", source="mvs://cam_0"),
+        SimpleNamespace(camera_id="cam_1", source="mvs://cam_1"),
+    ]
+    context = SimpleNamespace(cameras=cameras, seat_model_id=None)
+    service = SimpleNamespace(
+        config=SimpleNamespace(
+            output_json_path="original_results.json",
+            debug_dir="original_debug",
+        ),
+        _resolve_context=lambda _seat_model_id: context,
+    )
+    observed: dict[str, object] = {}
+
+    def fake_run_inspection(service_arg, part_id=None, *, seat_model_id=None):
+        observed["part_id"] = part_id
+        observed["output_json_path"] = service_arg.config.output_json_path
+        observed["debug_dir"] = service_arg.config.debug_dir
+        observed["camera_sources"] = {
+            camera.camera_id: camera.source
+            for camera in cameras
+        }
+        return SimpleNamespace(status="OK", decision_reason="all_checks_passed")
+
+    monkeypatch.setattr(
+        "seat_defect_inspection.service.offline_inspection.run_inspection",
+        fake_run_inspection,
+    )
+    monkeypatch.setattr(
+        "seat_defect_inspection.service.offline_inspection.resolve_inspection_archive_path",
+        lambda latest_output_path, _result: latest_output_path.parent / "archived.json",
+    )
+
+    summary = inspect_image_folder(
+        service,
+        str(input_root),
+        output_dir=str(tmp_path / "outputs"),
+        part_id="sample_001",
+    )
+
+    assert observed["part_id"] == "sample_001"
+    assert Path(observed["output_json_path"]).name == "latest.json"
+    assert Path(observed["debug_dir"]).name == "debug"
+    assert observed["camera_sources"] == expected_sources
+    assert service.config.output_json_path == "original_results.json"
+    assert service.config.debug_dir == "original_debug"
+    assert {camera.camera_id: camera.source for camera in cameras} == {
+        "cam_0": "mvs://cam_0",
+        "cam_1": "mvs://cam_1",
+    }
+    assert summary["ok_count"] == 1
 
 
 def test_camera_pipeline_quality_uses_roi_instead_of_full_frame() -> None:

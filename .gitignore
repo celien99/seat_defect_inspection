@@ -11,3 +11,7 @@ data/seat_defect_inspection/
 offline_samples/
 
 models/*
+
+datasets/*
+datasets/seat_defect/*
+.codex_tmp/*

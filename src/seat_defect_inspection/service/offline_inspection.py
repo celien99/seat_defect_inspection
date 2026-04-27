@@ -57,48 +57,60 @@ def inspect_image_folder(
     run_root = _build_run_root(service, output_dir, run_id)
     latest_output_path = run_root / "reports" / "latest.json"
     debug_dir = run_root / "debug"
+    original_output_json_path = service.config.output_json_path
+    original_debug_dir = service.config.debug_dir
+    original_sources = {
+        camera.camera_id: camera.source
+        for camera in context.cameras
+    }
 
     # 离线批量检测只改输入源和输出路径，核心模型缓存与流程缓存继续复用。
     service.config.output_json_path = str(latest_output_path)
+    service.config.output_json_path = str(latest_output_path)
     service.config.debug_dir = str(debug_dir)
 
-    records: list[dict[str, Any]] = []
-    for sample in samples:
-        _apply_sample_sources(context.cameras, sample.source_map)
-        result = run_inspection(
-            service,
-            part_id=sample.part_id,
-            seat_model_id=seat_model_id,
-        )
-        archive_path = resolve_inspection_archive_path(latest_output_path, result)
-        records.append(
-            {
-                "part_id": sample.part_id,
-                "status": result.status,
-                "decision_reason": result.decision_reason,
-                "report_path": str(archive_path),
-                "camera_sources": dict(sample.source_map),
-            }
-        )
+    try:
+        records: list[dict[str, Any]] = []
+        for sample in samples:
+            _apply_sample_sources(context.cameras, sample.source_map)
+            result = run_inspection(
+                service,
+                part_id=sample.part_id,
+                seat_model_id=seat_model_id,
+            )
+            archive_path = resolve_inspection_archive_path(latest_output_path, result)
+            records.append(
+                {
+                    "part_id": sample.part_id,
+                    "status": result.status,
+                    "decision_reason": result.decision_reason,
+                    "report_path": str(archive_path),
+                    "camera_sources": dict(sample.source_map),
+                }
+            )
 
-    status_counter = Counter(record["status"] for record in records)
-    summary_path = run_root / "summary.json"
-    summary = {
-        "run_id": run_id,
-        "input_dir": str(input_root),
-        "seat_model_id": context.seat_model_id,
-        "sample_count": len(records),
-        "ok_count": int(status_counter.get("OK", 0)),
-        "ng_count": int(status_counter.get("NG", 0)),
-        "reject_count": int(status_counter.get("REJECT", 0)),
-        "run_root": str(run_root),
-        "reports_dir": str(latest_output_path.parent),
-        "debug_dir": str(debug_dir),
-        "summary_path": str(summary_path),
-        "records": records,
-    }
-    write_json(summary_path, summary)
-    return summary
+        status_counter = Counter(record["status"] for record in records)
+        summary_path = run_root / "summary.json"
+        summary = {
+            "run_id": run_id,
+            "input_dir": str(input_root),
+            "seat_model_id": context.seat_model_id,
+            "sample_count": len(records),
+            "ok_count": int(status_counter.get("OK", 0)),
+            "ng_count": int(status_counter.get("NG", 0)),
+            "reject_count": int(status_counter.get("REJECT", 0)),
+            "run_root": str(run_root),
+            "reports_dir": str(latest_output_path.parent),
+            "debug_dir": str(debug_dir),
+            "summary_path": str(summary_path),
+            "records": records,
+        }
+        write_json(summary_path, summary)
+        return summary
+    finally:
+        service.config.output_json_path = original_output_json_path
+        service.config.debug_dir = original_debug_dir
+        _restore_camera_sources(context.cameras, original_sources)
 
 
 def _discover_offline_samples(
@@ -302,6 +314,15 @@ def _build_run_root(
     run_root = base_dir / run_id
     run_root.mkdir(parents=True, exist_ok=True)
     return run_root
+
+
+def _restore_camera_sources(
+    cameras: list["CameraConfig"],
+    original_sources: dict[str, str],
+) -> None:
+    """Restore camera sources after offline inspection so the caller can reuse the service."""
+    for camera in cameras:
+        camera.source = original_sources[camera.camera_id]
 
 
 def _apply_sample_sources(cameras: list["CameraConfig"], source_map: dict[str, str]) -> None:

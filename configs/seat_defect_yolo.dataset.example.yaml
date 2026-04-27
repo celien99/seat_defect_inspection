@@ -1,7 +1,6 @@
 path: ../datasets/seat_defect
 train: images/train
 val: images/val
-test: images/test
 
 names:
   0: seat
