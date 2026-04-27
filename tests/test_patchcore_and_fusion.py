@@ -13,8 +13,9 @@ from seat_defect_inspection.patchcore import PatchCoreService, _decide_patchcore
 from seat_defect_inspection.patchcore.scoring import _analyze_patch_evidence
 from seat_defect_inspection.yolo import DetectionService
 from seat_defect_inspection.runtime_config import load_yolo_training_config
-from seat_defect_inspection.schemas import BoundingBox, CameraInspectionResult, DetectionResult, DetectionObject, FramePacket, RoiRefineResult, TextureAnomalyResult
+from seat_defect_inspection.schemas import BoundingBox, CameraInspectionResult, DetectionResult, DetectionObject, FramePacket, ImageQualityDecision, ImageQualityMetrics, RoiRefineResult, TextureAnomalyResult
 from seat_defect_inspection.service import InspectionService, PreparedCameraSample, _CameraPipeline
+from seat_defect_inspection.service.inspection_camera import _inspect_one_camera
 from seat_defect_inspection.service.offline_inspection import inspect_image_folder
 
 
@@ -126,6 +127,68 @@ def test_patchcore_peak_rule_rejects_single_patch_noise() -> None:
     is_anomaly, decision_mode = _decide_patchcore_anomaly(
         score=0.72,
         threshold=1.0,
+        evidence=evidence,
+        config=config,
+    )
+
+    assert is_anomaly is False
+    assert decision_mode == "none"
+
+
+def test_patchcore_peak_rule_triggers_for_cam0_like_visible_defect() -> None:
+    config = PatchCoreConfig(
+        decision_score_margin=1.05,
+        strong_patch_score_ratio=0.85,
+        min_strong_patch_count=2,
+        min_strong_component_count=2,
+        min_strong_patch_ratio=0.006,
+        min_strong_component_ratio=0.004,
+        critical_score_margin=1.1,
+        critical_peak_score_margin=1.15,
+        critical_min_component_patch_count=2,
+    )
+    evidence = {
+        "peak_patch_score": 7.3588,
+        "strong_patch_count": 6,
+        "largest_component_patch_count": 3,
+        "strong_patch_ratio": 0.0049504950495,
+        "largest_component_patch_ratio": 0.0024752475247,
+    }
+
+    is_anomaly, decision_mode = _decide_patchcore_anomaly(
+        score=4.2155,
+        threshold=5.3269,
+        evidence=evidence,
+        config=config,
+    )
+
+    assert is_anomaly is True
+    assert decision_mode == "peak_rule"
+
+
+def test_patchcore_peak_rule_rejects_cam1_like_small_hotspot() -> None:
+    config = PatchCoreConfig(
+        decision_score_margin=1.05,
+        strong_patch_score_ratio=0.85,
+        min_strong_patch_count=2,
+        min_strong_component_count=2,
+        min_strong_patch_ratio=0.006,
+        min_strong_component_ratio=0.004,
+        critical_score_margin=1.1,
+        critical_peak_score_margin=1.15,
+        critical_min_component_patch_count=2,
+    )
+    evidence = {
+        "peak_patch_score": 6.3773,
+        "strong_patch_count": 3,
+        "largest_component_patch_count": 2,
+        "strong_patch_ratio": 0.0031678986272,
+        "largest_component_patch_ratio": 0.0021119324181,
+    }
+
+    is_anomaly, decision_mode = _decide_patchcore_anomaly(
+        score=4.5177,
+        threshold=5.8787,
         evidence=evidence,
         config=config,
     )
@@ -334,6 +397,107 @@ def test_legacy_patchcore_bundle_without_color_profile_loads(tmp_path) -> None:
     assert bundle.patchcore.threshold == 1.0
 
 
+def test_load_bundle_applies_runtime_patchcore_overrides(tmp_path) -> None:
+    model_path = tmp_path / "runtime_override_patchcore.npz"
+    np.savez_compressed(
+        model_path,
+        memory_bank=np.zeros((4, 8), dtype=np.float32),
+        feature_mean=np.zeros((8,), dtype=np.float32),
+        feature_std=np.ones((8,), dtype=np.float32),
+        meta_json=np.array(
+            json.dumps(
+                {
+                    "backend": "handcrafted",
+                    "image_size": 256,
+                    "patch_size": 32,
+                    "stride": 16,
+                    "max_memory": 128,
+                    "threshold_quantile": 0.99,
+                    "texture_input": "lab_l",
+                    "min_target_coverage": 0.5,
+                    "max_ignore_overlap": 0.1,
+                    "min_valid_patch_ratio": 0.3,
+                    "decision_score_margin": 0.9,
+                    "strong_patch_score_ratio": 0.8,
+                    "min_strong_patch_count": 2,
+                    "min_strong_component_count": 1,
+                    "min_strong_patch_ratio": 0.005,
+                    "min_strong_component_ratio": 0.003,
+                    "critical_score_margin": 0.8,
+                    "critical_peak_score_margin": 0.9,
+                    "critical_min_component_patch_count": 1,
+                    "threshold": 1.0,
+                }
+            )
+        ),
+        color_profile_json=np.array(""),
+    )
+
+    runtime_config = PatchCoreConfig(
+        image_size=320,
+        patch_size=16,
+        stride=8,
+        min_target_coverage=0.7,
+        max_ignore_overlap=0.05,
+        min_valid_patch_ratio=0.55,
+        decision_score_margin=1.05,
+        critical_score_margin=1.15,
+        critical_peak_score_margin=1.25,
+        critical_min_component_patch_count=2,
+    )
+
+    bundle = PatchCoreService.load_bundle(model_path, runtime_config=runtime_config)
+
+    assert bundle.patchcore.config.image_size == 256
+    assert bundle.patchcore.config.patch_size == 32
+    assert bundle.patchcore.config.stride == 16
+    assert bundle.patchcore.config.min_target_coverage == 0.7
+    assert bundle.patchcore.config.max_ignore_overlap == 0.05
+    assert bundle.patchcore.config.min_valid_patch_ratio == runtime_config.min_valid_patch_ratio
+    assert bundle.patchcore.config.decision_score_margin == runtime_config.decision_score_margin
+    assert bundle.patchcore.config.critical_peak_score_margin == runtime_config.critical_peak_score_margin
+    assert bundle.patchcore.config.critical_min_component_patch_count == 2
+
+
+def test_load_bundle_rejects_pipeline_signature_mismatch(tmp_path) -> None:
+    model_path = tmp_path / "pipeline_signature_patchcore.npz"
+    config = PatchCoreConfig(
+        backend="handcrafted",
+        image_size=4,
+        patch_size=4,
+        stride=4,
+        max_memory=2,
+        texture_input="gray",
+        coreset_sampling_ratio=1.0,
+    )
+    service = PatchCoreService(config)
+    target_mask = np.ones((4, 4), dtype=np.uint8)
+    ignore_mask = np.zeros((4, 4), dtype=np.uint8)
+    dark = np.zeros((4, 4, 3), dtype=np.uint8)
+    bright = np.full((4, 4, 3), 255, dtype=np.uint8)
+    service.fit(
+        [
+            (dark, target_mask, ignore_mask),
+            (bright, target_mask, ignore_mask),
+        ]
+    )
+    service.save(
+        model_path,
+        pipeline_signature="sig_train",
+        pipeline_context={"signature_version": 1},
+    )
+
+    try:
+        PatchCoreService.load_bundle(
+            model_path,
+            expected_pipeline_signature="sig_runtime",
+        )
+    except RuntimeError as exc:
+        assert "Please retrain" in str(exc)
+        return
+    raise AssertionError("expected RuntimeError for mismatched PatchCore pipeline signature")
+
+
 def test_inspection_service_rejects_missing_color_profile_when_color_branch_enabled(tmp_path) -> None:
     model_path = tmp_path / "legacy_patchcore.npz"
     np.savez_compressed(
@@ -376,6 +540,8 @@ def test_inspection_service_rejects_missing_color_profile_when_color_branch_enab
             fusion=FusionConfig(),
         )
     )
+
+    service._build_patchcore_pipeline_signature = lambda _camera: None  # type: ignore[method-assign]
 
     try:
         service._load_model_bundle(camera, None)
@@ -521,15 +687,19 @@ def test_handcrafted_patchcore_fit_predict_and_reload(tmp_path) -> None:
 
 def test_roi_valid_mask_respects_edge_ignore_pixels() -> None:
     image = np.full((64, 64, 3), 127, dtype=np.uint8)
+    segmentation_mask = np.zeros((64, 64), dtype=np.uint8)
+    segmentation_mask[8:56, 8:56] = 1
     detection = DetectionResult(
         target=DetectionObject(
             label="seat",
             confidence=1.0,
             bounding_box=BoundingBox(8.0, 8.0, 56.0, 56.0),
+            segmentation_mask=segmentation_mask,
         )
     )
     engine = RoiRefineEngine(
         RoiRefineConfig(
+            crop_expand_ratio=0.0,
             edge_ignore_pixels=7,
             alignment=AlignmentConfig(
                 output_width=64,
@@ -542,6 +712,34 @@ def test_roi_valid_mask_respects_edge_ignore_pixels() -> None:
 
     assert roi.valid_mask.sum() > 0
     assert roi.valid_mask.sum() < roi.target_mask.sum()
+    assert roi.ignore_mask.sum() == roi.target_mask.sum() - roi.valid_mask.sum()
+
+
+def test_roi_rejects_missing_segmentation_mask_without_fallback() -> None:
+    image = np.full((64, 64, 3), 127, dtype=np.uint8)
+    detection = DetectionResult(
+        target=DetectionObject(
+            label="seat",
+            confidence=1.0,
+            bounding_box=BoundingBox(8.0, 8.0, 56.0, 56.0),
+        ),
+        used_fallback=False,
+    )
+    engine = RoiRefineEngine(
+        RoiRefineConfig(
+            alignment=AlignmentConfig(
+                output_width=64,
+                output_height=64,
+            ),
+        )
+    )
+
+    try:
+        engine.refine(image, detection)
+    except ValueError as exc:
+        assert str(exc) == "target_mask_missing"
+        return
+    raise AssertionError("expected ValueError for missing segmentation mask")
 
 
 def test_roi_crop_prefers_segmentation_mask_bounds() -> None:
@@ -576,7 +774,7 @@ def test_roi_crop_prefers_segmentation_mask_bounds() -> None:
     assert roi.crop_box.y2 == 62.0
 
 
-def test_inspection_service_passes_valid_mask_to_patchcore() -> None:
+def test_inspection_service_passes_target_and_ignore_masks_to_patchcore() -> None:
     class _FakePatchCore:
         def __init__(self) -> None:
             self.target_mask = None
@@ -635,6 +833,10 @@ def test_inspection_service_passes_valid_mask_to_patchcore() -> None:
         texture_ready_image=np.zeros((32, 32, 3), dtype=np.uint8),
         target_mask=np.ones((32, 32), dtype=np.uint8),
         valid_mask=np.pad(np.ones((16, 16), dtype=np.uint8), 8),
+        ignore_mask=np.logical_and(
+            np.ones((32, 32), dtype=np.uint8),
+            np.pad(np.zeros((16, 16), dtype=np.uint8), 8, constant_values=1),
+        ).astype(np.uint8),
         foreground_weight=None,
     )
     prepared = PreparedCameraSample(
@@ -660,7 +862,8 @@ def test_inspection_service_passes_valid_mask_to_patchcore() -> None:
         image=np.zeros((32, 32, 3), dtype=np.uint8),
     )
 
-    result = service._inspect_one_camera(
+    result = _inspect_one_camera(
+        service,
         frame_packet,
         camera,
         _FakePipeline(prepared),
@@ -668,5 +871,106 @@ def test_inspection_service_passes_valid_mask_to_patchcore() -> None:
     )
 
     assert result.status == "OK"
-    assert np.array_equal(fake_patchcore.target_mask, roi.valid_mask)
-    assert np.count_nonzero(fake_patchcore.ignore_mask) == 0
+    assert np.array_equal(fake_patchcore.target_mask, roi.target_mask)
+    assert np.array_equal(fake_patchcore.ignore_mask, roi.ignore_mask)
+
+
+def test_quality_reject_can_still_return_ng_when_patchcore_finds_obvious_defect() -> None:
+    class _AnomalousPatchCore:
+        def predict(self, _image, target_mask, _ignore_mask):
+            return TextureAnomalyResult(
+                score=2.0,
+                threshold=1.0,
+                is_anomaly=True,
+                heatmap=np.zeros(target_mask.shape, dtype=np.float32),
+                valid_patch_ratio=1.0,
+                valid_patch_count=4,
+                total_patch_count=4,
+                decision_mode="normal_rule",
+            )
+
+    class _FakePipeline:
+        def __init__(self, prepared: PreparedCameraSample) -> None:
+            self.prepared = prepared
+
+        def prepare_image(self, _image):
+            return self.prepared
+
+    camera = CameraConfig(
+        camera_id="cam_0",
+        source="0",
+        patchcore_model_path="model.npz",
+    )
+    service = InspectionService(
+        SimpleNamespace(
+            cameras=[camera],
+            seat_models=[],
+            default_seat_model_id=None,
+            output_json_path="results.json",
+            debug_dir="debug",
+            capture_dir="capture",
+            save_debug_artifacts=False,
+            debug_artifact_mode="standard",
+            capture_retries=1,
+            part_id="seat_demo",
+            fusion=FusionConfig(),
+        )
+    )
+    service._load_model_bundle = lambda *_args, **_kwargs: SimpleNamespace(  # type: ignore[method-assign]
+        patchcore=_AnomalousPatchCore(),
+        color_profile=None,
+    )
+    roi = RoiRefineResult(
+        crop_box=BoundingBox(0.0, 0.0, 32.0, 32.0),
+        roi_image=np.zeros((32, 32, 3), dtype=np.uint8),
+        aligned_roi_image=np.zeros((32, 32, 3), dtype=np.uint8),
+        texture_ready_image=np.zeros((32, 32, 3), dtype=np.uint8),
+        target_mask=np.ones((32, 32), dtype=np.uint8),
+        valid_mask=np.ones((32, 32), dtype=np.uint8),
+        ignore_mask=np.zeros((32, 32), dtype=np.uint8),
+        foreground_weight=None,
+    )
+    prepared = PreparedCameraSample(
+        quality=ImageQualityDecision(
+            accepted=False,
+            reason="blur",
+            metrics=ImageQualityMetrics(
+                laplacian_variance=1.0,
+                brightness_mean=80.0,
+                overexposed_ratio=0.0,
+                underexposed_ratio=0.0,
+                is_black_frame=False,
+                is_white_frame=False,
+            ),
+        ),
+        preprocessed_image=np.zeros((32, 32, 3), dtype=np.uint8),
+        detection=DetectionResult(
+            target=DetectionObject(
+                label="seat",
+                confidence=1.0,
+                bounding_box=BoundingBox(0.0, 0.0, 32.0, 32.0),
+            )
+        ),
+        roi=roi,
+        rejection_reason="quality_blur",
+    )
+    frame_packet = FramePacket(
+        camera_id="cam_0",
+        frame_id="frame_0",
+        part_id="part_0",
+        source="0",
+        source_kind="image",
+        timestamp="2026-04-21T00:00:00+08:00",
+        image=np.zeros((32, 32, 3), dtype=np.uint8),
+    )
+
+    result = _inspect_one_camera(
+        service,
+        frame_packet,
+        camera,
+        _FakePipeline(prepared),
+        seat_model_id=None,
+    )
+
+    assert result.status == "NG"
+    assert result.reason == "texture_anomaly_quality_override"

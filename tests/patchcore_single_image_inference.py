@@ -141,7 +141,14 @@ def _resolve_patchcore_service(
 ) -> tuple[PatchCoreService, bool, dict[str, object] | None]:
     model_path = Path(camera.patchcore_model_path)
     if model_path.exists() and not FORCE_RETRAIN_PATCHCORE:
-        return PatchCoreService.load_bundle(model_path).patchcore, False, None
+        return (
+            PatchCoreService.load_bundle(
+                model_path,
+                runtime_config=camera.patchcore,
+            ).patchcore,
+            False,
+            None,
+        )
 
     samples: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
     used_image_paths: list[str] = []
@@ -167,8 +174,8 @@ def _resolve_patchcore_service(
         samples.append(
             (
                 patchcore_input,
-                prepared.roi.valid_mask,
-                np.zeros_like(prepared.roi.valid_mask, dtype=np.uint8),
+                prepared.roi.target_mask,
+                prepared.roi.ignore_mask,
             )
         )
         used_image_paths.append(str(train_image_path))
@@ -216,8 +223,8 @@ def main() -> None:
     )
     result = patchcore_service.predict(
         patchcore_input,
-        prepared.roi.valid_mask,
-        np.zeros_like(prepared.roi.valid_mask, dtype=np.uint8),
+        prepared.roi.target_mask,
+        prepared.roi.ignore_mask,
     )
 
     sample_dir = Path(OUTPUT_DIR) / image_path.stem

@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import cv2
-import numpy as np
 
 from ..config import CameraConfig
 from ..patchcore import ColorConsistencyService, list_images
@@ -74,8 +73,8 @@ def _train_one_camera(
         patchcore_samples.append(
             (
                 select_patchcore_input(prepared.roi),
-                prepared.roi.valid_mask,
-                np.zeros_like(prepared.roi.valid_mask, dtype=np.uint8),
+                prepared.roi.target_mask,
+                prepared.roi.ignore_mask,
             )
         )
         color_samples.append(
@@ -127,11 +126,19 @@ def _train_one_camera(
             "reason": "color_insensitive_mode",
         }
 
-    patchcore.save(camera.patchcore_model_path, color_profile=color_profile)
+    patchcore_pipeline_context = service._build_patchcore_pipeline_context(camera)
+    patchcore_pipeline_signature = service._build_patchcore_pipeline_signature(camera)
+    patchcore.save(
+        camera.patchcore_model_path,
+        color_profile=color_profile,
+        pipeline_signature=patchcore_pipeline_signature,
+        pipeline_context=patchcore_pipeline_context,
+    )
     summary = {
         "seat_model_id": seat_model_id,
         "camera_id": camera.camera_id,
         "model_path": camera.patchcore_model_path,
+        "pipeline_signature": patchcore_pipeline_signature,
         "patchcore": patchcore_summary,
         "color_branch": color_summary,
         "skipped_image_count": len(skipped_images),

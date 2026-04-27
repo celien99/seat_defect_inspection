@@ -1,9 +1,9 @@
-"""PatchCore 模型主流程编排。"""
+"""PatchCore model orchestration."""
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Iterable
 
@@ -17,8 +17,8 @@ from .scoring import (
     _decide_patchcore_anomaly,
     _determine_memory_bank_size,
     _exclude_embedding_slice,
-    _positive_margin,
     _score_embeddings_leave_one_out,
+    _threshold_margin,
     coreset_subsample_indices,
     min_distance_to_bank,
     normalize_map,
@@ -27,18 +27,30 @@ from ..config import PatchCoreConfig
 from ..schemas import TextureAnomalyResult
 
 IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".webp"}
+_RUNTIME_DECISION_OVERRIDE_FIELDS = (
+    "min_valid_patch_ratio",
+    "decision_score_margin",
+    "strong_patch_score_ratio",
+    "min_strong_patch_count",
+    "min_strong_component_count",
+    "min_strong_patch_ratio",
+    "min_strong_component_ratio",
+    "critical_score_margin",
+    "critical_peak_score_margin",
+    "critical_min_component_patch_count",
+)
 
 
 @dataclass(slots=True)
 class LoadedModelBundle:
-    """从磁盘加载的 PatchCore 模型与颜色分支配置。"""
+    """Model bundle restored from disk."""
 
     patchcore: "PatchCoreService"
     color_profile: ColorReferenceProfile | None = None
 
 
 class PatchCoreService:
-    """训练和推理 PatchCore 异常检测器。"""
+    """Train and run PatchCore anomaly detection."""
 
     def __init__(
         self,
@@ -59,7 +71,7 @@ class PatchCoreService:
         self,
         samples: Iterable[tuple[np.ndarray, np.ndarray, np.ndarray]],
     ) -> dict[str, float | int | str]:
-        """使用正常 ROI 样本和掩膜训练模型。"""
+        """Train the model from normal ROI samples."""
         raw_embeddings: list[np.ndarray] = []
         sample_count = 0
 
@@ -77,17 +89,14 @@ class PatchCoreService:
             sample_count += 1
 
         if not raw_embeddings:
-            raise ValueError("PatchCore 没有可用的有效训练样本")
+            raise ValueError("PatchCore has no valid training samples")
 
         stacked = np.concatenate(raw_embeddings, axis=0).astype(np.float32)
         self.feature_mean = stacked.mean(axis=0).astype(np.float32)
         self.feature_std = (stacked.std(axis=0) + 1e-6).astype(np.float32)
         normalized_samples = [self._normalize(embeddings) for embeddings in raw_embeddings]
         normalized = np.concatenate(normalized_samples, axis=0).astype(np.float32)
-        target_bank_size = _determine_memory_bank_size(
-            normalized,
-            self.config,
-        )
+        target_bank_size = _determine_memory_bank_size(normalized, self.config)
         selected_indices = coreset_subsample_indices(normalized, target_bank_size)
         self.memory_bank = normalized[selected_indices]
 
@@ -130,9 +139,9 @@ class PatchCoreService:
         target_mask: np.ndarray,
         ignore_mask: np.ndarray,
     ) -> TextureAnomalyResult:
-        """对单张 ROI 打分并返回热力图与 patch 统计信息。"""
+        """Score one ROI and return heatmap plus patch evidence."""
         if self.memory_bank is None or self.feature_mean is None or self.feature_std is None or self.threshold is None:
-            raise RuntimeError("PatchCore 模型尚未准备完成")
+            raise RuntimeError("PatchCore model is not ready")
 
         embeddings, batch = extract_patch_embeddings(
             image,
@@ -148,7 +157,7 @@ class PatchCoreService:
             else 0.0
         )
         if len(embeddings) == 0:
-            decision_threshold = float(self.threshold) * _positive_margin(self.config.decision_score_margin)
+            decision_threshold = float(self.threshold) * _threshold_margin(self.config.decision_score_margin)
             return TextureAnomalyResult(
                 score=0.0,
                 threshold=float(self.threshold),
@@ -167,14 +176,25 @@ class PatchCoreService:
         full_patch_scores = np.zeros((batch.total_patch_count,), dtype=np.float32)
         full_patch_scores[batch.valid_indices] = patch_scores
         patch_map = full_patch_scores.reshape(batch.grid_shape)
+
+        valid_patch_map = np.zeros((batch.total_patch_count,), dtype=np.float32)
+        valid_patch_map[batch.valid_indices] = 1.0
+        valid_patch_map = valid_patch_map.reshape(batch.grid_shape)
+
         heatmap = cv2.resize(
             patch_map,
             (image.shape[1], image.shape[0]),
-            interpolation=cv2.INTER_CUBIC,
+            interpolation=cv2.INTER_LINEAR,
         )
-        heatmap = normalize_map(heatmap)
-        heatmap *= (target_mask > 0).astype(np.float32)
-        decision_threshold = float(self.threshold) * _positive_margin(self.config.decision_score_margin)
+        resized_patch_mask = cv2.resize(
+            valid_patch_map,
+            (image.shape[1], image.shape[0]),
+            interpolation=cv2.INTER_NEAREST,
+        )
+        active_mask = np.logical_and(target_mask > 0, resized_patch_mask > 0.5)
+        heatmap = normalize_map(heatmap, mask=active_mask)
+
+        decision_threshold = float(self.threshold) * _threshold_margin(self.config.decision_score_margin)
         evidence = _analyze_patch_evidence(
             patch_map,
             score=float(score),
@@ -211,10 +231,10 @@ class PatchCoreService:
         embeddings: np.ndarray,
         memory_bank: np.ndarray | None = None,
     ) -> tuple[float, np.ndarray]:
-        """对 embedding 批次打分，可临时指定外部 calibration bank。"""
+        """Score an embedding batch against the active memory bank."""
         active_bank = self.memory_bank if memory_bank is None else memory_bank
         if active_bank is None or len(active_bank) == 0:
-            raise RuntimeError("PatchCore memory bank 为空，无法计算分数")
+            raise RuntimeError("PatchCore memory bank is empty")
         patch_scores = min_distance_to_bank(embeddings, active_bank)
         image_score = float(np.percentile(patch_scores, 99))
         return image_score, patch_scores
@@ -223,10 +243,13 @@ class PatchCoreService:
         self,
         model_path: str | Path,
         color_profile: ColorReferenceProfile | None = None,
+        *,
+        pipeline_signature: str | None = None,
+        pipeline_context: dict[str, object] | None = None,
     ) -> None:
-        """保存 PatchCore 模型及可选颜色分支配置。"""
+        """Persist the PatchCore model and optional color profile."""
         if self.memory_bank is None or self.feature_mean is None or self.feature_std is None or self.threshold is None:
-            raise RuntimeError("当前没有可保存的模型，请先完成训练")
+            raise RuntimeError("No trained PatchCore model is available to save")
 
         path = Path(model_path)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -259,6 +282,10 @@ class PatchCoreService:
             "coreset_sampling_ratio": self.config.coreset_sampling_ratio,
             "threshold": float(self.threshold),
         }
+        if pipeline_signature is not None:
+            meta["pipeline_signature"] = pipeline_signature
+        if pipeline_context is not None:
+            meta["pipeline_context"] = pipeline_context
         np.savez_compressed(
             path,
             memory_bank=self.memory_bank.astype(np.float32),
@@ -269,11 +296,28 @@ class PatchCoreService:
         )
 
     @classmethod
-    def load_bundle(cls, model_path: str | Path) -> LoadedModelBundle:
-        """从磁盘恢复模型包。"""
+    def load_bundle(
+        cls,
+        model_path: str | Path,
+        runtime_config: PatchCoreConfig | None = None,
+        expected_pipeline_signature: str | None = None,
+    ) -> LoadedModelBundle:
+        """Restore a model bundle from disk."""
         saved = np.load(model_path, allow_pickle=False)
         meta = json.loads(saved["meta_json"].item())
-        config = PatchCoreConfig(
+        saved_pipeline_signature = meta.get("pipeline_signature")
+        if expected_pipeline_signature is not None:
+            if not saved_pipeline_signature:
+                raise RuntimeError(
+                    "PatchCore model is missing the upstream pipeline signature. "
+                    "Please retrain the model before running inspection.",
+                )
+            if str(saved_pipeline_signature) != str(expected_pipeline_signature):
+                raise RuntimeError(
+                    "PatchCore model no longer matches the current preprocess/ROI pipeline. "
+                    "Please retrain the model before running inspection.",
+                )
+        trained_config = PatchCoreConfig(
             backend=str(meta.get("backend", "handcrafted")),
             image_size=int(meta["image_size"]),
             patch_size=int(meta["patch_size"]),
@@ -301,6 +345,7 @@ class PatchCoreService:
             feature_pool_kernel_size=int(meta.get("feature_pool_kernel_size", 3)),
             coreset_sampling_ratio=float(meta.get("coreset_sampling_ratio", 0.1)),
         )
+        config = _apply_runtime_patchcore_overrides(trained_config, runtime_config)
         patchcore = cls(
             config=config,
             memory_bank=saved["memory_bank"].astype(np.float32),
@@ -317,11 +362,11 @@ class PatchCoreService:
         return LoadedModelBundle(patchcore=patchcore, color_profile=color_profile)
 
     def _normalize(self, embeddings: np.ndarray) -> np.ndarray:
-        """用训练期统计量对 embedding 做标准化。"""
+        """Apply training-time feature normalization."""
         return ((embeddings - self.feature_mean) / self.feature_std).astype(np.float32)
 
     def _get_torch_feature_extractor(self) -> "_TorchPatchFeatureExtractor | None":
-        """仅完整后端才延迟初始化 torch 特征提取器。"""
+        """Lazy-init the full-backend torch feature extractor."""
         if self.config.backend.strip().lower() != "full":
             return None
         if self._torch_feature_extractor is None:
@@ -329,6 +374,35 @@ class PatchCoreService:
         return self._torch_feature_extractor
 
 
+def _apply_runtime_patchcore_overrides(
+    trained_config: PatchCoreConfig,
+    runtime_config: PatchCoreConfig | None,
+) -> PatchCoreConfig:
+    """Apply runtime-only overrides while preserving the trained structure."""
+    if runtime_config is None:
+        return trained_config
+
+    overrides: dict[str, float | int] = {
+        # Runtime may tighten patch validity constraints, but should not loosen them
+        # beyond the structure used to build the memory bank.
+        "min_target_coverage": max(
+            float(trained_config.min_target_coverage),
+            float(runtime_config.min_target_coverage),
+        ),
+        "max_ignore_overlap": min(
+            float(trained_config.max_ignore_overlap),
+            float(runtime_config.max_ignore_overlap),
+        ),
+    }
+    overrides.update(
+        {
+            field_name: getattr(runtime_config, field_name)
+            for field_name in _RUNTIME_DECISION_OVERRIDE_FIELDS
+        }
+    )
+    return replace(trained_config, **overrides)
+
+
 def list_images(folder: Path) -> list[Path]:
-    """递归收集目录中的图像文件。"""
+    """Recursively collect image files under a folder."""
     return sorted(path for path in folder.rglob("*") if path.suffix.lower() in IMAGE_SUFFIXES)

@@ -1,4 +1,4 @@
-"""调试图输出与可视化辅助。"""
+"""Debug artifact saving and visualization helpers."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import numpy as np
 from ..debug_artifacts import DEFAULT_DEBUG_ARTIFACT_MODE, resolve_debug_artifact_names
 from ..util import build_model_scoped_root, select_patchcore_input, write_image
 
+
 def save_debug_artifacts(
     *,
     enabled: bool,
@@ -21,7 +22,7 @@ def save_debug_artifacts(
     texture_result: Any | None,
     seat_model_id: str | None,
 ) -> dict[str, str]:
-    """按配置把当前机位调试产物写入磁盘并返回路径字典。"""
+    """Persist the selected debug artifacts for one camera result."""
     if not enabled:
         return {}
     selected_artifacts = resolve_debug_artifact_names(debug_artifact_mode)
@@ -106,6 +107,13 @@ def save_debug_artifacts(
             camera_dir / "valid_mask.png",
             prepared.roi.valid_mask,
         )
+        _save_selected_mask(
+            artifact_paths,
+            selected_artifacts,
+            "ignore_mask",
+            camera_dir / "ignore_mask.png",
+            prepared.roi.ignore_mask,
+        )
 
     if texture_result is not None and prepared.roi is not None:
         _save_selected_mask(
@@ -137,7 +145,7 @@ def _save_selected_image(
     path: Path,
     image: Any | None,
 ) -> None:
-    """仅在当前档位启用时保存图像。"""
+    """Write an image artifact when the current mode enables it."""
     if image is None or key not in selected_artifacts:
         return
     write_image(path, image)
@@ -151,7 +159,7 @@ def _save_selected_mask(
     path: Path,
     mask: np.ndarray | None,
 ) -> None:
-    """仅在当前档位启用时保存掩膜。"""
+    """Write a mask artifact when the current mode enables it."""
     if mask is None or key not in selected_artifacts:
         return
     _write_mask(path, mask)
@@ -159,7 +167,7 @@ def _save_selected_mask(
 
 
 def _write_mask(path: Path, mask: np.ndarray) -> None:
-    """把浮点或二值掩膜统一归一化后写盘。"""
+    """Normalize a mask-like array to uint8 before saving."""
     if mask.dtype != np.uint8:
         normalized = np.clip(mask * 255.0, 0, 255).astype(np.uint8)
     else:
@@ -169,7 +177,7 @@ def _write_mask(path: Path, mask: np.ndarray) -> None:
 
 
 def _render_detections(image: Any, detection) -> Any:
-    """渲染检测结果，便于快速核对 YOLO 命中区域。"""
+    """Render YOLO detections for quick inspection."""
     if detection is None:
         return image.copy()
     canvas = image.copy()
@@ -185,14 +193,14 @@ def _render_detections(image: Any, detection) -> Any:
 
 
 def _draw_detection(image: Any, detection, color: tuple[int, int, int]) -> None:
-    """绘制检测框与可选分割轮廓。"""
+    """Draw one detection box and optional segmentation mask."""
     if getattr(detection, "segmentation_mask", None) is not None:
         _draw_segmentation_mask(image, detection.segmentation_mask, color)
     _draw_box(image, detection.bounding_box, color, detection.label)
 
 
 def _draw_box(image: Any, box, color: tuple[int, int, int], label: str) -> None:
-    """绘制检测框。"""
+    """Draw one bounding box."""
     x1 = int(round(box.x1))
     y1 = int(round(box.y1))
     x2 = int(round(box.x2))
@@ -211,7 +219,7 @@ def _draw_box(image: Any, box, color: tuple[int, int, int], label: str) -> None:
 
 
 def _draw_segmentation_mask(image: Any, mask: np.ndarray, color: tuple[int, int, int]) -> None:
-    """绘制分割区域填充与轮廓。"""
+    """Draw segmentation fill and contours."""
     normalized = np.asarray(mask)
     if normalized.ndim != 2:
         return
@@ -240,14 +248,27 @@ def _overlay_heatmap(
     image: Any,
     heatmap: np.ndarray,
 ) -> Any:
-    """把热力图干净地叠加到 ROI 或纹理输入图上。"""
+    """Overlay the heatmap without tinting the whole ROI background."""
     base_image = _ensure_color_image(image)
-    color_map = cv2.applyColorMap(np.uint8(np.clip(heatmap, 0.0, 1.0) * 255), cv2.COLORMAP_JET)
-    return cv2.addWeighted(base_image, 0.65, color_map, 0.35, 0.0)
+    clipped = np.clip(np.asarray(heatmap, dtype=np.float32), 0.0, 1.0)
+    if clipped.shape != base_image.shape[:2]:
+        clipped = cv2.resize(
+            clipped,
+            (base_image.shape[1], base_image.shape[0]),
+            interpolation=cv2.INTER_LINEAR,
+        )
+    if float(clipped.max()) <= 1e-6:
+        return base_image
+
+    color_map = cv2.applyColorMap(np.uint8(clipped * 255), cv2.COLORMAP_JET).astype(np.float32)
+    base_float = base_image.astype(np.float32)
+    alpha = np.power(clipped, 1.35)[..., None] * 0.75
+    overlay = base_float * (1.0 - alpha) + color_map * alpha
+    return np.clip(overlay, 0.0, 255.0).astype(np.uint8)
 
 
 def _ensure_color_image(image: Any) -> np.ndarray:
-    """统一把单通道图转成 BGR，便于叠加彩色热力图。"""
+    """Ensure the heatmap overlay base is a BGR image."""
     array = np.asarray(image)
     if array.ndim == 2:
         return cv2.cvtColor(array, cv2.COLOR_GRAY2BGR)

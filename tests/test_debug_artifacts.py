@@ -27,6 +27,7 @@ def test_full_artifact_mode_keeps_all_debug_outputs() -> None:
         "foreground_weight",
         "target_mask",
         "valid_mask",
+        "ignore_mask",
         "heatmap",
         "overlay",
     }
@@ -45,11 +46,22 @@ def test_unknown_artifact_mode_raises() -> None:
     raise AssertionError("expected ValueError for unexpected debug_artifact_mode")
 
 
-def test_overlay_heatmap_keeps_clean_image_without_metrics_block() -> None:
-    base_image = np.zeros((32, 32, 3), dtype=np.uint8)
+def test_overlay_heatmap_keeps_base_image_when_heat_is_zero() -> None:
+    base_image = np.full((32, 32, 3), 42, dtype=np.uint8)
     heatmap = np.zeros((32, 32), dtype=np.float32)
 
     overlay = _overlay_heatmap(base_image, heatmap)
 
     assert overlay.shape == base_image.shape
-    assert int(overlay[10, 10].sum()) > 0
+    assert np.array_equal(overlay, base_image)
+
+
+def test_overlay_heatmap_emphasizes_hotspot_without_tinting_everything() -> None:
+    base_image = np.full((32, 32, 3), 64, dtype=np.uint8)
+    heatmap = np.zeros((32, 32), dtype=np.float32)
+    heatmap[12:20, 12:20] = 1.0
+
+    overlay = _overlay_heatmap(base_image, heatmap)
+
+    assert not np.array_equal(overlay[16, 16], base_image[16, 16])
+    assert np.array_equal(overlay[2, 2], base_image[2, 2])

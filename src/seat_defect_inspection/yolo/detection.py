@@ -28,6 +28,7 @@ class DetectionService:
             return DetectionResult(
                 target=self._build_fallback_target(),
                 all_objects=[],
+                used_fallback=True,
             )
 
         if self._model is None:
@@ -55,6 +56,7 @@ class DetectionService:
         return DetectionResult(
             target=target,
             all_objects=detections,
+            used_fallback=False,
         )
 
     def _build_fallback_target(self) -> DetectionObject | None:

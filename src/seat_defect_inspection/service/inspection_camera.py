@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import numpy as np
 from media_inputs import infer_source_kind
 
 from ..config import CameraConfig
@@ -36,7 +35,11 @@ def _inspect_one_camera(
         "detection": prepared.detection,
     }
 
-    if prepared.rejection_reason is not None or prepared.roi is None:
+    quality_rejected = (
+        prepared.rejection_reason is not None
+        and prepared.rejection_reason.startswith("quality_")
+    )
+    if prepared.roi is None or (prepared.rejection_reason is not None and not quality_rejected):
         result = CameraInspectionResult(
             status="REJECT",
             reason=prepared.rejection_reason or "camera_prepare_failed",
@@ -49,8 +52,8 @@ def _inspect_one_camera(
     texture_input = select_patchcore_input(prepared.roi)
     texture_result = model_bundle.patchcore.predict(
         texture_input,
-        prepared.roi.valid_mask,
-        np.zeros_like(prepared.roi.valid_mask, dtype=np.uint8),
+        prepared.roi.target_mask,
+        prepared.roi.ignore_mask,
     )
     if texture_result.valid_patch_ratio < camera.patchcore.min_valid_patch_ratio:
         result = CameraInspectionResult(
@@ -86,13 +89,20 @@ def _inspect_one_camera(
 
     if texture_result.is_anomaly and color_result is not None and color_result.is_anomaly:
         status = "NG"
-        reason = "texture_and_color_anomaly"
+        reason = (
+            "texture_and_color_anomaly_quality_override"
+            if quality_rejected
+            else "texture_and_color_anomaly"
+        )
     elif texture_result.is_anomaly:
         status = "NG"
-        reason = "texture_anomaly"
+        reason = "texture_anomaly_quality_override" if quality_rejected else "texture_anomaly"
     elif color_result is not None and color_result.is_anomaly:
         status = "NG"
-        reason = "color_anomaly"
+        reason = "color_anomaly_quality_override" if quality_rejected else "color_anomaly"
+    elif quality_rejected:
+        status = "REJECT"
+        reason = prepared.rejection_reason or "quality_reject"
     else:
         status = "OK"
         reason = "all_checks_passed"

@@ -22,6 +22,7 @@ _DEBUG_ARTIFACT_GROUPS: dict[str, tuple[str, ...]] = {
         "foreground_weight",
         "target_mask",
         "valid_mask",
+        "ignore_mask",
         "heatmap",
         "overlay",
     ),

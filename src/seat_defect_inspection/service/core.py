@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+import hashlib
+import json
+from dataclasses import asdict, dataclass, replace
+from pathlib import Path
 from typing import Any
 
 from ..acquisition import AcquisitionService
@@ -57,7 +60,23 @@ class _CameraPipeline:
                 rejection_reason="target_not_found",
             )
 
-        roi = self.roi_refine_engine.refine(preprocessed, detection)
+        if detection.target.segmentation_mask is None and not detection.used_fallback:
+            return PreparedCameraSample(
+                quality=None,
+                preprocessed_image=preprocessed,
+                detection=detection,
+                rejection_reason="target_mask_missing",
+            )
+
+        try:
+            roi = self.roi_refine_engine.refine(preprocessed, detection)
+        except ValueError as exc:
+            return PreparedCameraSample(
+                quality=None,
+                preprocessed_image=preprocessed,
+                detection=detection,
+                rejection_reason=str(exc),
+            )
         quality = self.quality_guard.evaluate(
             roi.aligned_roi_image,
             valid_mask=roi.valid_mask,
@@ -87,8 +106,8 @@ class InspectionService:
         self.acquisition = AcquisitionService(config.capture_retries)
         # 同一型号下的机位流程对象复用，避免重复构造 YOLO / ROI / 质量门控。
         self._pipeline_cache: dict[str, dict[str, _CameraPipeline]] = {}
-        # 模型按“型号 + 机位”缓存，避免重复读盘。
-        self._model_cache: dict[tuple[str, str], LoadedModelBundle] = {}
+        # 模型按“型号 + 机位 + 管线签名 + 模型文件版本”缓存，避免旧 bundle 静默复用。
+        self._model_cache: dict[tuple[str, str, str, int], LoadedModelBundle] = {}
 
     def _resolve_training_scope(self, seat_model_id: str | None) -> list[str | None]:
         """解析本次训练要覆盖的型号范围。"""
@@ -135,6 +154,38 @@ class InspectionService:
         resolved_seat_model_id = seat_model_id or self.config.default_seat_model_id
         return resolved_seat_model_id, [camera for camera in self.config.cameras if camera.enabled]
 
+    def _build_patchcore_pipeline_context(self, camera: CameraConfig) -> dict[str, Any]:
+        """Capture the upstream image-processing contract that PatchCore was trained against."""
+        fallback_box = (
+            asdict(camera.detection.fallback_box)
+            if camera.detection.fallback_box is not None
+            else None
+        )
+        return {
+            "signature_version": 1,
+            "color_insensitive_mode": bool(camera.color_insensitive_mode),
+            "quality": asdict(camera.quality),
+            "preprocess": asdict(camera.preprocess),
+            "detection": {
+                "model_path": camera.detection.model_path,
+                "target_class": camera.detection.target_class,
+                "confidence": float(camera.detection.confidence),
+                "iou": float(camera.detection.iou),
+                "fallback_box": fallback_box,
+            },
+            "roi": asdict(camera.roi),
+        }
+
+    def _build_patchcore_pipeline_signature(self, camera: CameraConfig) -> str:
+        """Hash the upstream PatchCore input contract so stale models cannot be reused silently."""
+        payload = json.dumps(
+            self._build_patchcore_pipeline_context(camera),
+            sort_keys=True,
+            ensure_ascii=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
     def _build_patchcore_service(self, camera: CameraConfig) -> PatchCoreService:
         """根据机位配置创建 PatchCore 服务。"""
         patchcore_config = camera.patchcore
@@ -152,12 +203,23 @@ class InspectionService:
         seat_model_id: str | None,
     ) -> LoadedModelBundle:
         """从缓存或磁盘加载当前型号/机位对应的模型包。"""
-        cache_key = (seat_model_id or "__default__", camera.camera_id)
+        pipeline_signature = self._build_patchcore_pipeline_signature(camera)
+        model_mtime_ns = Path(camera.patchcore_model_path).stat().st_mtime_ns
+        cache_key = (
+            seat_model_id or "__default__",
+            camera.camera_id,
+            pipeline_signature,
+            model_mtime_ns,
+        )
         bundle = self._model_cache.get(cache_key)
         if bundle is not None:
             return bundle
 
-        loaded = PatchCoreService.load_bundle(camera.patchcore_model_path)
+        loaded = PatchCoreService.load_bundle(
+            camera.patchcore_model_path,
+            runtime_config=camera.patchcore,
+            expected_pipeline_signature=pipeline_signature,
+        )
         if (
             camera.color_branch.enabled
             and not camera.color_insensitive_mode

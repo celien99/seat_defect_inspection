@@ -114,6 +114,7 @@ class DetectionResult:
 
     target: DetectionObject | None
     all_objects: list[DetectionObject] = field(default_factory=list)
+    used_fallback: bool = False
 
 
 @dataclass(slots=True)
@@ -137,6 +138,7 @@ class RoiRefineResult:
     texture_ready_image: Any | None
     target_mask: Any
     valid_mask: Any
+    ignore_mask: Any
     foreground_weight: Any | None
     alignment_applied: bool = False
 

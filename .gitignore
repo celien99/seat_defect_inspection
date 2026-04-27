@@ -4,6 +4,10 @@ __pycache__/
 *.pyo
 *.pyd
 *.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
 build/
 dist/
 outputs/
@@ -14,4 +18,6 @@ models/*
 
 datasets/*
 datasets/seat_defect/*
-.codex_tmp/*
+.codex/
+.codex_tmp/
+.torch_cache/

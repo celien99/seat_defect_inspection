@@ -76,18 +76,35 @@ def _score_embeddings_leave_one_out(embeddings: np.ndarray) -> tuple[float, np.n
     return image_score, patch_scores
 
 
-def normalize_map(heatmap: np.ndarray) -> np.ndarray:
-    """把热力图线性归一化到 [0, 1]。"""
-    minimum = float(heatmap.min())
-    maximum = float(heatmap.max())
+def normalize_map(
+    heatmap: np.ndarray,
+    *,
+    mask: np.ndarray | None = None,
+) -> np.ndarray:
+    """把热力图线性归一化到 [0, 1]，可选只在有效区域内归一化。"""
+    normalized = np.zeros_like(heatmap, dtype=np.float32)
+    if mask is None:
+        active_mask = np.ones(heatmap.shape, dtype=bool)
+    else:
+        active_mask = np.asarray(mask).astype(bool)
+        if active_mask.shape != heatmap.shape:
+            raise ValueError("normalize_map mask shape must match heatmap")
+        if not active_mask.any():
+            return normalized
+
+    active_values = heatmap[active_mask].astype(np.float32)
+    minimum = float(active_values.min())
+    maximum = float(active_values.max())
     if maximum - minimum < 1e-6:
-        return np.zeros_like(heatmap, dtype=np.float32)
-    return ((heatmap - minimum) / (maximum - minimum)).astype(np.float32)
+        return normalized
+
+    normalized[active_mask] = (active_values - minimum) / (maximum - minimum)
+    return normalized.astype(np.float32)
 
 
-def _positive_margin(value: float) -> float:
-    """避免阈值倍率被配置成 0 或负数。"""
-    return max(float(value), 1e-6)
+def _threshold_margin(value: float) -> float:
+    """阈值倍率默认不允许低于 1，避免把模型阈值反向调松。"""
+    return max(float(value), 1.0)
 
 
 def _decide_patchcore_anomaly(
@@ -98,10 +115,15 @@ def _decide_patchcore_anomaly(
     config: PatchCoreConfig,
 ) -> tuple[bool, str]:
     """组合常规规则和小缺陷快路径，给出最终异常判定。"""
-    decision_threshold = float(threshold) * _positive_margin(config.decision_score_margin)
-    critical_score_threshold = float(threshold) * _positive_margin(config.critical_score_margin)
-    critical_peak_threshold = float(threshold) * _positive_margin(config.critical_peak_score_margin)
+    decision_threshold = float(threshold) * _threshold_margin(config.decision_score_margin)
+    critical_score_threshold = float(threshold) * _threshold_margin(config.critical_score_margin)
+    critical_peak_threshold = float(threshold) * _threshold_margin(config.critical_peak_score_margin)
     peak_min_patch_count = max(2, int(config.critical_min_component_patch_count))
+    component_min_patch_count = max(2, int(config.critical_min_component_patch_count))
+    # peak_rule 仍然要比 normal_rule 更宽松，否则小面积真实缺陷会被漏掉；
+    # 但也不能宽松到把边缘/附件热点都放行。
+    peak_strong_patch_ratio_threshold = min(float(config.min_strong_patch_ratio) * 0.8, 0.0048)
+    peak_component_ratio_threshold = min(float(config.min_strong_component_ratio) * 0.6, 0.0024)
 
     normal_trigger = (
         float(score) > decision_threshold
@@ -113,13 +135,15 @@ def _decide_patchcore_anomaly(
     critical_trigger = (
         float(score) > critical_score_threshold
         and float(evidence["peak_patch_score"]) > critical_peak_threshold
-        and int(evidence["largest_component_patch_count"]) >= int(config.critical_min_component_patch_count)
+        and int(evidence["largest_component_patch_count"]) >= component_min_patch_count
     )
     # 小面积缺陷容易被 99 分位 image score 稀释，这里补一条“局部峰值”直通规则。
     peak_trigger = (
         float(evidence["peak_patch_score"]) > critical_peak_threshold
         and int(evidence["strong_patch_count"]) >= peak_min_patch_count
-        and int(evidence["largest_component_patch_count"]) >= int(config.critical_min_component_patch_count)
+        and int(evidence["largest_component_patch_count"]) >= component_min_patch_count
+        and float(evidence["strong_patch_ratio"]) >= peak_strong_patch_ratio_threshold
+        and float(evidence["largest_component_patch_ratio"]) >= peak_component_ratio_threshold
     )
 
     if normal_trigger and critical_trigger:
@@ -152,8 +176,7 @@ def _analyze_patch_evidence(
             "largest_component_patch_ratio": 0.0,
         }
 
-    # 强 patch 门槛按比例收缩，而不是强行抬到完整 threshold，
-    # 否则小缺陷即便有明显热点，也可能永远进不到强证据统计。
+    # 强 patch 门槛按比例收紧，而不是强行抬到完整 threshold。
     strong_patch_ratio = float(np.clip(config.strong_patch_score_ratio, 0.0, 1.0))
     strong_patch_floor = max(float(threshold), float(score)) * strong_patch_ratio
     strong_patch_mask = (patch_map >= strong_patch_floor).astype(np.uint8)
