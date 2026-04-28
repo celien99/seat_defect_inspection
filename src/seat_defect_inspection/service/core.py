@@ -162,7 +162,8 @@ class InspectionService:
             else None
         )
         return {
-            "signature_version": 1,
+            "signature_version": 2,
+            "patchcore_input_mode": "transparent_bgra",
             "color_insensitive_mode": bool(camera.color_insensitive_mode),
             "quality": asdict(camera.quality),
             "preprocess": asdict(camera.preprocess),

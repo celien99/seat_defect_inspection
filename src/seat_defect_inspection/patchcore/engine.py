@@ -191,7 +191,10 @@ class PatchCoreService:
             (image.shape[1], image.shape[0]),
             interpolation=cv2.INTER_NEAREST,
         )
-        active_mask = np.logical_and(target_mask > 0, resized_patch_mask > 0.5)
+        active_mask = np.logical_and(
+            _as_binary_mask(target_mask, image.shape[:2]) > 0,
+            resized_patch_mask > 0.5,
+        )
         heatmap = normalize_map(heatmap, mask=active_mask)
 
         decision_threshold = float(self.threshold) * _threshold_margin(self.config.decision_score_margin)
@@ -381,6 +384,14 @@ def _apply_runtime_patchcore_overrides(
     """Apply runtime-only overrides while preserving the trained structure."""
     if runtime_config is None:
         return trained_config
+    trained_backend = trained_config.backend.strip().lower()
+    runtime_backend = runtime_config.backend.strip().lower()
+    if trained_backend != runtime_backend:
+        raise RuntimeError(
+            "PatchCore model backend does not match the current runtime config. "
+            f"model backend={trained_config.backend}, runtime backend={runtime_config.backend}. "
+            "Please retrain the PatchCore model.",
+        )
 
     overrides: dict[str, float | int] = {
         # Runtime may tighten patch validity constraints, but should not loosen them
@@ -406,3 +417,21 @@ def _apply_runtime_patchcore_overrides(
 def list_images(folder: Path) -> list[Path]:
     """Recursively collect image files under a folder."""
     return sorted(path for path in folder.rglob("*") if path.suffix.lower() in IMAGE_SUFFIXES)
+
+
+def _as_binary_mask(mask: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
+    """Normalize a binary mask or BGRA transparent mask to the requested shape."""
+    array = np.asarray(mask)
+    if array.ndim == 3:
+        if array.shape[2] == 4:
+            array = array[:, :, 3]
+        else:
+            array = np.any(array > 0, axis=2)
+    binary = (array > 0).astype(np.uint8)
+    if binary.shape != shape:
+        binary = cv2.resize(
+            binary,
+            (shape[1], shape[0]),
+            interpolation=cv2.INTER_NEAREST,
+        )
+    return binary

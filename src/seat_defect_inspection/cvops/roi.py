@@ -131,10 +131,15 @@ class RoiRefineEngine:
 
 
 def _apply_mask(image: np.ndarray, valid_mask: np.ndarray) -> np.ndarray:
-    """把 mask 外区域清零，避免背景继续干扰 PatchCore。"""
-    masked = image.copy()
-    masked[valid_mask == 0] = 0
-    return masked
+    """Build a BGRA PatchCore input whose mask background is transparent."""
+    if image.ndim == 2:
+        base = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    elif image.shape[2] == 4:
+        base = image[:, :, :3].copy()
+    else:
+        base = image.copy()
+    alpha = np.where(valid_mask > 0, 255, 0).astype(np.uint8)
+    return np.dstack([base, alpha])
 
 
 def _letterbox_bundle(

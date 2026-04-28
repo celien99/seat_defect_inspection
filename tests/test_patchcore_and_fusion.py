@@ -407,7 +407,7 @@ def test_load_bundle_applies_runtime_patchcore_overrides(tmp_path) -> None:
         meta_json=np.array(
             json.dumps(
                 {
-                    "backend": "handcrafted",
+                    "backend": "full",
                     "image_size": 256,
                     "patch_size": 32,
                     "stride": 16,
@@ -459,6 +459,38 @@ def test_load_bundle_applies_runtime_patchcore_overrides(tmp_path) -> None:
     assert bundle.patchcore.config.critical_min_component_patch_count == 2
 
 
+def test_load_bundle_rejects_runtime_backend_mismatch(tmp_path) -> None:
+    model_path = tmp_path / "backend_mismatch_patchcore.npz"
+    np.savez_compressed(
+        model_path,
+        memory_bank=np.zeros((4, 8), dtype=np.float32),
+        feature_mean=np.zeros((8,), dtype=np.float32),
+        feature_std=np.ones((8,), dtype=np.float32),
+        meta_json=np.array(
+            json.dumps(
+                {
+                    "backend": "handcrafted",
+                    "image_size": 256,
+                    "patch_size": 32,
+                    "stride": 16,
+                    "max_memory": 128,
+                    "threshold_quantile": 0.99,
+                    "threshold": 1.0,
+                }
+            )
+        ),
+        color_profile_json=np.array(""),
+    )
+
+    try:
+        PatchCoreService.load_bundle(model_path, runtime_config=PatchCoreConfig())
+    except RuntimeError as exc:
+        assert "backend" in str(exc)
+        assert "Please retrain" in str(exc)
+        return
+    raise AssertionError("expected RuntimeError for PatchCore backend mismatch")
+
+
 def test_load_bundle_rejects_pipeline_signature_mismatch(tmp_path) -> None:
     model_path = tmp_path / "pipeline_signature_patchcore.npz"
     config = PatchCoreConfig(
@@ -508,6 +540,7 @@ def test_inspection_service_rejects_missing_color_profile_when_color_branch_enab
         meta_json=np.array(
             json.dumps(
                 {
+                    "backend": "full",
                     "image_size": 256,
                     "patch_size": 32,
                     "stride": 16,
@@ -774,13 +807,46 @@ def test_roi_crop_prefers_segmentation_mask_bounds() -> None:
     assert roi.crop_box.y2 == 62.0
 
 
+def test_roi_patchcore_input_uses_transparent_background() -> None:
+    image = np.full((80, 80, 3), 127, dtype=np.uint8)
+    segmentation_mask = np.zeros((80, 80), dtype=np.uint8)
+    segmentation_mask[20:60, 30:50] = 1
+    detection = DetectionResult(
+        target=DetectionObject(
+            label="seat",
+            confidence=1.0,
+            bounding_box=BoundingBox(0.0, 0.0, 80.0, 80.0),
+            segmentation_mask=segmentation_mask,
+        )
+    )
+    engine = RoiRefineEngine(
+        RoiRefineConfig(
+            crop_expand_ratio=0.0,
+            crop_shrink_ratio=0.0,
+            edge_ignore_pixels=0,
+            alignment=AlignmentConfig(
+                output_width=64,
+                output_height=64,
+            ),
+        )
+    )
+
+    roi = engine.refine(image, detection)
+
+    assert roi.texture_ready_image.shape == (64, 64, 4)
+    assert np.array_equal(roi.texture_ready_image[:, :, 3], roi.target_mask * 255)
+    assert np.count_nonzero(roi.texture_ready_image[:, :, 3] == 0) > 0
+
+
 def test_inspection_service_passes_target_and_ignore_masks_to_patchcore() -> None:
     class _FakePatchCore:
         def __init__(self) -> None:
+            self.image = None
             self.target_mask = None
             self.ignore_mask = None
 
-        def predict(self, _image, target_mask, ignore_mask):
+        def predict(self, image, target_mask, ignore_mask):
+            self.image = image.copy()
             self.target_mask = target_mask.copy()
             self.ignore_mask = ignore_mask.copy()
             return TextureAnomalyResult(
@@ -826,17 +892,20 @@ def test_inspection_service_passes_target_and_ignore_masks_to_patchcore() -> Non
         patchcore=fake_patchcore,
         color_profile=None,
     )
+    target_mask = np.pad(np.ones((16, 16), dtype=np.uint8), 8)
     roi = RoiRefineResult(
         crop_box=BoundingBox(0.0, 0.0, 32.0, 32.0),
         roi_image=np.zeros((32, 32, 3), dtype=np.uint8),
         aligned_roi_image=np.zeros((32, 32, 3), dtype=np.uint8),
-        texture_ready_image=np.zeros((32, 32, 3), dtype=np.uint8),
-        target_mask=np.ones((32, 32), dtype=np.uint8),
-        valid_mask=np.pad(np.ones((16, 16), dtype=np.uint8), 8),
-        ignore_mask=np.logical_and(
-            np.ones((32, 32), dtype=np.uint8),
-            np.pad(np.zeros((16, 16), dtype=np.uint8), 8, constant_values=1),
-        ).astype(np.uint8),
+        texture_ready_image=np.dstack(
+            [
+                np.zeros((32, 32, 3), dtype=np.uint8),
+                target_mask * 255,
+            ]
+        ),
+        target_mask=target_mask,
+        valid_mask=target_mask,
+        ignore_mask=np.zeros((32, 32), dtype=np.uint8),
         foreground_weight=None,
     )
     prepared = PreparedCameraSample(
@@ -871,6 +940,8 @@ def test_inspection_service_passes_target_and_ignore_masks_to_patchcore() -> Non
     )
 
     assert result.status == "OK"
+    assert fake_patchcore.image is not None
+    assert fake_patchcore.image.shape == (32, 32, 4)
     assert np.array_equal(fake_patchcore.target_mask, roi.target_mask)
     assert np.array_equal(fake_patchcore.ignore_mask, roi.ignore_mask)
 

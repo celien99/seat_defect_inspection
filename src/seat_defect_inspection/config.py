@@ -95,7 +95,7 @@ class PatchCoreConfig:
     """PatchCore 训练与判定参数。"""
 
     # patch 提取和 memory bank。
-    backend: str = "handcrafted"
+    backend: str = "full"
     image_size: int = 256
     patch_size: int = 32
     stride: int = 16

@@ -14,7 +14,7 @@ from .runtime_config_parsers import (
     _resolve_yolo_training_payload,
 )
 
-_SUPPORTED_PATCHCORE_BACKENDS = {"full", "handcrafted"}
+_SUPPORTED_PATCHCORE_BACKENDS = {"full"}
 
 
 def load_config(path: str) -> InspectionConfig:
@@ -108,6 +108,5 @@ def _validate_patchcore_config(camera: CameraConfig, *, scope: str) -> None:
         f"{scope} 中 camera `{camera.camera_id}` 配置了 patchcore.backend=full，"
         "但没有提供可用 backbone 权重。"
         " 请设置 patchcore.backbone_pretrained=true，"
-        "或配置 patchcore.backbone_weights_path，"
-        "或把 patchcore.backend 改为 handcrafted。"
+        "或配置 patchcore.backbone_weights_path。"
     )

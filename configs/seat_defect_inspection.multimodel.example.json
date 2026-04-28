@@ -61,7 +61,14 @@
               }
             },
             "patchcore": {
-              "backend": "handcrafted",
+              "backend": "full",
+              "backbone_name": "wide_resnet50_2",
+              "feature_layers": [
+                "layer2",
+                "layer3"
+              ],
+              "backbone_pretrained": true,
+              "backbone_device": "cpu",
               "coreset_sampling_ratio": 0.1,
               "texture_input": "lab_l",
               "min_target_coverage": 0.6,
@@ -119,7 +126,14 @@
               }
             },
             "patchcore": {
-              "backend": "handcrafted",
+              "backend": "full",
+              "backbone_name": "wide_resnet50_2",
+              "feature_layers": [
+                "layer2",
+                "layer3"
+              ],
+              "backbone_pretrained": true,
+              "backbone_device": "cpu",
               "coreset_sampling_ratio": 0.1,
               "texture_input": "lab_l",
               "min_target_coverage": 0.6,

@@ -272,4 +272,6 @@ def _ensure_color_image(image: Any) -> np.ndarray:
     array = np.asarray(image)
     if array.ndim == 2:
         return cv2.cvtColor(array, cv2.COLOR_GRAY2BGR)
+    if array.ndim == 3 and array.shape[2] == 4:
+        return cv2.cvtColor(array, cv2.COLOR_BGRA2BGR)
     return array.copy()

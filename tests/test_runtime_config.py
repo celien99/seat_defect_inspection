@@ -215,6 +215,9 @@ def test_load_config_ignores_legacy_ignore_classes_field(tmp_path: Path) -> None
                                 "target_class": "seat",
                                 "ignore_classes": ["wire", "tooling"],
                             },
+                            "patchcore": {
+                                "backbone_weights_path": "models/backbone.pth"
+                            },
                         }
                     ],
                 }

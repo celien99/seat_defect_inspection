@@ -87,12 +87,16 @@ ROI = {
 }
 
 PATCHCORE = {
-    "backend": "handcrafted",
+    "backend": "full",
     "image_size": 256,
     "patch_size": 32,
     "stride": 16,
     "max_memory": 512,
     "threshold_quantile": 0.99,
+    "backbone_name": "wide_resnet50_2",
+    "feature_layers": ["layer2", "layer3"],
+    "backbone_pretrained": True,
+    "backbone_device": DEVICE,
     "coreset_sampling_ratio": 0.1,
     "texture_input": "lab_l",
     "min_target_coverage": 0.6,

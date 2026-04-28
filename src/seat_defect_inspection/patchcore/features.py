@@ -81,8 +81,9 @@ def extract_handcrafted_patch_embeddings(
     ignore_mask: np.ndarray | None = None,
 ) -> tuple[np.ndarray, _PatchBatch]:
     """用掩膜筛出有效 patch，并提取轻量手工纹理特征。"""
+    feature_image = _prepare_feature_image(image, target_mask=target_mask)
     resized_image = cv2.resize(
-        image,
+        feature_image,
         (config.image_size, config.image_size),
         interpolation=cv2.INTER_AREA,
     )
@@ -213,8 +214,7 @@ class _TorchPatchFeatureExtractor:
     def __init__(self, config: PatchCoreConfig) -> None:
         if torch is None or torch_f is None:
             raise RuntimeError(
-                "完整 PatchCore 依赖 torch 和 torchvision，请先安装可用运行环境，"
-                "或把 patchcore.backend 切换为 handcrafted。"
+                "完整 PatchCore 依赖 torch 和 torchvision，请先安装可用运行环境。"
             )
         self.config = config
         self.device = _resolve_torch_device(config.backbone_device)
@@ -238,8 +238,9 @@ class _TorchPatchFeatureExtractor:
         ignore_mask: np.ndarray | None = None,
     ) -> tuple[np.ndarray, _PatchBatch]:
         """提取完整 PatchCore 使用的深度 embedding。"""
+        feature_image = _prepare_feature_image(image, target_mask=target_mask)
         resized_image = cv2.resize(
-            image,
+            feature_image,
             (self.config.image_size, self.config.image_size),
             interpolation=cv2.INTER_AREA,
         )
@@ -294,6 +295,7 @@ class _TorchPatchFeatureExtractor:
 
 def _prepare_torch_input(image: np.ndarray, config: PatchCoreConfig) -> Any:
     """把 ROI 图像转成 torchvision backbone 可直接消费的输入。"""
+    image = _prepare_feature_image(image)
     texture_mode = config.texture_input.strip().lower()
     if texture_mode == "gray":
         primary = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
@@ -382,8 +384,7 @@ def _load_torch_backbone(config: PatchCoreConfig) -> Any:
         raise RuntimeError(
             "完整 PatchCore 不能使用随机初始化 backbone。"
             " 请设置 patchcore.backbone_pretrained=true，"
-            "或配置 patchcore.backbone_weights_path 指向本地预训练权重，"
-            "或把 patchcore.backend 切换为 handcrafted。"
+            "或配置 patchcore.backbone_weights_path 指向本地预训练权重。"
         )
 
     torch.hub.set_dir(str(Path.cwd() / ".torch_cache"))
@@ -393,8 +394,7 @@ def _load_torch_backbone(config: PatchCoreConfig) -> Any:
         raise RuntimeError(
             "完整 PatchCore 已启用 backbone_pretrained=True，但当前环境无法加载预训练权重。"
             "可选方案：1) 配置 patchcore.backbone_weights_path 指向本地权重；"
-            "2) 先把 torchvision 权重缓存到项目 .torch_cache；"
-            "3) 临时将 patchcore.backend 切换为 handcrafted 做功能联调。"
+            "2) 先把 torchvision 权重缓存到项目 .torch_cache。"
         ) from exc
 
 
@@ -458,8 +458,9 @@ def _resize_mask(mask: np.ndarray | None, image_size: int) -> np.ndarray:
     """把原始掩膜缩放到 PatchCore 输入尺寸。"""
     if mask is None:
         return np.ones((image_size, image_size), dtype=np.float32)
+    binary_mask = _mask_to_binary(mask)
     resized = cv2.resize(
-        (mask > 0).astype(np.float32),
+        binary_mask,
         (image_size, image_size),
         interpolation=cv2.INTER_NEAREST,
     )
@@ -476,9 +477,64 @@ def _resize_mask_to_grid(
     """把像素级掩膜压到 patch 网格上。"""
     if mask is None:
         return np.ones((grid_rows, grid_cols), dtype=np.float32)
+    binary_mask = _mask_to_binary(mask)
     resized = cv2.resize(
-        (mask > 0).astype(np.float32),
+        binary_mask,
         (grid_cols, grid_rows),
         interpolation=interpolation,
     )
     return resized.astype(np.float32)
+
+
+def _prepare_feature_image(
+    image: np.ndarray,
+    *,
+    target_mask: np.ndarray | None = None,
+) -> np.ndarray:
+    """Convert transparent PatchCore inputs to BGR without treating alpha-0 pixels as black."""
+    array = np.asarray(image)
+    if array.ndim == 2:
+        return cv2.cvtColor(array, cv2.COLOR_GRAY2BGR)
+    if array.ndim != 3:
+        raise ValueError("PatchCore image must be a 2D or 3D array")
+    if array.shape[2] == 1:
+        return cv2.cvtColor(array[:, :, 0], cv2.COLOR_GRAY2BGR)
+    if array.shape[2] == 3:
+        return array
+    if array.shape[2] != 4:
+        raise ValueError(f"PatchCore image has unsupported channel count: {array.shape[2]}")
+
+    bgr = array[:, :, :3].copy()
+    alpha_mask = array[:, :, 3] > 0
+    if not alpha_mask.any() and target_mask is not None:
+        alpha_mask = _mask_to_binary(target_mask, output_shape=array.shape[:2]) > 0
+    if alpha_mask.all():
+        return bgr
+    if alpha_mask.any():
+        fill_color = np.median(bgr[alpha_mask], axis=0)
+    else:
+        fill_color = np.zeros((3,), dtype=np.float32)
+    bgr[~alpha_mask] = np.clip(fill_color, 0, 255).astype(bgr.dtype)
+    return bgr
+
+
+def _mask_to_binary(
+    mask: np.ndarray,
+    *,
+    output_shape: tuple[int, int] | None = None,
+) -> np.ndarray:
+    """Normalize a binary mask or transparent image mask to a float 0/1 array."""
+    array = np.asarray(mask)
+    if array.ndim == 3:
+        if array.shape[2] == 4:
+            array = array[:, :, 3]
+        else:
+            array = np.any(array > 0, axis=2)
+    binary = (array > 0).astype(np.float32)
+    if output_shape is not None and binary.shape != output_shape:
+        binary = cv2.resize(
+            binary,
+            (output_shape[1], output_shape[0]),
+            interpolation=cv2.INTER_NEAREST,
+        )
+    return binary.astype(np.float32)
