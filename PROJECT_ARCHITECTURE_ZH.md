@@ -103,7 +103,8 @@ seat_defect_inspection/
   采图流程。
 - `service/inspection.py`
   多机位检测编排，负责：
-  - 遍历机位
+  - 并发采集全部启用机位图像
+  - 按配置顺序执行单机位检测
   - 采图异常兜底
   - fail-fast
   - 最终融合和落盘
@@ -368,6 +369,7 @@ PatchCore 现在不再堆在一个文件里：
 | 符号 | 作用 |
 | --- | --- |
 | `run_inspection` | 多机位检测编排 |
+| `_capture_cameras_concurrently` | 在线检测前并发采集全部启用机位图像 |
 | `_build_exported_early_stop_result` | fail-fast 统一出口 |
 
 文件：`src/seat_defect_inspection/service/inspection_camera.py`
@@ -429,8 +431,8 @@ cli.main
 内部顺序：
 
 1. `_resolve_context` 选择当前型号和机位流程缓存。
-2. 逐机位采图。
-3. 每张图交给 `service/inspection_camera.py:_inspect_one_camera`。
+2. `_capture_cameras_concurrently` 并发采集全部启用机位图像，并按配置中的机位顺序整理结果。
+3. 采图资源释放后，每张图再交给 `service/inspection_camera.py:_inspect_one_camera`。
 4. `_inspect_one_camera` 内部顺序：
    - `_CameraPipeline.prepare_image`
    - `_load_model_bundle`
@@ -438,7 +440,7 @@ cli.main
    - 可选 `ColorConsistencyService.predict`
    - 保存调试图
    - 生成 `CameraInspectionResult`
-5. `service/inspection.py` 处理 fail-fast。
+5. `service/inspection.py` 在检测阶段处理 fail-fast；注意此时全部机位已完成采图，fail-fast 只会跳过后续算法处理，不再跳过采图。
 6. 全部机位完成后 `fuse_camera_results`。
 7. `export_inspection_report` 输出最终结果。
 

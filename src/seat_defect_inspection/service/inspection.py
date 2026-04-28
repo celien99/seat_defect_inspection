@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from ..config import CameraConfig
 from ..fusion import fuse_camera_results, should_early_stop_on_ng
 from ..reporting import export_inspection_report
-from ..schemas import CameraInspectionResult, InspectionResult
+from ..schemas import CameraInspectionResult, FramePacket, InspectionResult
 from .inspection_camera import (
     _build_capture_failed_result,
     _build_reject_result,
@@ -15,6 +18,15 @@ from .inspection_camera import (
 
 if TYPE_CHECKING:
     from .core import InspectionService
+
+
+@dataclass(slots=True)
+class _CaptureOutcome:
+    """一次在线检测中某个机位的采图结果。"""
+
+    camera: CameraConfig
+    frame_packet: FramePacket | None = None
+    error: Exception | None = None
 
 
 def run_inspection(
@@ -45,19 +57,30 @@ def run_inspection(
     timestamp = ""
     camera_results: list[CameraInspectionResult] = []
     total_camera_count = len(context.cameras)
+    capture_outcomes = _capture_cameras_concurrently(
+        service,
+        context.cameras,
+        resolved_part_id,
+    )
+    first_frame_packet = next(
+        (
+            outcome.frame_packet
+            for outcome in capture_outcomes
+            if outcome.frame_packet is not None
+        ),
+        None,
+    )
+    if first_frame_packet is not None:
+        frame_id = first_frame_packet.frame_id
+        timestamp = first_frame_packet.timestamp
 
-    for camera in context.cameras:
-        try:
-            frame_packet = service.acquisition.capture(
-                camera.camera_id,
-                camera.source,
-                resolved_part_id,
-            )
-        except Exception as exc:
+    for outcome in capture_outcomes:
+        camera = outcome.camera
+        if outcome.error is not None:
             camera_results.append(
                 _build_capture_failed_result(
                     camera,
-                    reason=f"capture_failed:{exc}",
+                    reason=f"capture_failed:{outcome.error}",
                     seat_model_id=context.seat_model_id,
                 )
             )
@@ -74,9 +97,16 @@ def run_inspection(
                 return early_result
             continue
 
-        if not frame_id:
-            frame_id = frame_packet.frame_id
-            timestamp = frame_packet.timestamp
+        frame_packet = outcome.frame_packet
+        if frame_packet is None:
+            camera_results.append(
+                _build_capture_failed_result(
+                    camera,
+                    reason="capture_failed:empty_frame_packet",
+                    seat_model_id=context.seat_model_id,
+                )
+            )
+            continue
 
         try:
             camera_results.append(
@@ -121,6 +151,43 @@ def run_inspection(
     )
     fused.seat_model_id = context.seat_model_id
     return _export_result(service, fused)
+
+
+def _capture_cameras_concurrently(
+    service: "InspectionService",
+    cameras: list[CameraConfig],
+    part_id: str,
+) -> list[_CaptureOutcome]:
+    """并发抓取全部启用机位图像，并按配置中的机位顺序返回结果。"""
+    indexed_outcomes: dict[int, _CaptureOutcome] = {}
+    max_workers = max(1, len(cameras))
+    with ThreadPoolExecutor(
+        max_workers=max_workers,
+        thread_name_prefix="seat-inspect-capture",
+    ) as executor:
+        futures = {
+            executor.submit(
+                service.acquisition.capture,
+                camera.camera_id,
+                camera.source,
+                part_id,
+            ): index
+            for index, camera in enumerate(cameras)
+        }
+        for future in as_completed(futures):
+            index = futures[future]
+            camera = cameras[index]
+            try:
+                indexed_outcomes[index] = _CaptureOutcome(
+                    camera=camera,
+                    frame_packet=future.result(),
+                )
+            except Exception as exc:
+                indexed_outcomes[index] = _CaptureOutcome(
+                    camera=camera,
+                    error=exc,
+                )
+    return [indexed_outcomes[index] for index in range(len(cameras))]
 
 
 def _build_early_stop_result(

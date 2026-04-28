@@ -49,6 +49,7 @@ flowchart LR
 处理内容：
 
 - 根据 `source` 自动识别输入类型，支持图片、视频、普通相机、MVS 相机。
+- 在线 `inspect` 会先并发采集全部启用机位，形成一个按机位配置顺序排列的采图结果列表，再进入后续算法流程。
 - 如果输入本身就是图片文件，直接读入。
 - 如果输入是流式设备，会按 `capture_retries` 重试抓帧。
 - 产出统一结构 `FramePacket`，里面带有：
@@ -573,6 +574,8 @@ PatchCore 最终不是只看一个 `score > threshold`，而是综合多组证�
 - 系统仍然会继续跑完剩余机位
 - 最终报告会保留整件所有机位结果，方便现场复盘
 
+现在 `inspect` 的采图阶段已经前置为并发屏障：所有启用机位会先完成采图并释放采集资源，之后才按机位顺序进入预处理、YOLO、ROI、PatchCore 和颜色分支。若未来把 `early_stop_on_ng` 打开，早停只会跳过后续机位的算法检测，不再跳过采图。
+
 也就是说，在当前配置下：
 
 - 不再因为首个 `NG` 提前截断后续机位检测
@@ -837,16 +840,17 @@ prepare_image -> PatchCore / color -> camera result -> fusion -> report
   - `cam_2`
   - `cam_3`
   - `cam_4`
-2. 所有机位都会先做 OpenCV 预处理，再做 YOLO 分割。
-3. YOLO 当前以座椅主体分割为主；其他检测结果保留在调试信息中，不再作为 ROI 忽略物管理入口。
-4. 真正进入 PatchCore 的不是整张图，而是：
+2. 在线 `inspect` 会先并发采集全部启用机位图像，采集完成后再逐机位进入算法链路。
+3. 所有机位都会先做 OpenCV 预处理，再做 YOLO 分割。
+4. YOLO 当前以座椅主体分割为主；其他检测结果保留在调试信息中，不再作为 ROI 忽略物管理入口。
+5. 真正进入 PatchCore 的不是整张图，而是：
   - 从目标区域裁出的 ROI
   - 缩放到统一尺寸
   - alpha 来自 `target_mask` 的透明背景 BGRA 图像
   - `valid_mask / ignore_mask` 继续控制有效 patch 筛选
-5. 当前默认使用 full CNN PatchCore，辅助纹理口径为亮度主导的 `lab_l`，重点看结构/纹理异常并弱化颜色波动。
-6. 当前颜色分支默认关闭，所以主判定主要由 PatchCore 纹理分支承担。
-7. 当前融合策略是一票 NG 即整件 NG；示例配置里 `early_stop_on_ng = false`，会跑完全部机位以便复盘。
+6. 当前默认使用 full CNN PatchCore，辅助纹理口径为亮度主导的 `lab_l`，重点看结构/纹理异常并弱化颜色波动。
+7. 当前颜色分支默认关闭，所以主判定主要由 PatchCore 纹理分支承担。
+8. 当前融合策略是一票 NG 即整件 NG；示例配置里 `early_stop_on_ng = false`，会跑完全部机位以便复盘。
 
 一句话总结当前主流程：
 

@@ -167,8 +167,12 @@ class MvsCameraCapture:
             pixel_format=config.pixel_format,
             property_config=config.to_property_config(),
         )
-        self._device_info = self._camera.open()
-        self._camera.start_grabbing()
+        try:
+            self._device_info = self._camera.open()
+            self._camera.start_grabbing()
+        except Exception:
+            self._camera.close()
+            raise
 
     def isOpened(self) -> bool:
         """返回相机是否已成功打开。"""

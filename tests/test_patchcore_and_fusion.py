@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -17,6 +18,7 @@ from seat_defect_inspection.yolo import DetectionService
 from seat_defect_inspection.runtime_config import load_yolo_training_config
 from seat_defect_inspection.schemas import BoundingBox, CameraInspectionResult, DetectionResult, DetectionObject, FramePacket, ImageQualityDecision, ImageQualityMetrics, RoiRefineResult, TextureAnomalyResult
 from seat_defect_inspection.service import InspectionService, PreparedCameraSample, _CameraPipeline
+from seat_defect_inspection.service.inspection import run_inspection as run_online_inspection
 from seat_defect_inspection.service.inspection_camera import _inspect_one_camera
 from seat_defect_inspection.service.offline_inspection import inspect_image_folder
 
@@ -345,6 +347,78 @@ def test_fail_fast_disabled_when_reject_must_override() -> None:
         total_camera_count=3,
         fusion_config=fusion,
     )
+
+
+def test_run_inspection_captures_all_cameras_before_processing(monkeypatch) -> None:
+    cameras = [
+        CameraConfig(camera_id="cam_0", source="0", patchcore_model_path="model_0.npz"),
+        CameraConfig(camera_id="cam_1", source="1", patchcore_model_path="model_1.npz"),
+    ]
+    events: list[str] = []
+    started: set[str] = set()
+    all_captures_started = threading.Event()
+    lock = threading.Lock()
+
+    class _FakeAcquisition:
+        def capture(self, camera_id: str, source: str, part_id: str) -> FramePacket:
+            with lock:
+                events.append(f"capture_start:{camera_id}")
+                started.add(camera_id)
+                if len(started) == len(cameras):
+                    all_captures_started.set()
+            if not all_captures_started.wait(timeout=1.0):
+                raise AssertionError("captures did not run concurrently")
+            with lock:
+                events.append(f"capture_done:{camera_id}")
+            return FramePacket(
+                camera_id=camera_id,
+                frame_id=f"{camera_id}_frame",
+                part_id=part_id,
+                source=source,
+                source_kind="camera_index",
+                timestamp=f"2026-04-28T00:00:0{camera_id[-1]}+08:00",
+                image=np.zeros((8, 8, 3), dtype=np.uint8),
+            )
+
+    service = SimpleNamespace(
+        config=SimpleNamespace(
+            part_id="seat_demo",
+            fusion=FusionConfig(),
+        ),
+        acquisition=_FakeAcquisition(),
+        _resolve_context=lambda _seat_model_id: SimpleNamespace(
+            cameras=cameras,
+            pipelines={camera.camera_id: object() for camera in cameras},
+            seat_model_id=None,
+        ),
+    )
+
+    def fake_inspect(_service, _frame_packet, camera, _pipeline, _seat_model_id):
+        events.append(f"inspect:{camera.camera_id}")
+        return _camera_result(camera.camera_id, "OK")
+
+    monkeypatch.setattr(
+        "seat_defect_inspection.service.inspection._inspect_one_camera",
+        fake_inspect,
+    )
+    monkeypatch.setattr(
+        "seat_defect_inspection.service.inspection._export_result",
+        lambda _service, result: result,
+    )
+
+    result = run_online_inspection(service)
+
+    first_inspect_index = next(
+        index
+        for index, event in enumerate(events)
+        if event.startswith("inspect:")
+    )
+    assert result.status == "OK"
+    assert all(
+        events.index(f"capture_done:{camera.camera_id}") < first_inspect_index
+        for camera in cameras
+    )
+    assert events.index("inspect:cam_0") < events.index("inspect:cam_1")
 
 
 def test_wrapped_top_level_yolo_training_is_loaded(tmp_path) -> None:

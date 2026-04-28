@@ -254,7 +254,7 @@ seat_defect_inspection/
 
 1. `cli.py` 组装命令树，`cli_commands/inspect.py` 加载配置并路由到 `service.run_inspection`
 2. `service/__init__.py` 创建 `InspectionService`
-3. `service/inspection.py` 负责多机位循环、采图异常处理、fail-fast 和最终融合
+3. `service/inspection.py` 先并发采集全部启用机位图像，再按机位顺序执行检测、fail-fast 和最终融合
 4. `service/inspection_camera.py` 负责单机位准备、PatchCore、颜色分支和调试图保存
 5. `fusion.py` 负责多机位结果融合
 6. `reporting.py` 负责结果落盘

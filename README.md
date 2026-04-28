@@ -163,7 +163,7 @@ src/seat_defect_inspection/
 
 1. `cli.py` assembles the parser, and `cli_commands/inspect.py` loads config and routes to `service.run_inspection`.
 2. `service/__init__.py` creates `InspectionService`.
-3. `service/inspection.py` loops over enabled cameras and handles fail-fast decisions.
+3. `service/inspection.py` captures all enabled cameras concurrently, then runs per-camera inspection in configuration order and handles fail-fast decisions.
 4. `service/inspection_camera.py` runs one camera through `_CameraPipeline`, PatchCore, optional color branch, and debug artifact export.
 5. `fusion.py` merges per-camera results.
 6. `reporting.py` writes the final report.

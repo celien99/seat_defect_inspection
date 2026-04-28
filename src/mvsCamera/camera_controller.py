@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import threading
 from ctypes import POINTER, byref, c_ubyte, cast, memset, sizeof
 from dataclasses import dataclass
 from typing import Any
@@ -146,6 +147,7 @@ class HikCamera:
 
     sdk_initialized = False
     instance_count = 0
+    _sdk_lock = threading.RLock()
 
     def __init__(
         self,
@@ -169,8 +171,9 @@ class HikCamera:
         self.height = 0
         self.fps = 0.0
 
-        self._initialize_sdk()
-        HikCamera.instance_count += 1
+        with HikCamera._sdk_lock:
+            self._initialize_sdk()
+            HikCamera.instance_count += 1
 
     @classmethod
     def _initialize_sdk(cls) -> None:
@@ -178,21 +181,23 @@ class HikCamera:
 
         当前实现通过类变量 `sdk_initialized` 保证重复创建相机对象时不会重复初始化。
         """
-        if cls.sdk_initialized:
-            return
-        ret = MvCamera.MV_CC_Initialize()
-        if ret != 0:
-            raise MvsCameraError(f"SDK initialize failed: {parse_error(ret)}")
-        cls.sdk_initialized = True
+        with cls._sdk_lock:
+            if cls.sdk_initialized:
+                return
+            ret = MvCamera.MV_CC_Initialize()
+            if ret != 0:
+                raise MvsCameraError(f"SDK initialize failed: {parse_error(ret)}")
+            cls.sdk_initialized = True
 
     @classmethod
     def _finalize_sdk(cls) -> None:
         """在最后一个相机对象释放后反初始化 SDK。"""
-        if not cls.sdk_initialized:
-            return
-        ret = MvCamera.MV_CC_Finalize()
-        if ret == 0:
-            cls.sdk_initialized = False
+        with cls._sdk_lock:
+            if not cls.sdk_initialized:
+                return
+            ret = MvCamera.MV_CC_Finalize()
+            if ret == 0:
+                cls.sdk_initialized = False
 
     def enumerate_devices(self) -> list[MvsDeviceInfo]:
         """枚举当前可见设备。"""
@@ -454,10 +459,11 @@ class HikCamera:
                 self.stop_grabbing()
         finally:
             self._safe_destroy()
-            if HikCamera.instance_count > 0:
-                HikCamera.instance_count -= 1
-            if HikCamera.instance_count == 0:
-                HikCamera._finalize_sdk()
+            with HikCamera._sdk_lock:
+                if HikCamera.instance_count > 0:
+                    HikCamera.instance_count -= 1
+                if HikCamera.instance_count == 0:
+                    HikCamera._finalize_sdk()
 
     def _safe_destroy(self) -> None:
         """在异常或正常关闭时安全释放 Handle 和 Device。"""
