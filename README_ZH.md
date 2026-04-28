@@ -83,15 +83,25 @@ seat-defect-inspection inspect-folder \
 3. 单独准备 YOLO 数据集并执行 `train-yolo`。
 4. 把每个机位的 `patchcore_model_path` 和 YOLO `model_path` 配好后，在线上跑 `inspect`，在线下批测跑 `inspect-folder`。
 
-如果你已经训练过 PatchCore 模型，而最近又修改了 `preprocess`、ROI 掩膜、`valid_mask` 相关参数，或把 `patchcore.backend` 从 `full` 改成 `handcrafted`，必须重新执行 `train-patchcore`。旧模型对应的训练分布已经失效，继续拿来跑 `inspect` 没有参考价值。
+如果你已经训练过 PatchCore 模型，而最近又修改了 `preprocess`、YOLO 检测参数、ROI 掩膜、`valid_mask`、PatchCore 输入模式或 full 后端配置，必须重新执行 `train-patchcore`。模型包会保存上游图像链路的 `pipeline_signature`，线上加载时会校验签名；旧模型对应的训练分布已经失效，继续拿来跑 `inspect` 没有参考价值。
+
+当前运行配置只允许完整版本 PatchCore：
+
+- `patchcore.backend = full`
+- 默认 backbone 为 `wide_resnet50_2`
+- 默认特征层为 `layer2 / layer3`
+- 需要可用的 `torch / torchvision`
+- 如 `backbone_pretrained = false`，必须配置本地 `backbone_weights_path`
 
 如果现场还没有 YOLO 权重，可以先把 `detection.model_path` 设为 `null`，继续使用 `fallback_box` 走完整流程。
 
-项目现在统一使用 `yolo11m-seg.pt`。代码会直接消费 YOLO segmentation mask 来裁剪目标区域，并构造 `target_mask / valid_mask`。当前 ROI 层已经压成轻量链路，主要保留裁剪、缩放和掩膜清理，不再承载之前那套重的局部增强流程。
+项目现在统一使用 `yolo11m-seg.pt`。代码会直接消费 YOLO segmentation mask 来裁剪目标区域，并构造 `target_mask / valid_mask`。当前 ROI 层已经压成轻量链路，主要保留裁剪、缩放和掩膜清理，不再承载之前那套重的局部增强流程。传给 PatchCore 的 `texture_ready_image` 是透明背景 BGRA 图像，alpha 来自 `target_mask`，避免黑底背景进入 CNN 特征。
 
 `train-patchcore` 本身就是离线训练流程。只要每个机位的 `train_good_dir` 指向本地图片目录，就不需要连接真机。
 
 `inspect-folder` 是新增的离线批量验证命令。它复用线上 `inspect` 的同一套 `preprocess -> YOLO -> ROI -> PatchCore -> fusion -> report` 链路，只是把机位输入从真机切换成图片文件夹。
+
+建议固定一批正常、NG、REJECT 和边界样本，长期用 `inspect-folder` 做 pipeline regression。每次改 OpenCV 预处理、YOLO、ROI、PatchCore 或融合规则后，都应对比最终状态、PatchCore 分数、有效 patch 比例、ROI/mask 面积和调试热力图，防止结果无意漂移。
 
 `inspect-folder` 目前支持三种输入组织方式：
 
@@ -108,6 +118,8 @@ seat-defect-inspection inspect-folder \
   PatchCore 正常样本目录
 - `models/seat_defect_inspection/<camera_id>_patchcore.npz`
   每个机位独立 PatchCore 模型
+- `models/seat_defect_inspection/<camera_id>_patchcore.summary.json`
+  PatchCore 训练摘要，包含 `pipeline_signature`、训练样本统计和模型版本排查信息
 - `outputs/seat_defect_inspection/capture`
   `capture` 命令采图输出
 - `outputs/seat_defect_inspection/debug`
@@ -222,7 +234,7 @@ seat_defect_inspection/
 - `patchcore/engine.py`
   PatchCore 主流程编排，负责训练、推理、模型保存和加载。
 - `patchcore/features.py`
-  特征提取细节，包含 `handcrafted` 和 `full` 两种后端。
+  特征提取细节，当前运行配置只允许 `full` CNN 后端；历史 `handcrafted` 代码仅用于兼容旧模型排查，不作为项目运行模式。
 - `patchcore/scoring.py`
   记忆库采样、最近邻距离、证据分析和最终判定规则。
 - `patchcore/color_branch.py`

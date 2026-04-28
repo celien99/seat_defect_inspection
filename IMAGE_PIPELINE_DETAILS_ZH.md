@@ -229,15 +229,16 @@ valid_mask = target_mask > 0
 
 #### 2.4.5 `texture_ready_image` 是什么
 
-代码会把 `aligned_roi_image` 中 `valid_mask == 0` 的像素直接置 0，得到：
+代码会把 `aligned_roi_image` 转成 BGRA 图像，并把 `target_mask` 写入 alpha 通道，得到：
 
 - `texture_ready_image`
 
 这一步非常关键，因为它等于告诉 PatchCore：
 
 - 只看有效前景
-- 背景不要学
-- 被忽略物不要学
+- 背景以透明区域进入，而不是黑色纹理
+- CNN 特征提取前会按 alpha / mask 做归一化，避免黑底被学成正常特征
+- 被忽略物和无效区域继续由 `valid_mask / ignore_mask` 控制 patch 筛选
 
 ---
 
@@ -308,7 +309,7 @@ roi.texture_ready_image if roi.texture_ready_image is not None else roi.aligned_
 
 也就是说：
 
-- 优先使用已经把无效区域清零后的 `texture_ready_image`
+- 优先使用透明背景 BGRA 的 `texture_ready_image`
 - 没有的话才用原始对齐 ROI
 
 这保证了训练和推理尽量看的是同一种图像分布。
@@ -325,9 +326,11 @@ roi.texture_ready_image if roi.texture_ready_image is not None else roi.aligned_
 
 当前示例配置使用：
 
-- `backend = handcrafted`
+- `backend = full`
+- `backbone_name = wide_resnet50_2`
+- `feature_layers = layer2 / layer3`
 
-也就是当前项目默认不是 CNN 深特征版，而是“轻量手工纹理特征版 PatchCore”。
+也就是当前项目使用完整 CNN 深特征版 PatchCore。运行配置层已经禁止 `handcrafted` 后端；如果发现旧模型包记录为 `handcrafted`，线上加载会报错并要求重新训练。
 
 #### 2.7.1 进入 PatchCore 前，图像还会再做什么
 
@@ -341,12 +344,9 @@ roi.texture_ready_image if roi.texture_ready_image is not None else roi.aligned_
 - 所以在当前配置下，PatchCore 前这一步通常不会再发生新的尺度变化
 - 如果未来这两组配置不一致，PatchCore 会以 `patchcore.image_size` 为准再做一次 `resize`
 
-然后根据 `texture_input` 选择单通道纹理来源：
+PatchCore 特征提取前会先把 BGRA / alpha 输入归一化为 CNN 可消费的 3 通道 BGR/RGB 图像。透明区域不会以黑色像素参与特征表达；如果需要填充，会使用有效前景的统计颜色作为背景占位。
 
-- `gray`
-- `lab_l`
-- `hsv_v`
-- `ycrcb_y`
+`texture_input` 仍保留在配置中，主要用于历史 handcrafted 特征路径和颜色不敏感模式下的亮度口径约束；当前 full 后端的主要特征来自 CNN backbone。
 
 当前示例配置：
 
@@ -356,7 +356,7 @@ roi.texture_ready_image if roi.texture_ready_image is not None else roi.aligned_
 
 - `color_insensitive_mode = true`
 
-这会在模型构建时强制把纹理输入收敛到亮度主导模式，避免颜色波动把纹理分支扰乱。
+这会在模型构建时把辅助纹理口径收敛到亮度主导模式，并默认跳过颜色分支，避免颜色抖动放大。
 
 #### 2.7.2 patch 是怎么筛选的
 
@@ -375,24 +375,17 @@ roi.texture_ready_image if roi.texture_ready_image is not None else roi.aligned_
 
 只有通过这个条件的 patch，才会进入 memory bank 比较。
 
-#### 2.7.3 手工特征实际提取了什么
+#### 2.7.3 full 后端实际提取了什么
 
-对每个有效 patch，代码会提取：
+对每个有效 patch，full 后端会走 CNN backbone：
 
-- 通道统计量
-  - 均值
-  - 标准差
-  - 对 `lab_l` 额外加 10 分位和 90 分位
-- 梯度统计
-  - `grad_x`
-  - `grad_y`
-  - 梯度幅值均值 / 标准差
-- 拉普拉斯统计
-  - 方差
-  - 平均绝对值
-- 4x4 缩略图展开后的 16 维低频纹理描述
+- 先把 PatchCore 输入转为 3 通道图像并按 ImageNet 均值方差归一化。
+- 通过 `wide_resnet50_2` 提取中间层特征。
+- 默认读取 `layer2 / layer3`，把不同尺度的特征对齐。
+- 对每个滑窗 patch 聚合深度特征，形成 embedding。
+- 只保留满足 `target_mask / ignore_mask` 筛选条件的 patch embedding。
 
-这些特征会组合成每个 patch 的 embedding。
+这些 CNN embedding 会进入后续 memory bank、coreset 和最近邻距离计算。历史 handcrafted 统计特征路径仍保留在代码中用于兼容旧包排查，但当前运行配置不会启用。
 
 #### 2.7.4 分数怎么来的
 
@@ -742,7 +735,7 @@ prepare_image -> PatchCore / color -> camera result -> fusion -> report
 `train-patchcore` 不会直接拿原图训练，而是先让每张正常样本完整走一遍和线上一致的图像准备链路：
 
 ```text
-原图 -> preprocess -> YOLO -> ROI -> valid_mask -> PatchCore 训练样本
+原图 -> preprocess -> YOLO -> ROI -> target_mask / valid_mask -> 透明 BGRA PatchCore 训练样本
 ```
 
 处理细节：
@@ -752,7 +745,7 @@ prepare_image -> PatchCore / color -> camera result -> fusion -> report
 - 如果 `prepare_image(...)` 失败，跳过。
 - 只有通过质量门控并成功生成 ROI 的图，才会进入训练。
 - PatchCore 训练输入使用：
-  - `select_patchcore_input(prepared.roi)`
+  - `select_patchcore_input(prepared.roi)`，优先取透明背景 BGRA 的 `texture_ready_image`
   - `prepared.roi.valid_mask`
 - 颜色分支训练输入使用：
   - `prepared.roi.aligned_roi_image`
@@ -763,7 +756,7 @@ prepare_image -> PatchCore / color -> camera result -> fusion -> report
 这是非常重要的设计点，因为它保证了：
 
 - 训练和推理看到的是同一种图像分布
-- 现场背景、夹具、边缘噪声不会被错误学进正常模型
+- 现场背景、边缘噪声不会以黑底纹理形式被错误学进正常模型
 
 ### 6.1 YOLO 与 PatchCore 的训练尺寸对照
 
@@ -779,7 +772,7 @@ prepare_image -> PatchCore / color -> camera result -> fusion -> report
 - `YOLO` 训练使用的是整图及其标注，不会先裁出 `320 x 320` 的 ROI 再训练。
 - `YOLO` 训练阶段如果启用了 `preprocess`，处理的也是整图数据集副本，而不是 ROI。
 - 当前示例配置里，YOLO 训练尺度是 `960`，这是 Ultralytics 训练时的 `imgsz`。
-- `PatchCore` 训练才会复用线上同款 `preprocess -> YOLO -> ROI -> valid_mask` 链路，因此它真正看到的是 ROI。
+- `PatchCore` 训练才会复用线上同款 `preprocess -> YOLO -> ROI -> target_mask / valid_mask -> 透明 BGRA 输入` 链路，因此它真正看到的是 ROI。
 - 当前示例配置下，`PatchCore` 训练和推理的 ROI 尺度是一致的，都是围绕 `320` 展开的。
 
 ### 6.2 如果尺寸不一致，会不会导致结果不精确
@@ -845,18 +838,19 @@ prepare_image -> PatchCore / color -> camera result -> fusion -> report
   - `cam_3`
   - `cam_4`
 2. 所有机位都会先做 OpenCV 预处理，再做 YOLO 分割。
-3. YOLO 不只找座椅，还会把夹具、手、线束、异物单独作为忽略区域处理。
+3. YOLO 当前以座椅主体分割为主；其他检测结果保留在调试信息中，不再作为 ROI 忽略物管理入口。
 4. 真正进入 PatchCore 的不是整张图，而是：
   - 从目标区域裁出的 ROI
   - 缩放到统一尺寸
-  - 再用 `valid_mask` 清掉背景和忽略物后的纹理图
-5. 当前默认使用亮度主导的 `lab_l` 纹理输入，重点看纹理而弱化颜色波动。
+  - alpha 来自 `target_mask` 的透明背景 BGRA 图像
+  - `valid_mask / ignore_mask` 继续控制有效 patch 筛选
+5. 当前默认使用 full CNN PatchCore，辅助纹理口径为亮度主导的 `lab_l`，重点看结构/纹理异常并弱化颜色波动。
 6. 当前颜色分支默认关闭，所以主判定主要由 PatchCore 纹理分支承担。
-7. 当前融合策略是一票 NG 即整件 NG，并且允许早停。
+7. 当前融合策略是一票 NG 即整件 NG；示例配置里 `early_stop_on_ng = false`，会跑完全部机位以便复盘。
 
 一句话总结当前主流程：
 
-> 项目不是拿整张原图直接判缺陷，而是先把原图稳定化、定位化、ROI 化、掩码化，再把清理后的有效前景送进 PatchCore 做纹理异常判断，最后按多机位规则融合成整件结论。
+> 项目不是拿整张原图直接判缺陷，而是先把原图稳定化、定位化、ROI 化、掩码化，再把透明背景的有效前景送进 full PatchCore 做纹理异常判断，最后按多机位规则融合成整件结论。
 
 ---
 

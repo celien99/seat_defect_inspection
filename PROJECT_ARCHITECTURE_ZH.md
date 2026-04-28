@@ -152,8 +152,8 @@ PatchCore 现在不再堆在一个文件里：
   - 模型保存/加载
 - `patchcore/features.py`
   特征提取细节：
-  - `handcrafted` 后端
-  - `full` backbone 后端
+  - 当前运行配置只允许 `full` CNN backbone 后端
+  - 历史 `handcrafted` 路径仅保留为旧模型排查代码，不作为项目运行模式
   - patch embedding 提取
 - `patchcore/scoring.py`
   记忆库采样和打分逻辑：
@@ -320,9 +320,9 @@ PatchCore 现在不再堆在一个文件里：
 
 | 符号 | 作用 |
 | --- | --- |
-| `extract_patch_embeddings` | 统一提取 patch embedding |
-| `extract_handcrafted_patch_embeddings` | 轻量手工特征后端 |
-| `_TorchPatchFeatureExtractor` | 完整 CNN 特征后端 |
+| `extract_patch_embeddings` | 根据配置提取 patch embedding；当前运行配置只允许 `full` |
+| `_TorchPatchFeatureExtractor` | 完整 CNN 特征后端，默认使用 `wide_resnet50_2` 的中间层特征 |
+| `extract_handcrafted_patch_embeddings` | 历史兼容路径，不作为当前项目运行后端 |
 
 文件：`src/seat_defect_inspection/patchcore/scoring.py`
 
@@ -522,7 +522,7 @@ cli.main
 | 位置 | 变量 | 作用 |
 | --- | --- | --- |
 | `InspectionService` | `_pipeline_cache` | 缓存每个型号下的 `_CameraPipeline` |
-| `InspectionService` | `_model_cache` | 缓存 `(seat_model_id, camera_id)` 对应模型包 |
+| `InspectionService` | `_model_cache` | 按 `(seat_model_id, camera_id, pipeline_signature, model_mtime_ns)` 缓存模型包，避免旧模型静默复用 |
 | `DetectionService` | `_model` | 延迟加载 YOLO 模型 |
 | `media_inputs` / `mvsCamera` | 流对象与 SDK 状态 | 统一媒体源和工业相机资源管理 |
 
@@ -530,6 +530,40 @@ cli.main
 
 1. 当前默认是“单进程复用服务实例”的写法。
 2. 如果以后要服务化或多进程化，需要重新评估缓存和资源释放。
+
+### 8.1 PatchCore 模型版本治理
+
+当前 PatchCore 模型包不只保存 memory bank，也会保存训练时的上游图像链路签名：
+
+- `signature_version = 2`
+- `patchcore_input_mode = transparent_bgra`
+- `preprocess` 配置
+- YOLO 检测配置
+- ROI 配置
+- 质量门控配置
+- `color_insensitive_mode`
+
+训练时，`service/training.py` 会把 `pipeline_signature` 和 `pipeline_context` 写入 `.npz` 模型包，并在模型旁生成 `.summary.json`。推理时，`InspectionService._load_model_bundle` 会重新计算当前配置签名；如果模型包缺签名或签名不一致，会直接报错要求重新训练。
+
+因此下面这些变更都属于模型分布变更，不能沿用旧 PatchCore 模型：
+
+- OpenCV 预处理参数变化
+- YOLO 模型、目标类别、置信度或 fallback box 变化
+- ROI 裁切、缩放、边缘屏蔽、mask 规则变化
+- PatchCore 输入模式变化，例如透明 BGRA 规则
+- full PatchCore backbone、特征层、训练尺寸等关键配置变化
+
+### 8.2 回归验证建议
+
+项目后续应固定一批小规模样本作为 pipeline regression 数据集，至少覆盖：
+
+- 正常样本
+- 典型 NG 样本
+- 低质量 REJECT 样本
+- 分割边界较窄的样本
+- 背景透明区域占比较大的样本
+
+每次修改 `preprocess / yolo / roi / patchcore / fusion` 后，跑 `inspect-folder` 对比关键输出：最终状态、PatchCore 分数、有效 patch 比例、ROI 尺寸、`target_mask / valid_mask` 面积、热力图是否明显漂移。
 
 ## 9. 建议阅读顺序
 
@@ -581,6 +615,7 @@ ROI 或 PatchCore 不稳定：
 2. PatchCore 不再堆在一个大文件里，而是拆成 `engine / features / scoring / color_branch`。
 3. 配置解析不再混在一个大文件里，而是拆成 `runtime_config / runtime_config_parsers / runtime_config_camera_parsers / runtime_config_values`。
 4. YOLO 训练也拆出了独立的数据集校验文件 `dataset_validation.py`。
-5. `cli.py`、`cli_commands/`、`service/__init__.py`、`yolo/__init__.py` 都尽量保持为薄入口，并通过按职责拆分降低不必要耦合。
+5. PatchCore 当前统一走 full CNN 后端，ROI 传入透明 BGRA 输入，并用 pipeline signature 防止旧模型静默复用。
+6. `cli.py`、`cli_commands/`、`service/__init__.py`、`yolo/__init__.py` 都尽量保持为薄入口，并通过按职责拆分降低不必要耦合。
 
 这套结构更接近“按功能分文件、入口只做编排”的维护方式，后续继续改 ROI、PatchCore、YOLO 训练或配置解析时，影响面会更集中，也更容易做减法。

@@ -6,10 +6,12 @@ from types import SimpleNamespace
 
 import numpy as np
 
+import seat_defect_inspection.patchcore.engine as patchcore_engine
 from seat_defect_inspection.config import AlignmentConfig, CameraConfig, ColorBranchConfig, DetectionConfig, FusionConfig, PatchCoreConfig, QualityGuardConfig, RoiRefineConfig
 from seat_defect_inspection.cvops import ImageQualityGuard, RoiRefineEngine
 from seat_defect_inspection.fusion import fuse_camera_results, should_early_stop_on_ng
 from seat_defect_inspection.patchcore import PatchCoreService, _decide_patchcore_anomaly
+from seat_defect_inspection.patchcore.features import _PatchBatch, _prepare_feature_image
 from seat_defect_inspection.patchcore.scoring import _analyze_patch_evidence
 from seat_defect_inspection.yolo import DetectionService
 from seat_defect_inspection.runtime_config import load_yolo_training_config
@@ -17,6 +19,49 @@ from seat_defect_inspection.schemas import BoundingBox, CameraInspectionResult, 
 from seat_defect_inspection.service import InspectionService, PreparedCameraSample, _CameraPipeline
 from seat_defect_inspection.service.inspection_camera import _inspect_one_camera
 from seat_defect_inspection.service.offline_inspection import inspect_image_folder
+
+
+def _install_stubbed_full_patchcore(monkeypatch) -> None:
+    """Avoid torch/backbone dependencies while keeping tests on the full backend contract."""
+
+    def fake_get_torch_feature_extractor(self):
+        return object()
+
+    def fake_extract_patch_embeddings(
+        image,
+        _config,
+        *,
+        target_mask=None,
+        ignore_mask=None,
+        feature_extractor=None,
+    ):
+        mean_value = float(np.asarray(image)[:, :, :3].mean())
+        base = 0.0 if mean_value < 128.0 else 10.0
+        embeddings = np.asarray(
+            [
+                [base, base + 0.1],
+                [base + 0.2, base + 0.3],
+            ],
+            dtype=np.float32,
+        )
+        batch = _PatchBatch(
+            grid_shape=(1, 2),
+            valid_indices=np.asarray([0, 1], dtype=np.int64),
+            valid_patch_count=2,
+            total_patch_count=2,
+        )
+        return embeddings, batch
+
+    monkeypatch.setattr(
+        PatchCoreService,
+        "_get_torch_feature_extractor",
+        fake_get_torch_feature_extractor,
+    )
+    monkeypatch.setattr(
+        patchcore_engine,
+        "extract_patch_embeddings",
+        fake_extract_patch_embeddings,
+    )
 
 
 def _camera_result(camera_id: str, status: str) -> CameraInspectionResult:
@@ -219,9 +264,10 @@ def test_patchcore_strong_patch_floor_respects_ratio() -> None:
     assert int(evidence["largest_component_patch_count"]) == 2
 
 
-def test_patchcore_threshold_uses_sample_exclusive_calibration() -> None:
+def test_full_patchcore_threshold_uses_sample_exclusive_calibration(monkeypatch) -> None:
+    _install_stubbed_full_patchcore(monkeypatch)
     config = PatchCoreConfig(
-        backend="handcrafted",
+        backend="full",
         image_size=4,
         patch_size=4,
         stride=4,
@@ -380,6 +426,7 @@ def test_legacy_patchcore_bundle_without_color_profile_loads(tmp_path) -> None:
         meta_json=np.array(
             json.dumps(
                 {
+                    "backend": "full",
                     "image_size": 256,
                     "patch_size": 32,
                     "stride": 16,
@@ -493,30 +540,27 @@ def test_load_bundle_rejects_runtime_backend_mismatch(tmp_path) -> None:
 
 def test_load_bundle_rejects_pipeline_signature_mismatch(tmp_path) -> None:
     model_path = tmp_path / "pipeline_signature_patchcore.npz"
-    config = PatchCoreConfig(
-        backend="handcrafted",
-        image_size=4,
-        patch_size=4,
-        stride=4,
-        max_memory=2,
-        texture_input="gray",
-        coreset_sampling_ratio=1.0,
-    )
-    service = PatchCoreService(config)
-    target_mask = np.ones((4, 4), dtype=np.uint8)
-    ignore_mask = np.zeros((4, 4), dtype=np.uint8)
-    dark = np.zeros((4, 4, 3), dtype=np.uint8)
-    bright = np.full((4, 4, 3), 255, dtype=np.uint8)
-    service.fit(
-        [
-            (dark, target_mask, ignore_mask),
-            (bright, target_mask, ignore_mask),
-        ]
-    )
-    service.save(
+    np.savez_compressed(
         model_path,
-        pipeline_signature="sig_train",
-        pipeline_context={"signature_version": 1},
+        memory_bank=np.zeros((4, 8), dtype=np.float32),
+        feature_mean=np.zeros((8,), dtype=np.float32),
+        feature_std=np.ones((8,), dtype=np.float32),
+        meta_json=np.array(
+            json.dumps(
+                {
+                    "backend": "full",
+                    "image_size": 256,
+                    "patch_size": 32,
+                    "stride": 16,
+                    "max_memory": 128,
+                    "threshold_quantile": 0.99,
+                    "threshold": 1.0,
+                    "pipeline_signature": "sig_train",
+                    "pipeline_context": {"signature_version": 1},
+                }
+            )
+        ),
+        color_profile_json=np.array(""),
     )
 
     try:
@@ -682,9 +726,10 @@ def test_camera_pipeline_quality_uses_roi_instead_of_full_frame() -> None:
     assert prepared.rejection_reason is None
 
 
-def test_handcrafted_patchcore_fit_predict_and_reload(tmp_path) -> None:
+def test_full_patchcore_fit_predict_and_reload(tmp_path, monkeypatch) -> None:
+    _install_stubbed_full_patchcore(monkeypatch)
     config = PatchCoreConfig(
-        backend="handcrafted",
+        backend="full",
         image_size=64,
         max_memory=32,
         texture_input="lab_l",
@@ -701,7 +746,7 @@ def test_handcrafted_patchcore_fit_predict_and_reload(tmp_path) -> None:
         samples.append((image, target_mask, ignore_mask))
 
     summary = service.fit(samples)
-    assert summary["backend"] == "handcrafted"
+    assert summary["backend"] == "full"
     assert int(summary["train_sample_count"]) == 3
     assert int(summary["memory_bank_size"]) > 0
 
@@ -709,7 +754,7 @@ def test_handcrafted_patchcore_fit_predict_and_reload(tmp_path) -> None:
     assert result.heatmap.shape == samples[0][0].shape[:2]
     assert result.total_patch_count >= result.valid_patch_count > 0
 
-    model_path = tmp_path / "handcrafted_patchcore_test.npz"
+    model_path = tmp_path / "full_patchcore_test.npz"
     service.save(model_path)
     loaded = PatchCoreService.load_bundle(model_path).patchcore
     reloaded_result = loaded.predict(*samples[1])
@@ -836,6 +881,59 @@ def test_roi_patchcore_input_uses_transparent_background() -> None:
     assert roi.texture_ready_image.shape == (64, 64, 4)
     assert np.array_equal(roi.texture_ready_image[:, :, 3], roi.target_mask * 255)
     assert np.count_nonzero(roi.texture_ready_image[:, :, 3] == 0) > 0
+
+
+def test_patchcore_feature_image_does_not_turn_transparent_background_black() -> None:
+    image = np.zeros((4, 4, 4), dtype=np.uint8)
+    image[1:3, 1:3, :3] = np.asarray([20, 80, 140], dtype=np.uint8)
+    image[1:3, 1:3, 3] = 255
+
+    prepared = _prepare_feature_image(image)
+
+    assert prepared.shape == (4, 4, 3)
+    assert np.array_equal(prepared[0, 0], np.asarray([20, 80, 140], dtype=np.uint8))
+    assert np.array_equal(prepared[1, 1], np.asarray([20, 80, 140], dtype=np.uint8))
+
+
+def test_patchcore_pipeline_context_records_transparent_bgra_input_mode() -> None:
+    camera = CameraConfig(
+        camera_id="cam_0",
+        source="0",
+        patchcore_model_path="model.npz",
+        patchcore=PatchCoreConfig(backbone_pretrained=True),
+    )
+    service = InspectionService(
+        SimpleNamespace(
+            cameras=[camera],
+            seat_models=[],
+            default_seat_model_id=None,
+            output_json_path="results.json",
+            debug_dir="debug",
+            capture_dir="capture",
+            save_debug_artifacts=False,
+            debug_artifact_mode="standard",
+            capture_retries=1,
+            part_id="seat_demo",
+            fusion=FusionConfig(),
+        )
+    )
+
+    context = service._build_patchcore_pipeline_context(camera)
+    signature = service._build_patchcore_pipeline_signature(camera)
+
+    changed_camera = CameraConfig(
+        camera_id="cam_0",
+        source="0",
+        patchcore_model_path="model.npz",
+        patchcore=PatchCoreConfig(backbone_pretrained=True),
+        roi=RoiRefineConfig(
+            alignment=AlignmentConfig(output_width=512, output_height=512),
+        ),
+    )
+
+    assert context["signature_version"] == 2
+    assert context["patchcore_input_mode"] == "transparent_bgra"
+    assert service._build_patchcore_pipeline_signature(changed_camera) != signature
 
 
 def test_inspection_service_passes_target_and_ignore_masks_to_patchcore() -> None:
