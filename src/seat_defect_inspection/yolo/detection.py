@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
 from typing import Any
 
 import cv2
 import numpy as np
-
+from ultralytics.engine.results import Results
 from ..config import DetectionConfig
 from ..schemas import BoundingBox, DetectionObject, DetectionResult
 
-YOLO_SEGMENT_TASK = "segment"
 
 
 class DetectionService:
@@ -32,11 +29,9 @@ class DetectionService:
             )
 
         if self._model is None:
-            _ensure_local_yolo_config_dir()
             from ultralytics import YOLO
 
             self._model = YOLO(self.config.model_path)
-            _validate_model_task(self._model, str(self.config.model_path))
 
         result = self._model.predict(
             image,
@@ -71,7 +66,7 @@ class DetectionService:
 
     def _extract_detections(
         self,
-        result: Any,
+        result: Results,
         image_shape: tuple[int, int],
     ) -> list[DetectionObject]:
         boxes = getattr(result, "boxes", None)
@@ -118,7 +113,7 @@ class DetectionService:
 
     def _extract_masks(
         self,
-        result: Any,
+        result: Results,
         image_shape: tuple[int, int],
     ) -> list[np.ndarray]:
         mask_data = getattr(getattr(result, "masks", None), "data", None)
@@ -136,29 +131,3 @@ class DetectionService:
             masks.append((resized > 0.5).astype(np.uint8))
         return masks
 
-
-def _validate_model_task(model: Any, model_path: str) -> None:
-    task = str(getattr(model, "task", "")).strip().lower()
-    if task == YOLO_SEGMENT_TASK:
-        return
-    display_task = task or "unknown"
-    raise ValueError(
-        "当前项目只支持 YOLO segmentation 权重，"
-        f"但 `{model_path}` 的任务类型是 `{display_task}`。"
-        " 请改用 yolo11m-seg.pt 或分割训练产物。"
-    )
-
-
-def _ensure_local_yolo_config_dir() -> None:
-    """把 Ultralytics 配置目录收敛到项目内，避免现场环境目录异常影响检测。"""
-    if os.getenv("YOLO_CONFIG_DIR"):
-        return
-
-    project_runtime_dir = (
-        Path(__file__).resolve().parents[3]
-        / "outputs"
-        / "seat_defect_inspection"
-        / "_runtime"
-    )
-    project_runtime_dir.mkdir(parents=True, exist_ok=True)
-    os.environ["YOLO_CONFIG_DIR"] = str(project_runtime_dir)

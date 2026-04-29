@@ -49,7 +49,6 @@ class _CameraPipeline:
 
     def prepare_image(self, image: Any) -> PreparedCameraSample:
         """完成预处理、检测、ROI 精修和 ROI 质量检查。"""
-        # 训练和推理共用同一条图像链路，避免线上线下输入分布漂移。
         preprocessed = self.preprocess_engine.process(image)
         detection = self.detection_service.detect(preprocessed)
         if detection.target is None:
