@@ -93,6 +93,8 @@ seat-defect-inspection inspect-folder \
 - 需要可用的 `torch / torchvision`
 - 如 `backbone_pretrained = false`，必须配置本地 `backbone_weights_path`
 
+如果需要面向现场新手理解 PatchCore 参数、按误报/漏检/REJECT 现象快速定位调参方向，请阅读 [PATCHCORE_TUNING_GUIDE_ZH.md](./PATCHCORE_TUNING_GUIDE_ZH.md)。
+
 如果现场还没有 YOLO 权重，可以先把 `detection.model_path` 设为 `null`，继续使用 `fallback_box` 走完整流程。
 
 项目现在统一使用 `yolo11m-seg.pt`。代码会直接消费 YOLO segmentation mask 来裁剪目标区域，并构造 `target_mask / valid_mask`。当前 ROI 层已经压成轻量链路，主要保留裁剪、缩放和掩膜清理，不再承载之前那套重的局部增强流程。传给 PatchCore 的 `texture_ready_image` 是透明背景 BGRA 图像，alpha 来自 `target_mask`，避免黑底背景进入 CNN 特征。
