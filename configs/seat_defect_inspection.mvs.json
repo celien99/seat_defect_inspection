@@ -4,7 +4,7 @@
     "output_json_path": "../outputs/seat_defect_inspection/mvs_results.json",
     "debug_dir": "../outputs/seat_defect_inspection/mvs_debug",
     "capture_dir": "../outputs/seat_defect_inspection/mvs_capture",
-    "save_debug_artifacts": true,
+    "save_debug_artifacts": false,
     "debug_artifact_mode": "standard",
     "capture_retries": 3,
     "fusion": {
@@ -19,7 +19,7 @@
         "source": "mvs://sn/DA9184658?timeout_ms=1000&exposure_auto=off&exposure_time=8000",
         "train_good_dir": "../data/seat_defect_inspection/cam_0/train/good",
         "patchcore_model_path": "../models/seat_defect_inspection/cam_0_patchcore.npz",
-        "color_insensitive_mode": true,
+        "color_insensitive_mode": false,
         "quality": {
           "min_laplacian_variance": 80.0,
           "min_brightness_mean": 30.0,
@@ -43,7 +43,7 @@
         "detection": {
           "model_path": "../best.pt",
           "target_class": "seat",
-          "confidence": 0.5,
+          "confidence": 0.35,
           "iou": 0.45,
           "device": "cpu",
           "fallback_box": {
@@ -54,43 +54,43 @@
           }
         },
         "roi": {
-          "crop_expand_ratio": 0.02,
+          "crop_expand_ratio": 0.04,
           "crop_shrink_ratio": 0.0,
           "edge_ignore_pixels": 4,
           "alignment": {
-            "output_width": 320,
-            "output_height": 320
+            "output_width": 384,
+            "output_height": 384
           }
         },
         "patchcore": {
           "backend": "full",
-          "image_size": 320,
+          "image_size": 384,
           "patch_size": 16,
           "stride": 8,
           "max_memory": 512,
-          "threshold_quantile": 0.95,
+          "threshold_quantile": 0.9,
           "coreset_sampling_ratio": 0.1,
           "texture_input": "lab_l",
           "backbone_name": "wide_resnet50_2",
           "backbone_pretrained": true,
           "backbone_device": "cuda",
-          "min_target_coverage": 0.65,
-          "max_ignore_overlap": 0.1,
+          "min_target_coverage": 0.55,
+          "max_ignore_overlap": 0.15,
           "min_valid_patch_ratio": 0.35,
-          "decision_score_margin": 1.05,
-          "strong_patch_score_ratio": 0.85,
+          "decision_score_margin": 1.0,
+          "strong_patch_score_ratio": 0.8,
           "min_strong_patch_count": 2,
-          "min_strong_component_count": 2,
-          "min_strong_patch_ratio": 0.006,
-          "min_strong_component_ratio": 0.004,
-          "critical_score_margin": 1.1,
-          "critical_peak_score_margin": 1.15,
+          "min_strong_component_count": 1,
+          "min_strong_patch_ratio": 0.004,
+          "min_strong_component_ratio": 0.002,
+          "critical_score_margin": 1.0,
+          "critical_peak_score_margin": 1.05,
           "critical_min_component_patch_count": 2
         },
         "color_branch": {
           "enabled": true,
-          "threshold_quantile": 0.99,
-          "min_valid_pixel_ratio": 0.4
+          "threshold_quantile": 0.97,
+          "min_valid_pixel_ratio": 0.3
         }
       },
       {
@@ -98,7 +98,7 @@
         "source": "mvs://sn/DA9184675?timeout_ms=1000&exposure_auto=off&exposure_time=8000",
         "train_good_dir": "../data/seat_defect_inspection/cam_1/train/good",
         "patchcore_model_path": "../models/seat_defect_inspection/cam_1_patchcore.npz",
-        "color_insensitive_mode": true,
+        "color_insensitive_mode": false,
         "quality": {
           "min_laplacian_variance": 80.0,
           "min_brightness_mean": 30.0,
@@ -122,7 +122,7 @@
         "detection": {
           "model_path": "../best.pt",
           "target_class": "seat",
-          "confidence": 0.5,
+          "confidence": 0.35,
           "iou": 0.45,
           "device": "cpu",
           "fallback_box": {
@@ -133,43 +133,43 @@
           }
         },
         "roi": {
-          "crop_expand_ratio": 0.02,
+          "crop_expand_ratio": 0.04,
           "crop_shrink_ratio": 0.0,
           "edge_ignore_pixels": 4,
           "alignment": {
-            "output_width": 320,
-            "output_height": 320
+            "output_width": 384,
+            "output_height": 384
           }
         },
         "patchcore": {
           "backend": "full",
-          "image_size": 320,
+          "image_size": 384,
           "patch_size": 16,
           "stride": 8,
           "max_memory": 512,
-          "threshold_quantile": 0.95,
+          "threshold_quantile": 0.9,
           "coreset_sampling_ratio": 0.1,
           "texture_input": "lab_l",
           "backbone_name": "wide_resnet50_2",
           "backbone_pretrained": true,
           "backbone_device": "cuda",
-          "min_target_coverage": 0.65,
-          "max_ignore_overlap": 0.1,
+          "min_target_coverage": 0.55,
+          "max_ignore_overlap": 0.15,
           "min_valid_patch_ratio": 0.35,
-          "decision_score_margin": 1.05,
-          "strong_patch_score_ratio": 0.85,
+          "decision_score_margin": 1.0,
+          "strong_patch_score_ratio": 0.8,
           "min_strong_patch_count": 2,
-          "min_strong_component_count": 2,
-          "min_strong_patch_ratio": 0.006,
-          "min_strong_component_ratio": 0.004,
-          "critical_score_margin": 1.1,
-          "critical_peak_score_margin": 1.15,
+          "min_strong_component_count": 1,
+          "min_strong_patch_ratio": 0.004,
+          "min_strong_component_ratio": 0.002,
+          "critical_score_margin": 1.0,
+          "critical_peak_score_margin": 1.05,
           "critical_min_component_patch_count": 2
         },
         "color_branch": {
           "enabled": true,
-          "threshold_quantile": 0.99,
-          "min_valid_pixel_ratio": 0.4
+          "threshold_quantile": 0.97,
+          "min_valid_pixel_ratio": 0.3
         }
       },
       {
@@ -177,7 +177,7 @@
         "source": "mvs://sn/DA9184671?timeout_ms=1000&exposure_auto=off&exposure_time=8000",
         "train_good_dir": "../data/seat_defect_inspection/cam_2/train/good",
         "patchcore_model_path": "../models/seat_defect_inspection/cam_2_patchcore.npz",
-        "color_insensitive_mode": true,
+        "color_insensitive_mode": false,
         "quality": {
           "min_laplacian_variance": 80.0,
           "min_brightness_mean": 30.0,
@@ -201,7 +201,7 @@
         "detection": {
           "model_path": "../best.pt",
           "target_class": "seat",
-          "confidence": 0.5,
+          "confidence": 0.35,
           "iou": 0.45,
           "device": "cpu",
           "fallback_box": {
@@ -212,43 +212,43 @@
           }
         },
         "roi": {
-          "crop_expand_ratio": 0.02,
+          "crop_expand_ratio": 0.04,
           "crop_shrink_ratio": 0.0,
           "edge_ignore_pixels": 4,
           "alignment": {
-            "output_width": 320,
-            "output_height": 320
+            "output_width": 384,
+            "output_height": 384
           }
         },
         "patchcore": {
           "backend": "full",
-          "image_size": 320,
+          "image_size": 384,
           "patch_size": 16,
           "stride": 8,
           "max_memory": 512,
-          "threshold_quantile": 0.95,
+          "threshold_quantile": 0.9,
           "coreset_sampling_ratio": 0.1,
           "texture_input": "lab_l",
           "backbone_name": "wide_resnet50_2",
           "backbone_pretrained": true,
           "backbone_device": "cuda",
-          "min_target_coverage": 0.65,
-          "max_ignore_overlap": 0.1,
+          "min_target_coverage": 0.55,
+          "max_ignore_overlap": 0.15,
           "min_valid_patch_ratio": 0.35,
-          "decision_score_margin": 1.05,
-          "strong_patch_score_ratio": 0.85,
+          "decision_score_margin": 1.0,
+          "strong_patch_score_ratio": 0.8,
           "min_strong_patch_count": 2,
-          "min_strong_component_count": 2,
-          "min_strong_patch_ratio": 0.006,
-          "min_strong_component_ratio": 0.004,
-          "critical_score_margin": 1.1,
-          "critical_peak_score_margin": 1.15,
+          "min_strong_component_count": 1,
+          "min_strong_patch_ratio": 0.004,
+          "min_strong_component_ratio": 0.002,
+          "critical_score_margin": 1.0,
+          "critical_peak_score_margin": 1.05,
           "critical_min_component_patch_count": 2
         },
         "color_branch": {
           "enabled": true,
-          "threshold_quantile": 0.99,
-          "min_valid_pixel_ratio": 0.4
+          "threshold_quantile": 0.97,
+          "min_valid_pixel_ratio": 0.3
         }
       },
       {
@@ -256,7 +256,7 @@
         "source": "mvs://sn/DA9184680?timeout_ms=1000&exposure_auto=off&exposure_time=8000",
         "train_good_dir": "../data/seat_defect_inspection/cam_3/train/good",
         "patchcore_model_path": "../models/seat_defect_inspection/cam_3_patchcore.npz",
-        "color_insensitive_mode": true,
+        "color_insensitive_mode": false,
         "quality": {
           "min_laplacian_variance": 80.0,
           "min_brightness_mean": 30.0,
@@ -280,7 +280,7 @@
         "detection": {
           "model_path": "../best.pt",
           "target_class": "seat",
-          "confidence": 0.5,
+          "confidence": 0.35,
           "iou": 0.45,
           "device": "cpu",
           "fallback_box": {
@@ -291,43 +291,43 @@
           }
         },
         "roi": {
-          "crop_expand_ratio": 0.02,
+          "crop_expand_ratio": 0.04,
           "crop_shrink_ratio": 0.0,
           "edge_ignore_pixels": 4,
           "alignment": {
-            "output_width": 320,
-            "output_height": 320
+            "output_width": 384,
+            "output_height": 384
           }
         },
         "patchcore": {
           "backend": "full",
-          "image_size": 320,
+          "image_size": 384,
           "patch_size": 16,
           "stride": 8,
           "max_memory": 512,
-          "threshold_quantile": 0.95,
+          "threshold_quantile": 0.9,
           "coreset_sampling_ratio": 0.1,
           "texture_input": "lab_l",
           "backbone_name": "wide_resnet50_2",
           "backbone_pretrained": true,
           "backbone_device": "cuda",
-          "min_target_coverage": 0.65,
-          "max_ignore_overlap": 0.1,
+          "min_target_coverage": 0.55,
+          "max_ignore_overlap": 0.15,
           "min_valid_patch_ratio": 0.35,
-          "decision_score_margin": 1.05,
-          "strong_patch_score_ratio": 0.85,
+          "decision_score_margin": 1.0,
+          "strong_patch_score_ratio": 0.8,
           "min_strong_patch_count": 2,
-          "min_strong_component_count": 2,
-          "min_strong_patch_ratio": 0.006,
-          "min_strong_component_ratio": 0.004,
-          "critical_score_margin": 1.1,
-          "critical_peak_score_margin": 1.15,
+          "min_strong_component_count": 1,
+          "min_strong_patch_ratio": 0.004,
+          "min_strong_component_ratio": 0.002,
+          "critical_score_margin": 1.0,
+          "critical_peak_score_margin": 1.05,
           "critical_min_component_patch_count": 2
         },
         "color_branch": {
           "enabled": true,
-          "threshold_quantile": 0.99,
-          "min_valid_pixel_ratio": 0.4
+          "threshold_quantile": 0.97,
+          "min_valid_pixel_ratio": 0.3
         }
       },
       {
@@ -335,7 +335,7 @@
         "source": "mvs://sn/DA9184674?timeout_ms=1000&exposure_auto=off&exposure_time=8000",
         "train_good_dir": "../data/seat_defect_inspection/cam_4/train/good",
         "patchcore_model_path": "../models/seat_defect_inspection/cam_4_patchcore.npz",
-        "color_insensitive_mode": true,
+        "color_insensitive_mode": false,
         "quality": {
           "min_laplacian_variance": 80.0,
           "min_brightness_mean": 30.0,
@@ -359,7 +359,7 @@
         "detection": {
           "model_path": "../best.pt",
           "target_class": "seat",
-          "confidence": 0.5,
+          "confidence": 0.35,
           "iou": 0.45,
           "device": "cpu",
           "fallback_box": {
@@ -370,43 +370,43 @@
           }
         },
         "roi": {
-          "crop_expand_ratio": 0.02,
+          "crop_expand_ratio": 0.04,
           "crop_shrink_ratio": 0.0,
           "edge_ignore_pixels": 4,
           "alignment": {
-            "output_width": 320,
-            "output_height": 320
+            "output_width": 384,
+            "output_height": 384
           }
         },
         "patchcore": {
           "backend": "full",
-          "image_size": 320,
+          "image_size": 384,
           "patch_size": 16,
           "stride": 8,
           "max_memory": 512,
-          "threshold_quantile": 0.95,
+          "threshold_quantile": 0.9,
           "coreset_sampling_ratio": 0.1,
           "texture_input": "lab_l",
           "backbone_name": "wide_resnet50_2",
           "backbone_pretrained": true,
           "backbone_device": "cuda",
-          "min_target_coverage": 0.65,
-          "max_ignore_overlap": 0.1,
+          "min_target_coverage": 0.55,
+          "max_ignore_overlap": 0.15,
           "min_valid_patch_ratio": 0.35,
-          "decision_score_margin": 1.05,
-          "strong_patch_score_ratio": 0.85,
+          "decision_score_margin": 1.0,
+          "strong_patch_score_ratio": 0.8,
           "min_strong_patch_count": 2,
-          "min_strong_component_count": 2,
-          "min_strong_patch_ratio": 0.006,
-          "min_strong_component_ratio": 0.004,
-          "critical_score_margin": 1.1,
-          "critical_peak_score_margin": 1.15,
+          "min_strong_component_count": 1,
+          "min_strong_patch_ratio": 0.004,
+          "min_strong_component_ratio": 0.002,
+          "critical_score_margin": 1.0,
+          "critical_peak_score_margin": 1.05,
           "critical_min_component_patch_count": 2
         },
         "color_branch": {
           "enabled": true,
-          "threshold_quantile": 0.99,
-          "min_valid_pixel_ratio": 0.4
+          "threshold_quantile": 0.97,
+          "min_valid_pixel_ratio": 0.3
         }
       }
     ],

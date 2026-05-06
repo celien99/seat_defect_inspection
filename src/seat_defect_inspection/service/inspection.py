@@ -74,6 +74,23 @@ def run_inspection(
         frame_id = first_frame_packet.frame_id
         timestamp = first_frame_packet.timestamp
 
+    if _should_inspect_concurrently(service, total_camera_count):
+        camera_results = _inspect_cameras_concurrently(
+            service,
+            capture_outcomes,
+            context.seat_model_id,
+            context.pipelines,
+        )
+        fused = fuse_camera_results(
+            part_id=resolved_part_id,
+            frame_id=frame_id,
+            timestamp=timestamp,
+            camera_results=camera_results,
+            fusion_config=service.config.fusion,
+        )
+        fused.seat_model_id = context.seat_model_id
+        return _export_result(service, fused)
+
     for outcome in capture_outcomes:
         camera = outcome.camera
         if outcome.error is not None:
@@ -153,6 +170,16 @@ def run_inspection(
     return _export_result(service, fused)
 
 
+def _should_inspect_concurrently(
+    service: "InspectionService",
+    total_camera_count: int,
+) -> bool:
+    """Only parallelize camera inspection when it will not change fail-fast behavior."""
+    if total_camera_count <= 1:
+        return False
+    return not service.config.fusion.early_stop_on_ng
+
+
 def _capture_cameras_concurrently(
     service: "InspectionService",
     cameras: list[CameraConfig],
@@ -188,6 +215,84 @@ def _capture_cameras_concurrently(
                     error=exc,
                 )
     return [indexed_outcomes[index] for index in range(len(cameras))]
+
+
+def _inspect_cameras_concurrently(
+    service: "InspectionService",
+    capture_outcomes: list[_CaptureOutcome],
+    seat_model_id: str | None,
+    pipelines,
+) -> list[CameraInspectionResult]:
+    """Run heavy per-camera inspection in parallel and preserve config order in output."""
+    indexed_results: dict[int, CameraInspectionResult] = {}
+    inspect_futures = {}
+
+    max_workers = max(1, len(capture_outcomes))
+    with ThreadPoolExecutor(
+        max_workers=max_workers,
+        thread_name_prefix="seat-inspect-camera",
+    ) as executor:
+        for index, outcome in enumerate(capture_outcomes):
+            camera = outcome.camera
+            if outcome.error is not None:
+                indexed_results[index] = _build_capture_failed_result(
+                    camera,
+                    reason=f"capture_failed:{outcome.error}",
+                    seat_model_id=seat_model_id,
+                )
+                continue
+
+            frame_packet = outcome.frame_packet
+            if frame_packet is None:
+                indexed_results[index] = _build_capture_failed_result(
+                    camera,
+                    reason="capture_failed:empty_frame_packet",
+                    seat_model_id=seat_model_id,
+                )
+                continue
+
+            inspect_futures[
+                executor.submit(
+                    _inspect_one_captured_camera,
+                    service,
+                    frame_packet,
+                    camera,
+                    pipelines[camera.camera_id],
+                    seat_model_id,
+                )
+            ] = index
+
+        for future in as_completed(inspect_futures):
+            indexed_results[inspect_futures[future]] = future.result()
+
+    return [indexed_results[index] for index in range(len(capture_outcomes))]
+
+
+def _inspect_one_captured_camera(
+    service: "InspectionService",
+    frame_packet: FramePacket,
+    camera: CameraConfig,
+    pipeline,
+    seat_model_id: str | None,
+) -> CameraInspectionResult:
+    """Wrap one camera inspection so concurrent mode still returns normalized results."""
+    try:
+        return _inspect_one_camera(
+            service,
+            frame_packet,
+            camera,
+            pipeline,
+            seat_model_id,
+        )
+    except Exception as exc:
+        return _build_reject_result(
+            camera_id=frame_packet.camera_id,
+            frame_id=frame_packet.frame_id,
+            source=frame_packet.source,
+            source_kind=frame_packet.source_kind,
+            reason=f"pipeline_failed:{exc}",
+            seat_model_id=seat_model_id,
+        )
 
 
 def _build_early_stop_result(
