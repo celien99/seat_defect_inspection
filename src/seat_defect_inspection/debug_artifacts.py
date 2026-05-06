@@ -1,45 +1,15 @@
-"""调试图档位定义与解析。"""
+"""Unified inspection artifact definitions."""
 
 from __future__ import annotations
 
-DEFAULT_DEBUG_ARTIFACT_MODE = "standard"
-
-_DEBUG_ARTIFACT_GROUPS: dict[str, tuple[str, ...]] = {
-    "standard": (
-        "raw",
-        "detections",
-        "roi",
-        "patchcore_input",
-        "overlay",
-    ),
-    "full": (
-        "raw",
-        "preprocessed",
-        "detections",
-        "roi",
-        "roi_texture",
-        "patchcore_input",
-        "foreground_weight",
-        "target_mask",
-        "valid_mask",
-        "ignore_mask",
-        "heatmap",
-        "overlay",
-    ),
-}
-
-_MODE_ALIASES = {
-    "core": "standard",
-    "minimal": "standard",
-    "all": "full",
-}
+DEFAULT_DEBUG_ARTIFACT_NAMES: tuple[str, ...] = (
+    "raw",
+    "detections",
+    "heatmap",
+    "overlay",
+)
 
 
-def resolve_debug_artifact_names(mode: str | None) -> set[str]:
-    """返回当前调试图档位对应的文件键集合。"""
-    normalized = (mode or DEFAULT_DEBUG_ARTIFACT_MODE).strip().lower()
-    normalized = _MODE_ALIASES.get(normalized, normalized)
-    if normalized not in _DEBUG_ARTIFACT_GROUPS:
-        supported = ", ".join(sorted(_DEBUG_ARTIFACT_GROUPS))
-        raise ValueError(f"未知 debug_artifact_mode `{mode}`，可选值：{supported}")
-    return set(_DEBUG_ARTIFACT_GROUPS[normalized])
+def get_debug_artifact_names() -> set[str]:
+    """Return the concise artifact set exported by every inspection run."""
+    return set(DEFAULT_DEBUG_ARTIFACT_NAMES)

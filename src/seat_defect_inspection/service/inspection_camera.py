@@ -135,9 +135,7 @@ def _attach_debug_artifacts(
 ) -> CameraInspectionResult:
     """把调试产物挂到结果对象后返回。"""
     result.artifact_paths = save_debug_artifacts(
-        enabled=service.config.save_debug_artifacts,
         debug_dir=service.config.debug_dir,
-        debug_artifact_mode=service.config.debug_artifact_mode,
         frame_packet=frame_packet,
         prepared=prepared,
         texture_result=texture_result,

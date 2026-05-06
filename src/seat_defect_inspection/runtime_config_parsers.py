@@ -43,6 +43,10 @@ _LOCAL_PATH_SUFFIXES = {
 # 主配置与座椅型号配置。
 def _parse_inspection_config(payload: dict[str, Any], config_dir: Path) -> InspectionConfig:
     scope = "InspectionConfig"
+    if "save_debug_artifacts" in payload or "debug_artifact_mode" in payload:
+        payload = dict(payload)
+        payload.pop("save_debug_artifacts", None)
+        payload.pop("debug_artifact_mode", None)
     _reject_unknown_keys(payload, _field_names(InspectionConfig), scope)
 
     cameras_payload = payload.get("cameras") or []
@@ -89,14 +93,6 @@ def _parse_inspection_config(payload: dict[str, Any], config_dir: Path) -> Inspe
             config_dir,
             _string_or_default(payload.get("capture_dir"), defaults.capture_dir),
             force=True,
-        ),
-        save_debug_artifacts=_bool_or_default(
-            payload.get("save_debug_artifacts"),
-            defaults.save_debug_artifacts,
-        ),
-        debug_artifact_mode=_string_or_default(
-            payload.get("debug_artifact_mode"),
-            defaults.debug_artifact_mode,
         ),
         capture_retries=_int_or_default(payload.get("capture_retries"), defaults.capture_retries),
         part_id=_string_or_default(payload.get("part_id"), defaults.part_id),

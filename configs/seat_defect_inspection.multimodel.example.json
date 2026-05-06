@@ -5,8 +5,6 @@
     "output_json_path": "../outputs/seat_defect_inspection/multimodel_results.json",
     "debug_dir": "../outputs/seat_defect_inspection/multimodel_debug",
     "capture_dir": "../outputs/seat_defect_inspection/multimodel_capture",
-    "save_debug_artifacts": true,
-    "debug_artifact_mode": "standard",
     "capture_retries": 3,
     "fusion": {
       "reject_on_any_reject": true,

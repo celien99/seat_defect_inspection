@@ -8,24 +8,20 @@ from typing import Any
 import cv2
 import numpy as np
 
-from ..debug_artifacts import DEFAULT_DEBUG_ARTIFACT_MODE, resolve_debug_artifact_names
+from ..debug_artifacts import get_debug_artifact_names
 from ..util import build_model_scoped_root, select_patchcore_input, write_image
 
 
 def save_debug_artifacts(
     *,
-    enabled: bool,
     debug_dir: str,
-    debug_artifact_mode: str | None,
     frame_packet: Any,
     prepared: Any,
     texture_result: Any | None,
     seat_model_id: str | None,
 ) -> dict[str, str]:
     """Persist the selected debug artifacts for one camera result."""
-    if not enabled:
-        return {}
-    selected_artifacts = resolve_debug_artifact_names(debug_artifact_mode)
+    selected_artifacts = get_debug_artifact_names()
 
     camera_dir = (
         build_model_scoped_root(Path(debug_dir), seat_model_id)
@@ -116,12 +112,16 @@ def save_debug_artifacts(
         )
 
     if texture_result is not None and prepared.roi is not None:
-        _save_selected_mask(
+        heatmap_base = select_patchcore_input(prepared.roi)
+        _save_selected_image(
             artifact_paths,
             selected_artifacts,
             "heatmap",
             camera_dir / "heatmap.png",
-            texture_result.heatmap,
+            _render_heatmap(
+                heatmap_base,
+                texture_result.heatmap,
+            ),
         )
         if "overlay" in selected_artifacts:
             _save_selected_image(
@@ -130,7 +130,7 @@ def save_debug_artifacts(
                 "overlay",
                 camera_dir / "overlay.png",
                 _overlay_heatmap(
-                    select_patchcore_input(prepared.roi),
+                    heatmap_base,
                     texture_result.heatmap,
                 ),
             )
@@ -249,14 +249,7 @@ def _overlay_heatmap(
     heatmap: np.ndarray,
 ) -> Any:
     """Overlay the heatmap without tinting the whole ROI background."""
-    base_image = _ensure_color_image(image)
-    clipped = np.clip(np.asarray(heatmap, dtype=np.float32), 0.0, 1.0)
-    if clipped.shape != base_image.shape[:2]:
-        clipped = cv2.resize(
-            clipped,
-            (base_image.shape[1], base_image.shape[0]),
-            interpolation=cv2.INTER_LINEAR,
-        )
+    base_image, clipped = _prepare_heatmap_layers(image, heatmap)
     if float(clipped.max()) <= 1e-6:
         return base_image
 
@@ -265,6 +258,42 @@ def _overlay_heatmap(
     alpha = np.power(clipped, 1.35)[..., None] * 0.75
     overlay = base_float * (1.0 - alpha) + color_map * alpha
     return np.clip(overlay, 0.0, 255.0).astype(np.uint8)
+
+
+def _render_heatmap(
+    image: Any,
+    heatmap: np.ndarray,
+) -> np.ndarray:
+    """Render a readable standalone heatmap on top of a grayscale ROI base."""
+    base_image, clipped = _prepare_heatmap_layers(image, heatmap)
+    gray_base = cv2.cvtColor(
+        cv2.cvtColor(base_image, cv2.COLOR_BGR2GRAY),
+        cv2.COLOR_GRAY2BGR,
+    )
+    if float(clipped.max()) <= 1e-6:
+        return gray_base
+
+    color_map = cv2.applyColorMap(np.uint8(clipped * 255), cv2.COLORMAP_JET).astype(np.float32)
+    base_float = gray_base.astype(np.float32)
+    alpha = np.power(clipped, 1.35)[..., None]
+    rendered = base_float * (1.0 - alpha) + color_map * alpha
+    return np.clip(rendered, 0.0, 255.0).astype(np.uint8)
+
+
+def _prepare_heatmap_layers(
+    image: Any,
+    heatmap: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Normalize heatmap geometry and value range for visualization helpers."""
+    base_image = _ensure_color_image(image)
+    clipped = np.clip(np.asarray(heatmap, dtype=np.float32), 0.0, 1.0)
+    if clipped.shape != base_image.shape[:2]:
+        clipped = cv2.resize(
+            clipped,
+            (base_image.shape[1], base_image.shape[0]),
+            interpolation=cv2.INTER_LINEAR,
+        )
+    return base_image, clipped
 
 
 def _ensure_color_image(image: Any) -> np.ndarray:

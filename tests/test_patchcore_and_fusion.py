@@ -751,10 +751,8 @@ def test_inspection_service_rejects_missing_color_profile_when_color_branch_enab
             seat_models=[],
             default_seat_model_id=None,
             output_json_path="results.json",
-            debug_dir="debug",
+            debug_dir=str(tmp_path / "debug"),
             capture_dir="capture",
-            save_debug_artifacts=False,
-            debug_artifact_mode="standard",
             capture_retries=1,
             part_id="seat_demo",
             fusion=FusionConfig(),
@@ -1053,8 +1051,6 @@ def test_patchcore_pipeline_context_records_transparent_bgra_input_mode() -> Non
             output_json_path="results.json",
             debug_dir="debug",
             capture_dir="capture",
-            save_debug_artifacts=False,
-            debug_artifact_mode="standard",
             capture_retries=1,
             part_id="seat_demo",
             fusion=FusionConfig(),
@@ -1079,7 +1075,7 @@ def test_patchcore_pipeline_context_records_transparent_bgra_input_mode() -> Non
     assert service._build_patchcore_pipeline_signature(changed_camera) != signature
 
 
-def test_inspection_service_passes_target_and_ignore_masks_to_patchcore() -> None:
+def test_inspection_service_passes_target_and_ignore_masks_to_patchcore(tmp_path: Path) -> None:
     class _FakePatchCore:
         def __init__(self) -> None:
             self.image = None
@@ -1118,10 +1114,8 @@ def test_inspection_service_passes_target_and_ignore_masks_to_patchcore() -> Non
             seat_models=[],
             default_seat_model_id=None,
             output_json_path="results.json",
-            debug_dir="debug",
+            debug_dir=str(tmp_path / "debug"),
             capture_dir="capture",
-            save_debug_artifacts=False,
-            debug_artifact_mode="standard",
             capture_retries=1,
             part_id="seat_demo",
             fusion=FusionConfig(),
@@ -1185,9 +1179,12 @@ def test_inspection_service_passes_target_and_ignore_masks_to_patchcore() -> Non
     assert fake_patchcore.image.shape == (32, 32, 4)
     assert np.array_equal(fake_patchcore.target_mask, roi.target_mask)
     assert np.array_equal(fake_patchcore.ignore_mask, roi.ignore_mask)
+    assert set(result.artifact_paths) >= {"heatmap", "overlay"}
+    assert Path(result.artifact_paths["heatmap"]).is_file()
+    assert Path(result.artifact_paths["overlay"]).is_file()
 
 
-def test_quality_reject_can_still_return_ng_when_patchcore_finds_obvious_defect() -> None:
+def test_quality_reject_can_still_return_ng_when_patchcore_finds_obvious_defect(tmp_path: Path) -> None:
     class _AnomalousPatchCore:
         def predict(self, _image, target_mask, _ignore_mask):
             return TextureAnomalyResult(
@@ -1219,10 +1216,8 @@ def test_quality_reject_can_still_return_ng_when_patchcore_finds_obvious_defect(
             seat_models=[],
             default_seat_model_id=None,
             output_json_path="results.json",
-            debug_dir="debug",
+            debug_dir=str(tmp_path / "debug"),
             capture_dir="capture",
-            save_debug_artifacts=False,
-            debug_artifact_mode="standard",
             capture_retries=1,
             part_id="seat_demo",
             fusion=FusionConfig(),
@@ -1286,3 +1281,4 @@ def test_quality_reject_can_still_return_ng_when_patchcore_finds_obvious_defect(
 
     assert result.status == "NG"
     assert result.reason == "texture_anomaly_quality_override"
+    assert set(result.artifact_paths) >= {"heatmap", "overlay"}

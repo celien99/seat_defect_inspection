@@ -68,7 +68,6 @@ def test_load_config_normalizes_nested_paths_and_default_seat_model(tmp_path: Pa
     assert config.capture_dir == str(
         (tmp_path / "outputs/seat_defect_inspection/capture").resolve()
     )
-    assert config.debug_artifact_mode == "standard"
     assert config.fusion.early_stop_on_ng is False
 
     camera = config.seat_models[0].cameras[0]
@@ -171,18 +170,22 @@ def test_load_yolo_training_default_data_path_is_resolved(tmp_path: Path) -> Non
     )
 
 
-def test_load_config_rejects_unknown_debug_artifact_mode(tmp_path: Path) -> None:
+def test_load_config_ignores_legacy_debug_artifact_fields(tmp_path: Path) -> None:
     config_path = tmp_path / "config.json"
     config_path.write_text(
         json.dumps(
             {
                 "seat_defect_inspection": {
+                    "save_debug_artifacts": False,
                     "debug_artifact_mode": "verbose",
                     "cameras": [
                         {
                             "camera_id": "cam_0",
                             "source": "0",
                             "patchcore_model_path": "model.npz",
+                            "patchcore": {
+                                "backbone_pretrained": True
+                            },
                         }
                     ],
                 }
@@ -191,13 +194,9 @@ def test_load_config_rejects_unknown_debug_artifact_mode(tmp_path: Path) -> None
         encoding="utf-8",
     )
 
-    try:
-        load_config(str(config_path))
-    except ValueError as exc:
-        message = str(exc)
-        assert "debug_artifact_mode" in message
-        return
-    raise AssertionError("expected ValueError for unknown debug_artifact_mode")
+    config = load_config(str(config_path))
+
+    assert config.cameras[0].camera_id == "cam_0"
 
 
 def test_load_config_ignores_legacy_ignore_classes_field(tmp_path: Path) -> None:

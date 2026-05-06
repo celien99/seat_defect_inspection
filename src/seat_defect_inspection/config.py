@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-
-# 这里只依赖调试图默认档位常量，避免导入 cvops 包形成循环依赖。
-from .debug_artifacts import DEFAULT_DEBUG_ARTIFACT_MODE
 from .schemas import BoundingBox
 
 
@@ -210,8 +207,6 @@ class InspectionConfig:
     output_json_path: str = "outputs/seat_defect_inspection/results.json"
     debug_dir: str = "outputs/seat_defect_inspection/debug"
     capture_dir: str = "outputs/seat_defect_inspection/capture"
-    save_debug_artifacts: bool = True
-    debug_artifact_mode: str = DEFAULT_DEBUG_ARTIFACT_MODE
     capture_retries: int = 3
     part_id: str = "seat_demo"
     fusion: FusionConfig = field(default_factory=FusionConfig)

@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from .config import CameraConfig, InspectionConfig, YoloTrainingConfig
-from .debug_artifacts import resolve_debug_artifact_names
 from .runtime_config_parsers import (
     _parse_inspection_config,
     _parse_yolo_training_config,
@@ -56,7 +55,6 @@ def _load_inspection_payload(path: str) -> tuple[Path, dict[str, Any]]:
 
 def _validate_inspection_config(config: InspectionConfig) -> None:
     """做整体验证，确保配置在进入主流程前就失败得足够早。"""
-    resolve_debug_artifact_names(config.debug_artifact_mode)
     if config.default_seat_model_id and config.seat_models:
         available_ids = {item.seat_model_id for item in config.seat_models}
         if config.default_seat_model_id not in available_ids:
