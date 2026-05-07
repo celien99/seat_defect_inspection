@@ -8,11 +8,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from media_inputs import infer_source_kind
+from seat_defect_core.schemas import FramePacket
+from seat_defect_core.util import build_model_scoped_root, write_image
 
 from ..config import CameraConfig
 from ..reporting import export_capture_manifest
-from ..schemas import CaptureRecord, CaptureSummary, FramePacket
-from ..util import build_model_scoped_root, write_image
+from ..schemas import CaptureRecord, CaptureSummary
 
 if TYPE_CHECKING:
     from .core import InspectionService
@@ -29,7 +30,7 @@ def capture_samples(
     interval_ms: int = 0,
 ) -> CaptureSummary:
     """每个启用机位抓取一帧或多帧并落盘。"""
-    context = service._resolve_context(seat_model_id)
+    context = service.resolve_context(seat_model_id)
     resolved_part_id = part_id or service.config.part_id
     sample_count = max(1, int(count))
     wait_seconds = max(0, int(interval_ms)) / 1000.0

@@ -6,7 +6,8 @@ from types import ModuleType
 
 import yaml
 
-from seat_defect_inspection.config import PreprocessConfig, YoloTrainingConfig
+from seat_defect_core.config import PreprocessConfig
+from seat_defect_inspection.config import YoloTrainingConfig
 from seat_defect_inspection.yolo.training import (
     YOLO_SEGMENT_MODEL,
     YOLO_SEGMENT_MODEL_YAML,
@@ -364,7 +365,7 @@ def test_import_ultralytics_yolo_ensures_local_config_dir(monkeypatch) -> None:
     ensure_calls: list[str] = []
 
     monkeypatch.setattr(
-        "seat_defect_inspection.yolo.detection._ensure_local_yolo_config_dir",
+        "seat_defect_core.yolo.detection._ensure_local_yolo_config_dir",
         lambda: ensure_calls.append("called"),
     )
     monkeypatch.setitem(sys.modules, "ultralytics", fake_module)

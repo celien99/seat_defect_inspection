@@ -106,3 +106,5 @@ src/
 Runtime behavior belongs in `seat_defect_core`: preprocessing, YOLO inference, ROI/masks, PatchCore, color branch, fusion, debug artifacts, and inspection reports.
 
 Engineering behavior belongs in `seat_defect_inspection`: CLI commands, config extensions, acquisition, capture manifest, offline-folder discovery, PatchCore training orchestration, YOLO training, and LabelMe conversion.
+
+Legacy runtime imports under `seat_defect_inspection` are intentionally removed. Import runtime APIs directly from `seat_defect_core`.

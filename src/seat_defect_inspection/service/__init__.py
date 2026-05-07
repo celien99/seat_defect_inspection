@@ -5,16 +5,18 @@ from __future__ import annotations
 from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
+from seat_defect_core.schemas import InspectionResult
+
 from ..config import InspectionConfig
-from ..schemas import CaptureSummary, InspectionResult
+from ..schemas import CaptureSummary
 
 if TYPE_CHECKING:
-    from .core import InspectionService, PreparedCameraSample, _CameraPipeline
+    from .core import CameraPipeline, InspectionService, PreparedCameraSample
 
 __all__ = [
     "InspectionService",
     "PreparedCameraSample",
-    "_CameraPipeline",
+    "CameraPipeline",
     "capture_samples",
     "inspect_image_folder",
     "run_inspection",
@@ -22,9 +24,9 @@ __all__ = [
 ]
 
 _LAZY_EXPORTS = {
+    "CameraPipeline": (".core", "CameraPipeline"),
     "InspectionService": (".core", "InspectionService"),
     "PreparedCameraSample": (".core", "PreparedCameraSample"),
-    "_CameraPipeline": (".core", "_CameraPipeline"),
 }
 
 

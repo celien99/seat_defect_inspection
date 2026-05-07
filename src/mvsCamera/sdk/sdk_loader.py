@@ -91,7 +91,6 @@ def _candidate_sdk_roots(local_dll_path: Path | None) -> list[Path]:
         add_root(local_dll_path.parent)
 
     for env_name in ENV_HINTS:
-        # 兼容不同机器上常见的环境变量命名。
         env_value = os.environ.get(env_name)
         if env_value:
             add_root(Path(env_value))

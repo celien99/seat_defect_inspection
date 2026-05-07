@@ -6,7 +6,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from seat_defect_inspection.patchcore import list_images
+from seat_defect_core.patchcore import list_images
 from seat_defect_inspection.runtime_config import load_config
 
 

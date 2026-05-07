@@ -7,19 +7,20 @@ from types import SimpleNamespace
 
 import numpy as np
 
-import seat_defect_inspection.patchcore.engine as patchcore_engine
-from seat_defect_inspection.config import AlignmentConfig, CameraConfig, ColorBranchConfig, DetectionConfig, FusionConfig, PatchCoreConfig, QualityGuardConfig, RoiRefineConfig
-from seat_defect_inspection.cvops import ImageQualityGuard, RoiRefineEngine
-from seat_defect_inspection.fusion import fuse_camera_results, should_early_stop_on_ng
-from seat_defect_inspection.patchcore import PatchCoreService, _decide_patchcore_anomaly
-from seat_defect_inspection.patchcore.features import _PatchBatch, _prepare_feature_image
-from seat_defect_inspection.patchcore.scoring import _analyze_patch_evidence
-from seat_defect_inspection.yolo import DetectionService
+import seat_defect_core.patchcore.engine as patchcore_engine
+from seat_defect_core.config import AlignmentConfig, ColorBranchConfig, DetectionConfig, FusionConfig, PatchCoreConfig, QualityGuardConfig, RoiRefineConfig
+from seat_defect_core.cvops import ImageQualityGuard, RoiRefineEngine
+from seat_defect_core.fusion import fuse_camera_results, should_early_stop_on_ng
+from seat_defect_core.patchcore import PatchCoreService, _decide_patchcore_anomaly
+from seat_defect_core.patchcore.features import _PatchBatch, _prepare_feature_image
+from seat_defect_core.patchcore.scoring import _analyze_patch_evidence
+from seat_defect_core.schemas import BoundingBox, CameraInspectionResult, DetectionResult, DetectionObject, FramePacket, ImageQualityDecision, ImageQualityMetrics, RoiRefineResult, TextureAnomalyResult
+from seat_defect_core.service.inspection_camera import inspect_one_camera
+from seat_defect_core.yolo import DetectionService
+from seat_defect_inspection.config import CameraConfig
 from seat_defect_inspection.runtime_config import load_yolo_training_config
-from seat_defect_inspection.schemas import BoundingBox, CameraInspectionResult, DetectionResult, DetectionObject, FramePacket, ImageQualityDecision, ImageQualityMetrics, RoiRefineResult, TextureAnomalyResult
-from seat_defect_inspection.service import InspectionService, PreparedCameraSample, _CameraPipeline
+from seat_defect_inspection.service import CameraPipeline, InspectionService, PreparedCameraSample
 from seat_defect_inspection.service.inspection import run_inspection as run_online_inspection
-from seat_defect_inspection.service.inspection_camera import _inspect_one_camera
 from seat_defect_inspection.service.offline_inspection import inspect_image_folder
 
 
@@ -386,7 +387,7 @@ def test_run_inspection_captures_all_cameras_before_processing(monkeypatch) -> N
             fusion=FusionConfig(),
         ),
         acquisition=_FakeAcquisition(),
-        _resolve_context=lambda _seat_model_id: SimpleNamespace(
+        resolve_context=lambda _seat_model_id: SimpleNamespace(
             cameras=cameras,
             pipelines={camera.camera_id: object() for camera in cameras},
             seat_model_id=None,
@@ -398,7 +399,7 @@ def test_run_inspection_captures_all_cameras_before_processing(monkeypatch) -> N
         return _camera_result(camera.camera_id, "OK")
 
     monkeypatch.setattr(
-        "seat_defect_inspection.service.inspection._inspect_one_camera",
+        "seat_defect_inspection.service.inspection.inspect_one_camera",
         fake_inspect,
     )
     monkeypatch.setattr(
@@ -449,7 +450,7 @@ def test_run_inspection_processes_cameras_concurrently_when_fail_fast_is_disable
             fusion=FusionConfig(early_stop_on_ng=False),
         ),
         acquisition=_FakeAcquisition(),
-        _resolve_context=lambda _seat_model_id: SimpleNamespace(
+        resolve_context=lambda _seat_model_id: SimpleNamespace(
             cameras=cameras,
             pipelines={camera.camera_id: object() for camera in cameras},
             seat_model_id=None,
@@ -469,7 +470,7 @@ def test_run_inspection_processes_cameras_concurrently_when_fail_fast_is_disable
         return _camera_result(camera.camera_id, "OK")
 
     monkeypatch.setattr(
-        "seat_defect_inspection.service.inspection._inspect_one_camera",
+        "seat_defect_inspection.service.inspection.inspect_one_camera",
         fake_inspect,
     )
     monkeypatch.setattr(
@@ -759,10 +760,10 @@ def test_inspection_service_rejects_missing_color_profile_when_color_branch_enab
         )
     )
 
-    service._build_patchcore_pipeline_signature = lambda _camera: None  # type: ignore[method-assign]
+    service.build_patchcore_pipeline_signature = lambda _camera: None  # type: ignore[method-assign]
 
     try:
-        service._load_model_bundle(camera, None)
+        service.load_model_bundle(camera, None)
     except RuntimeError as exc:
         assert "颜色分支" in str(exc)
         assert "train-patchcore" in str(exc)
@@ -790,7 +791,7 @@ def test_inspect_image_folder_restores_caller_state(tmp_path: Path, monkeypatch)
             output_json_path="original_results.json",
             debug_dir="original_debug",
         ),
-        _resolve_context=lambda _seat_model_id: context,
+        resolve_context=lambda _seat_model_id: context,
     )
     observed: dict[str, object] = {}
 
@@ -857,7 +858,7 @@ def test_camera_pipeline_quality_uses_roi_instead_of_full_frame() -> None:
         ),
     )
 
-    pipeline = _CameraPipeline(camera)
+    pipeline = CameraPipeline(camera)
     prepared = pipeline.prepare_image(image)
 
     assert full_frame_decision.accepted is False
@@ -1057,8 +1058,8 @@ def test_patchcore_pipeline_context_records_transparent_bgra_input_mode() -> Non
         )
     )
 
-    context = service._build_patchcore_pipeline_context(camera)
-    signature = service._build_patchcore_pipeline_signature(camera)
+    context = service.build_patchcore_pipeline_context(camera)
+    signature = service.build_patchcore_pipeline_signature(camera)
 
     changed_camera = CameraConfig(
         camera_id="cam_0",
@@ -1072,10 +1073,10 @@ def test_patchcore_pipeline_context_records_transparent_bgra_input_mode() -> Non
 
     assert context["signature_version"] == 2
     assert context["patchcore_input_mode"] == "transparent_bgra"
-    assert service._build_patchcore_pipeline_signature(changed_camera) != signature
+    assert service.build_patchcore_pipeline_signature(changed_camera) != signature
 
 
-def test_inspection_service_passes_target_and_ignore_masks_to_patchcore(tmp_path: Path) -> None:
+def test_inspection_service_passes_target_and_ignore_masks_to_patchcore(tmp_path: Path, monkeypatch) -> None:
     class _FakePatchCore:
         def __init__(self) -> None:
             self.image = None
@@ -1123,7 +1124,7 @@ def test_inspection_service_passes_target_and_ignore_masks_to_patchcore(tmp_path
     )
 
     fake_patchcore = _FakePatchCore()
-    service._load_model_bundle = lambda *_args, **_kwargs: SimpleNamespace(  # type: ignore[method-assign]
+    service.load_model_bundle = lambda *_args, **_kwargs: SimpleNamespace(  # type: ignore[method-assign]
         patchcore=fake_patchcore,
         color_profile=None,
     )
@@ -1166,7 +1167,7 @@ def test_inspection_service_passes_target_and_ignore_masks_to_patchcore(tmp_path
         image=np.zeros((32, 32, 3), dtype=np.uint8),
     )
 
-    result = _inspect_one_camera(
+    result = inspect_one_camera(
         service,
         frame_packet,
         camera,
@@ -1184,7 +1185,7 @@ def test_inspection_service_passes_target_and_ignore_masks_to_patchcore(tmp_path
     assert Path(result.artifact_paths["overlay"]).is_file()
 
 
-def test_quality_reject_can_still_return_ng_when_patchcore_finds_obvious_defect(tmp_path: Path) -> None:
+def test_quality_reject_can_still_return_ng_when_patchcore_finds_obvious_defect(tmp_path: Path, monkeypatch) -> None:
     class _AnomalousPatchCore:
         def predict(self, _image, target_mask, _ignore_mask):
             return TextureAnomalyResult(
@@ -1223,7 +1224,7 @@ def test_quality_reject_can_still_return_ng_when_patchcore_finds_obvious_defect(
             fusion=FusionConfig(),
         )
     )
-    service._load_model_bundle = lambda *_args, **_kwargs: SimpleNamespace(  # type: ignore[method-assign]
+    service.load_model_bundle = lambda *_args, **_kwargs: SimpleNamespace(  # type: ignore[method-assign]
         patchcore=_AnomalousPatchCore(),
         color_profile=None,
     )
@@ -1271,7 +1272,7 @@ def test_quality_reject_can_still_return_ng_when_patchcore_finds_obvious_defect(
         image=np.zeros((32, 32, 3), dtype=np.uint8),
     )
 
-    result = _inspect_one_camera(
+    result = inspect_one_camera(
         service,
         frame_packet,
         camera,

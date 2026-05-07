@@ -5,8 +5,8 @@ from pathlib import Path
 import cv2
 
 from demo_utils import write_image
-from seat_defect_inspection.config import PreprocessConfig
-from seat_defect_inspection.preprocess import PreprocessEngine
+from seat_defect_core.config import PreprocessConfig
+from seat_defect_core.preprocess import PreprocessEngine
 
 # 这个脚本只做当前项目流程里的第一步：
 # 原图 -> OpenCV 预处理 -> 保存结果

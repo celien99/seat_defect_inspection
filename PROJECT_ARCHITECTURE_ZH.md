@@ -1,6 +1,6 @@
 # Seat Defect Inspection 架构说明
 
-当前仓库已经收敛为“唯一 runtime + 工程工具层 + SDK 门面”的结构。核心目标是避免 `seat_defect_core` 和 `seat_defect_inspection` 各自维护一套预处理、YOLO、ROI、PatchCore、融合和报告逻辑。
+当前仓库采用“唯一 runtime + 工程工具层 + SDK 门面”的结构。`seat_defect_core` 是检测行为唯一真源；`seat_defect_inspection` 不再提供任何 runtime 兼容转发路径。
 
 ## 1. 架构边界
 
@@ -24,7 +24,6 @@ seat_defect_inspection
   - inspect / inspect-folder 编排
   - train-patchcore
   - train-yolo / labelme conversion
-  - 旧 runtime 导入路径的兼容转发层
 
 seat_defect_sdk
   外部图片输入 SDK 门面
@@ -57,19 +56,20 @@ src/
 ├── seat_defect_inspection/
 │   ├── cli.py
 │   ├── cli_commands/
+│   ├── config.py
+│   ├── schemas.py
 │   ├── runtime_config.py
 │   ├── runtime_config_parsers.py
 │   ├── acquisition.py
+│   ├── reporting.py
 │   ├── service/
-│   ├── yolo/training.py
-│   ├── yolo/dataset_validation.py
-│   ├── yolo/labelme_to_yolo.py
-│   └── compat runtime modules
+│   └── yolo/
+│       ├── training.py
+│       ├── dataset_validation.py
+│       └── labelme_to_yolo.py
 ├── media_inputs/
 └── mvsCamera/
 ```
-
-`seat_defect_inspection/preprocess`、`cvops`、`patchcore`、`yolo/detection.py`、`fusion.py` 现在都是兼容旧导入路径的转发层，真实实现位于 `seat_defect_core`。
 
 ## 3. Runtime 真源
 
@@ -92,7 +92,7 @@ src/
 | 多机位融合 | `src/seat_defect_core/fusion.py` |
 | 检测报告 | `src/seat_defect_core/reporting.py` |
 
-注意：`seat_defect_core.patchcore` 同时提供训练所需的 `fit/save/list_images`，这样 `train-patchcore` 也不会再依赖工程层副本。
+`seat_defect_core.patchcore` 同时提供训练所需的 `fit/save/list_images`，因此 `train-patchcore` 也不会依赖工程层副本。
 
 ## 4. 工程层职责
 
@@ -101,10 +101,11 @@ src/
 | 文件/目录 | 职责 |
 | --- | --- |
 | `cli.py`、`cli_commands/` | 命令入口和参数路由 |
-| `config.py` | 继承/复用 core 配置，并扩展 `train_good_dir`、`capture_dir`、`capture_retries`、`YoloTrainingConfig` |
-| `schemas.py` | 复用 core 结果结构，并额外定义 `CaptureRecord`、`CaptureSummary` |
+| `config.py` | 继承 core 顶层配置，只扩展 `train_good_dir`、`capture_dir`、`capture_retries`、`YoloTrainingConfig` |
+| `schemas.py` | 只定义 `CaptureRecord`、`CaptureSummary` |
 | `runtime_config.py`、`runtime_config_parsers.py` | 解析工程配置和 YOLO 训练块 |
-| `acquisition.py` | 把图片、视频、普通相机、MVS 相机统一成 `FramePacket` |
+| `acquisition.py` | 把图片、视频、普通相机、MVS 相机统一成 `seat_defect_core.schemas.FramePacket` |
+| `reporting.py` | 检测报告直接复用 core，只保留采图 manifest |
 | `service/core.py` | 继承 `seat_defect_core.service.core.InspectionService`，只补充 `AcquisitionService` |
 | `service/inspection.py` | 在线多机位采图、检测编排和 fail-fast |
 | `service/capture.py` | 多机位采图与 manifest |
@@ -113,7 +114,6 @@ src/
 | `yolo/training.py` | YOLO segmentation 训练 |
 | `yolo/dataset_validation.py` | YOLO 数据集预检 |
 | `yolo/labelme_to_yolo.py` | LabelMe 到 YOLO segmentation 转换 |
-| `reporting.py` | 检测报告转发到 core，只保留采图 manifest |
 
 ## 5. 主流程
 
@@ -166,24 +166,35 @@ cli_commands/train_yolo.py
   -> ultralytics.YOLO.train
 ```
 
-## 6. 兼容转发层
+## 6. Import 规则
 
-为了不破坏旧代码，以下旧导入路径仍可用，但它们不是实现真源：
+不保留兼容导入。任何 runtime 能力都必须直接从 `seat_defect_core` 导入：
 
-```text
-seat_defect_inspection.preprocess.engine
-seat_defect_inspection.cvops.*
-seat_defect_inspection.patchcore.*
-seat_defect_inspection.yolo.detection
-seat_defect_inspection.fusion
+```python
+from seat_defect_core.preprocess import PreprocessEngine
+from seat_defect_core.cvops import RoiRefineEngine
+from seat_defect_core.patchcore import PatchCoreService
+from seat_defect_core.yolo import DetectionService
+from seat_defect_core.fusion import fuse_camera_results
 ```
 
-这些模块通过 `sys.modules` 指向 `seat_defect_core` 对应模块。这样旧测试或外部代码 monkeypatch 私有符号时，也会落到同一个 runtime 模块对象上。
+工程入口从 `seat_defect_inspection` 导入：
+
+```python
+from seat_defect_inspection import run_inspection, inspect_image_folder
+from seat_defect_inspection.runtime_config import load_config
+```
+
+外部系统 SDK 从 `seat_defect_sdk` 导入：
+
+```python
+from seat_defect_sdk import CameraFrame, SeatDefectInspector
+```
 
 ## 7. 维护规则
 
 1. 改检测结果行为时，只改 `seat_defect_core`。
-2. `seat_defect_inspection` 不再新增预处理、YOLO 推理、ROI、PatchCore、融合或检测报告副本。
-3. 工程层新增能力时，应围绕输入、输出、训练、采图、CLI 编排展开。
-4. 如果新增 runtime 配置字段，先加到 `seat_defect_core.config` 和 core 解析器；工程层只在需要 CLI/训练扩展字段时继承补充。
-5. 新增测试优先断言 SDK 和 CLI 使用同一 core 行为，防止再出现双实现分叉。
+2. `seat_defect_inspection` 不新增预处理、YOLO 推理、ROI、PatchCore、融合、调试产物或检测报告副本。
+3. `seat_defect_inspection` 不新增 runtime re-export 模块；旧 import 失效是预期行为。
+4. 工程层新增能力时，应围绕输入、输出、训练、采图、CLI 编排展开。
+5. 如果新增 runtime 配置字段，先加到 `seat_defect_core.config` 和 core 解析器；工程层只在需要 CLI/训练扩展字段时继承补充。

@@ -15,9 +15,6 @@ from seat_defect_core.service.core import (
 from ..acquisition import AcquisitionService
 from ..config import InspectionConfig
 
-_CameraPipeline = CameraPipeline
-_ResolvedInspectionContext = ResolvedInspectionContext
-
 
 class InspectionService(CoreInspectionService):
     """带采图能力的工程层服务。"""
@@ -34,6 +31,4 @@ __all__ = [
     "InspectionService",
     "PreparedCameraSample",
     "ResolvedInspectionContext",
-    "_CameraPipeline",
-    "_ResolvedInspectionContext",
 ]

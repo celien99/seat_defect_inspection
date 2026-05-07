@@ -5,17 +5,17 @@ from pathlib import Path
 import cv2
 
 from demo_utils import ensure_raw_input_path, write_image, write_mask
-from seat_defect_inspection.config import (
+from seat_defect_core.config import (
     AlignmentConfig,
-    CameraConfig,
     DetectionConfig,
     PreprocessConfig,
     QualityGuardConfig,
     RoiRefineConfig,
 )
-from seat_defect_inspection.cvops.debug_artifacts import _render_detections
-from seat_defect_inspection.schemas import BoundingBox
-from seat_defect_inspection.service import _CameraPipeline
+from seat_defect_core.cvops.debug_artifacts import _render_detections
+from seat_defect_core.schemas import BoundingBox
+from seat_defect_core.service.core import CameraPipeline
+from seat_defect_inspection.config import CameraConfig
 
 # 这个脚本只看：
 # 1. 单张图片进入当前项目链路
@@ -103,7 +103,7 @@ def main() -> None:
     if image is None:
         raise FileNotFoundError(f"读取图片失败：{image_path}")
 
-    pipeline = _CameraPipeline(_build_camera())
+    pipeline = CameraPipeline(_build_camera())
     prepared = pipeline.prepare_image(image)
 
     sample_dir = Path(OUTPUT_DIR) / image_path.stem

@@ -46,7 +46,7 @@ def inspect_one_camera(
         )
         return _attach_debug_artifacts(service, frame_packet, prepared, seat_model_id, result)
 
-    model_bundle = service._load_model_bundle(camera, seat_model_id)
+    model_bundle = service.load_model_bundle(camera, seat_model_id)
     texture_input = select_patchcore_input(prepared.roi)
     texture_result = model_bundle.patchcore.predict(
         texture_input,

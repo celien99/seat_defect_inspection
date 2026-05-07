@@ -2,22 +2,26 @@
 
 from importlib import import_module
 
-from .config import (
+from seat_defect_core.config import (
     AlignmentConfig,
-    CameraConfig,
     ColorBranchConfig,
     DetectionConfig,
     FusionConfig,
-    InspectionConfig,
     PatchCoreConfig,
     PreprocessConfig,
     QualityGuardConfig,
     RoiRefineConfig,
+)
+from seat_defect_core.schemas import BoundingBox, InspectionResult
+
+from .config import (
+    CameraConfig,
+    InspectionConfig,
     SeatModelConfig,
     YoloTrainingConfig,
 )
 from .runtime_config import load_config, load_yolo_training_config
-from .schemas import BoundingBox, CaptureRecord, CaptureSummary, InspectionResult
+from .schemas import CaptureRecord, CaptureSummary
 
 __all__ = [
     "AlignmentConfig",
@@ -29,7 +33,6 @@ __all__ = [
     "DetectionConfig",
     "FusionConfig",
     "InspectionConfig",
-    "InspectionApiResponse",
     "InspectionResult",
     "InspectionService",
     "PatchCoreConfig",
@@ -37,11 +40,9 @@ __all__ = [
     "QualityGuardConfig",
     "RoiRefineConfig",
     "SeatModelConfig",
-    "SeatDefectInspector",
     "YoloTrainingConfig",
     "capture_samples",
-    "inspect_folder_once",
-    "inspect_once",
+    "inspect_image_folder",
     "load_config",
     "load_yolo_training_config",
     "run_inspection",
@@ -50,12 +51,9 @@ __all__ = [
 ]
 
 _LAZY_EXPORTS = {
-    "InspectionApiResponse": (".api", "InspectionApiResponse"),
     "InspectionService": (".service", "InspectionService"),
-    "SeatDefectInspector": (".api", "SeatDefectInspector"),
     "capture_samples": (".service", "capture_samples"),
-    "inspect_folder_once": (".api", "inspect_folder_once"),
-    "inspect_once": (".api", "inspect_once"),
+    "inspect_image_folder": (".service", "inspect_image_folder"),
     "run_inspection": (".service", "run_inspection"),
     "train_patchcore_models": (".service", "train_patchcore_models"),
     "train_yolo_model": (".yolo", "train_yolo_model"),

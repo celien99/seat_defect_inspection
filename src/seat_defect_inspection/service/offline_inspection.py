@@ -8,8 +8,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from seat_defect_core.util import write_json
+
 from ..reporting import resolve_inspection_archive_path
-from ..util import write_json
 from .inspection import run_inspection
 
 if TYPE_CHECKING:
@@ -40,7 +41,7 @@ def inspect_image_folder(
     if not input_root.is_dir():
         raise NotADirectoryError(f"离线检测输入目录不存在：{input_root}")
 
-    context = service._resolve_context(seat_model_id)
+    context = service.resolve_context(seat_model_id)
     if not context.cameras:
         raise ValueError("当前配置没有启用机位，无法执行离线检测")
 
@@ -65,7 +66,6 @@ def inspect_image_folder(
     }
 
     # 离线批量检测只改输入源和输出路径，核心模型缓存与流程缓存继续复用。
-    service.config.output_json_path = str(latest_output_path)
     service.config.output_json_path = str(latest_output_path)
     service.config.debug_dir = str(debug_dir)
 

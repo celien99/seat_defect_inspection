@@ -8,16 +8,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from seat_defect_core.config import (
-    AlignmentConfig,
     CameraConfig as CoreCameraConfig,
-    ColorBranchConfig,
-    DetectionConfig,
-    FusionConfig,
     InspectionConfig as CoreInspectionConfig,
-    PatchCoreConfig,
     PreprocessConfig,
-    QualityGuardConfig,
-    RoiRefineConfig,
     SeatModelConfig as CoreSeatModelConfig,
 )
 
@@ -66,16 +59,9 @@ class InspectionConfig(CoreInspectionConfig):
 
 
 __all__ = [
-    "AlignmentConfig",
     "CameraConfig",
-    "ColorBranchConfig",
-    "DetectionConfig",
-    "FusionConfig",
     "InspectionConfig",
-    "PatchCoreConfig",
     "PreprocessConfig",
-    "QualityGuardConfig",
-    "RoiRefineConfig",
     "SeatModelConfig",
     "YoloTrainingConfig",
 ]

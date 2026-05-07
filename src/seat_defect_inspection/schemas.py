@@ -1,25 +1,8 @@
-"""工程层数据结构。
-
-检测 runtime 结构统一从 ``seat_defect_core`` 导出；本模块只保留采图命令专用结构。
-"""
+"""工程层采图数据结构。"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-
-from seat_defect_core.schemas import (
-    BoundingBox,
-    CameraInspectionResult,
-    ColorAnomalyResult,
-    DetectionObject,
-    DetectionResult,
-    FramePacket,
-    ImageQualityDecision,
-    ImageQualityMetrics,
-    InspectionResult,
-    RoiRefineResult,
-    TextureAnomalyResult,
-)
 
 
 @dataclass(slots=True)
@@ -52,17 +35,6 @@ class CaptureSummary:
 
 
 __all__ = [
-    "BoundingBox",
-    "CameraInspectionResult",
     "CaptureRecord",
     "CaptureSummary",
-    "ColorAnomalyResult",
-    "DetectionObject",
-    "DetectionResult",
-    "FramePacket",
-    "ImageQualityDecision",
-    "ImageQualityMetrics",
-    "InspectionResult",
-    "RoiRefineResult",
-    "TextureAnomalyResult",
 ]

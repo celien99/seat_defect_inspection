@@ -195,7 +195,7 @@ class MvsCameraCapture:
         self._camera.close()
 
     def get(self, prop_id: int) -> float:
-        """兼容 OpenCV 的属性查询。"""
+        """Return OpenCV-style capture properties."""
         if prop_id == 3:
             return float(self._camera.width)
         if prop_id == 4:

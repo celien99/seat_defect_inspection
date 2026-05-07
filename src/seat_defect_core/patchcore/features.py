@@ -417,7 +417,7 @@ def _resolve_backbone_builder(backbone_name: str) -> tuple[Any, Any]:
 
 
 def _unwrap_state_dict(payload: Any) -> dict[str, Any]:
-    """兼容不同训练框架保存出来的权重字典外壳。"""
+    """Extract state_dict from common training-framework checkpoint wrappers."""
     if not isinstance(payload, dict):
         raise TypeError("backbone_weights_path 必须加载到 state_dict 字典")
     for candidate_key in ("state_dict", "model", "backbone", "network"):

@@ -11,8 +11,9 @@ from typing import Any
 import cv2
 import yaml
 
+from seat_defect_core.preprocess import PreprocessEngine
+
 from ..config import PreprocessConfig, YoloTrainingConfig
-from ..preprocess import PreprocessEngine
 from .dataset_validation import (
     IMAGE_SUFFIXES,
     OPTIONAL_DATASET_SPLITS,
@@ -286,7 +287,7 @@ def _load_yolo_model(config: YoloTrainingConfig, yolo_cls) -> tuple[Any, str, bo
 
 def _import_ultralytics_yolo():
     """Import Ultralytics only after redirecting its config dir into the project."""
-    from .detection import _ensure_local_yolo_config_dir
+    from seat_defect_core.yolo.detection import _ensure_local_yolo_config_dir
 
     _ensure_local_yolo_config_dir()
 

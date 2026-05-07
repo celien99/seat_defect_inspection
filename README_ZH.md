@@ -64,10 +64,11 @@ print(response.archive_report_path)
 离线图片文件夹批测仍从工程包调用：
 
 ```python
-from seat_defect_inspection import inspect_folder_once
+from seat_defect_inspection import inspect_image_folder, load_config
 
-summary = inspect_folder_once(
-    "configs/seat_defect_inspection.mvs.json",
+config = load_config("configs/seat_defect_inspection.mvs.json")
+summary = inspect_image_folder(
+    config,
     input_dir="offline_samples",
     output_dir="outputs/offline_check",
 )
@@ -148,7 +149,7 @@ offline_samples/
 src/
 ├── seat_defect_core/        # 唯一检测 runtime 真源
 ├── seat_defect_sdk/         # 外部图片输入 SDK 门面
-├── seat_defect_inspection/  # CLI、采图、训练、离线批测和兼容层
+├── seat_defect_inspection/  # CLI、采图、训练、离线批测
 ├── media_inputs/            # 图片/视频/相机输入抽象
 └── mvsCamera/               # 海康 MVS 适配
 ```
@@ -156,3 +157,5 @@ src/
 runtime 行为只在 `seat_defect_core` 维护：预处理、YOLO 推理、ROI/mask、PatchCore、颜色分支、融合、调试图和检测报告。
 
 工程行为在 `seat_defect_inspection` 维护：CLI、配置扩展、采图、manifest、离线目录发现、PatchCore 训练编排、YOLO 训练和 LabelMe 转换。
+
+不再保留旧 runtime 兼容导入路径。预处理、YOLO 推理、ROI、PatchCore、融合、调试产物等能力请直接从 `seat_defect_core` 导入。

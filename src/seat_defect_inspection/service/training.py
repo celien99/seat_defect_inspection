@@ -8,12 +8,13 @@ from typing import TYPE_CHECKING, Any
 
 import cv2
 
+from seat_defect_core.patchcore import ColorConsistencyService, list_images
+from seat_defect_core.util import format_reason_counter, select_patchcore_input, write_json
+
 from ..config import CameraConfig
-from ..patchcore import ColorConsistencyService, list_images
-from ..util import format_reason_counter, select_patchcore_input, write_json
 
 if TYPE_CHECKING:
-    from .core import InspectionService, _CameraPipeline
+    from .core import CameraPipeline, InspectionService
 
 
 def train_patchcore_models(
@@ -22,8 +23,8 @@ def train_patchcore_models(
 ) -> list[dict[str, Any]]:
     """按机位训练 PatchCore 模型。"""
     summaries: list[dict[str, Any]] = []
-    for candidate_model_id in service._resolve_training_scope(seat_model_id):
-        context = service._resolve_context(candidate_model_id)
+    for candidate_model_id in _resolve_training_scope(service, seat_model_id):
+        context = service.resolve_context(candidate_model_id)
         for camera in context.cameras:
             summaries.append(
                 _train_one_camera(
@@ -41,7 +42,7 @@ def _train_one_camera(
     *,
     seat_model_id: str | None,
     camera: CameraConfig,
-    pipeline: "_CameraPipeline",
+    pipeline: "CameraPipeline",
 ) -> dict[str, Any]:
     """训练单个机位的 PatchCore 模型，并按需补充颜色分支。"""
     if not camera.train_good_dir:
@@ -96,7 +97,7 @@ def _train_one_camera(
             "3) ROI 精修后的有效区域是否正常。"
         )
 
-    patchcore = service._build_patchcore_service(camera)
+    patchcore = service.build_patchcore_service(camera)
     try:
         patchcore_summary = patchcore.fit(patchcore_samples)
     except ValueError as exc:
@@ -126,8 +127,8 @@ def _train_one_camera(
             "reason": "color_insensitive_mode",
         }
 
-    patchcore_pipeline_context = service._build_patchcore_pipeline_context(camera)
-    patchcore_pipeline_signature = service._build_patchcore_pipeline_signature(camera)
+    patchcore_pipeline_context = service.build_patchcore_pipeline_context(camera)
+    patchcore_pipeline_signature = service.build_patchcore_pipeline_signature(camera)
     patchcore.save(
         camera.patchcore_model_path,
         color_profile=color_profile,
@@ -150,3 +151,15 @@ def _train_one_camera(
 def _write_training_summary(model_path: str, summary: dict[str, Any]) -> None:
     """把训练摘要写到模型文件旁边，便于现场排查。"""
     write_json(Path(model_path).with_suffix(".summary.json"), summary)
+
+
+def _resolve_training_scope(
+    service: "InspectionService",
+    seat_model_id: str | None,
+) -> list[str | None]:
+    """Resolve the seat-model routes that should be trained."""
+    if seat_model_id is not None:
+        return [seat_model_id]
+    if service.config.seat_models:
+        return [seat_model.seat_model_id for seat_model in service.config.seat_models]
+    return [None]

@@ -11,9 +11,9 @@ from seat_defect_core.reporting import (
     export_inspection_report,
     resolve_inspection_archive_path,
 )
+from seat_defect_core.util import write_json
 
 from .schemas import CaptureRecord, CaptureSummary
-from .util import write_json
 
 
 def export_capture_manifest(summary: CaptureSummary) -> Path:

@@ -6,14 +6,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from seat_defect_core.fusion import fuse_camera_results, should_early_stop_on_ng
+from seat_defect_core.schemas import CameraInspectionResult, FramePacket, InspectionResult
+from seat_defect_core.service.inspection_camera import inspect_one_camera
+
 from ..config import CameraConfig
-from ..fusion import fuse_camera_results, should_early_stop_on_ng
 from ..reporting import export_inspection_report
-from ..schemas import CameraInspectionResult, FramePacket, InspectionResult
 from .inspection_camera import (
     _build_capture_failed_result,
     _build_reject_result,
-    _inspect_one_camera,
 )
 
 if TYPE_CHECKING:
@@ -36,7 +37,7 @@ def run_inspection(
     seat_model_id: str | None = None,
 ) -> InspectionResult:
     """抓取各机位图像，执行检测并输出融合结果。"""
-    context = service._resolve_context(seat_model_id)
+    context = service.resolve_context(seat_model_id)
     resolved_part_id = part_id or service.config.part_id
 
     if not context.cameras:
@@ -127,7 +128,7 @@ def run_inspection(
 
         try:
             camera_results.append(
-                _inspect_one_camera(
+                inspect_one_camera(
                     service,
                     frame_packet,
                     camera,
@@ -277,7 +278,7 @@ def _inspect_one_captured_camera(
 ) -> CameraInspectionResult:
     """Wrap one camera inspection so concurrent mode still returns normalized results."""
     try:
-        return _inspect_one_camera(
+        return inspect_one_camera(
             service,
             frame_packet,
             camera,

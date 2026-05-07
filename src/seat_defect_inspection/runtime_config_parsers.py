@@ -11,21 +11,24 @@ import os
 from pathlib import Path
 from typing import Any
 
-from .config import (
+from seat_defect_core.config import (
     AlignmentConfig,
-    CameraConfig,
     ColorBranchConfig,
     DetectionConfig,
     FusionConfig,
-    InspectionConfig,
     PatchCoreConfig,
     PreprocessConfig,
     QualityGuardConfig,
     RoiRefineConfig,
+)
+from seat_defect_core.schemas import BoundingBox
+
+from .config import (
+    CameraConfig,
+    InspectionConfig,
     SeatModelConfig,
     YoloTrainingConfig,
 )
-from .schemas import BoundingBox
 
 _LOCAL_PATH_SUFFIXES = {
     ".pt",

@@ -1,14 +1,11 @@
-"""兼容旧导入路径的单机位检测转发层。"""
+"""工程层单机位失败结果工具。"""
 
 from __future__ import annotations
 
 from media_inputs import infer_source_kind
-from seat_defect_core.service.inspection_camera import inspect_one_camera
+from seat_defect_core.schemas import CameraInspectionResult
 
 from ..config import CameraConfig
-from ..schemas import CameraInspectionResult
-
-_inspect_one_camera = inspect_one_camera
 
 
 def _build_reject_result(
@@ -52,6 +49,4 @@ def _build_capture_failed_result(
 __all__ = [
     "_build_capture_failed_result",
     "_build_reject_result",
-    "_inspect_one_camera",
-    "inspect_one_camera",
 ]

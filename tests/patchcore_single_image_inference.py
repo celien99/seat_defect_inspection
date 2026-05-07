@@ -7,19 +7,19 @@ import cv2
 import numpy as np
 
 from demo_utils import ensure_raw_input_path, write_image, write_mask
-from seat_defect_inspection.config import (
+from seat_defect_core.config import (
     AlignmentConfig,
-    CameraConfig,
     DetectionConfig,
     PatchCoreConfig,
     PreprocessConfig,
     QualityGuardConfig,
     RoiRefineConfig,
 )
-from seat_defect_inspection.cvops.debug_artifacts import _overlay_heatmap, _render_detections
-from seat_defect_inspection.patchcore import PatchCoreService
-from seat_defect_inspection.schemas import BoundingBox
-from seat_defect_inspection.service import _CameraPipeline
+from seat_defect_core.cvops.debug_artifacts import _overlay_heatmap, _render_detections
+from seat_defect_core.patchcore import PatchCoreService
+from seat_defect_core.schemas import BoundingBox
+from seat_defect_core.service.core import CameraPipeline
+from seat_defect_inspection.config import CameraConfig
 
 # 这个脚本只做：
 # 1. 单张图片进入当前项目里的 YOLO + OpenCV + ROI 链路
@@ -140,7 +140,7 @@ def _resolve_image_path() -> Path:
 
 
 def _resolve_patchcore_service(
-    pipeline: _CameraPipeline,
+    pipeline: CameraPipeline,
     camera: CameraConfig,
 ) -> tuple[PatchCoreService, bool, dict[str, object] | None]:
     model_path = Path(camera.patchcore_model_path)
@@ -212,7 +212,7 @@ def main() -> None:
     if image is None:
         raise FileNotFoundError(f"读取图片失败：{image_path}")
 
-    pipeline = _CameraPipeline(camera)
+    pipeline = CameraPipeline(camera)
     prepared = pipeline.prepare_image(image)
     if prepared.rejection_reason is not None or prepared.roi is None:
         raise RuntimeError(f"当前图片在项目链路中被拒绝：{prepared.rejection_reason}")
