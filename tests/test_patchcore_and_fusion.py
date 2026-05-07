@@ -5,6 +5,7 @@ import threading
 from pathlib import Path
 from types import SimpleNamespace
 
+import cv2
 import numpy as np
 
 import seat_defect_core.patchcore.engine as patchcore_engine
@@ -22,6 +23,7 @@ from seat_defect_inspection.runtime_config import load_yolo_training_config
 from seat_defect_inspection.service import CameraPipeline, InspectionService, PreparedCameraSample
 from seat_defect_inspection.service.inspection import run_inspection as run_online_inspection
 from seat_defect_inspection.service.offline_inspection import inspect_image_folder
+from seat_defect_inspection.service.training import train_patchcore_models
 
 
 def _install_stubbed_full_patchcore(monkeypatch) -> None:
@@ -866,6 +868,107 @@ def test_camera_pipeline_quality_uses_roi_instead_of_full_frame() -> None:
     assert prepared.quality is not None
     assert prepared.quality.accepted is True
     assert prepared.rejection_reason is None
+
+
+def test_train_patchcore_writes_per_image_audit_artifacts(tmp_path: Path) -> None:
+    train_dir = tmp_path / "train_good"
+    train_dir.mkdir()
+    image_path = train_dir / "sample.png"
+
+    cv2.imwrite(str(image_path), np.full((24, 24, 3), 120, dtype=np.uint8))
+
+    class _FakePatchCore:
+        def fit(self, samples):
+            self.samples = list(samples)
+            return {
+                "backend": "full",
+                "train_sample_count": len(self.samples),
+                "patch_count": 4,
+                "memory_bank_size": 2,
+                "threshold": 1.0,
+            }
+
+        def save(self, model_path, **_kwargs):
+            Path(model_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(model_path).write_bytes(b"fake")
+
+    class _FakePipeline:
+        def prepare_image(self, _image):
+            target_mask = np.ones((16, 16), dtype=np.uint8)
+            roi = RoiRefineResult(
+                crop_box=BoundingBox(1.0, 2.0, 17.0, 18.0),
+                roi_image=np.full((16, 16, 3), 80, dtype=np.uint8),
+                aligned_roi_image=np.full((16, 16, 3), 90, dtype=np.uint8),
+                texture_ready_image=np.dstack(
+                    [
+                        np.full((16, 16, 3), 100, dtype=np.uint8),
+                        target_mask * 255,
+                    ]
+                ),
+                target_mask=target_mask,
+                valid_mask=target_mask,
+                ignore_mask=np.zeros((16, 16), dtype=np.uint8),
+                foreground_weight=None,
+            )
+            return PreparedCameraSample(
+                quality=ImageQualityDecision(
+                    accepted=True,
+                    reason=None,
+                    metrics=ImageQualityMetrics(
+                        laplacian_variance=100.0,
+                        brightness_mean=90.0,
+                        overexposed_ratio=0.0,
+                        underexposed_ratio=0.0,
+                        is_black_frame=False,
+                        is_white_frame=False,
+                    ),
+                ),
+                preprocessed_image=np.full((24, 24, 3), 120, dtype=np.uint8),
+                detection=DetectionResult(
+                    target=DetectionObject(
+                        label="seat",
+                        confidence=1.0,
+                        bounding_box=BoundingBox(1.0, 2.0, 17.0, 18.0),
+                    ),
+                    used_fallback=True,
+                ),
+                roi=roi,
+                rejection_reason=None,
+            )
+
+    camera = CameraConfig(
+        camera_id="cam_0",
+        source="0",
+        patchcore_model_path=str(tmp_path / "models" / "cam_0_patchcore.npz"),
+        train_good_dir=str(train_dir),
+    )
+    service = SimpleNamespace(
+        config=SimpleNamespace(seat_models=[]),
+        resolve_context=lambda _seat_model_id: SimpleNamespace(
+            seat_model_id=None,
+            cameras=[camera],
+            pipelines={"cam_0": _FakePipeline()},
+        ),
+        build_patchcore_service=lambda _camera: _FakePatchCore(),
+        build_patchcore_pipeline_context=lambda _camera: {"pipeline": "fake"},
+        build_patchcore_pipeline_signature=lambda _camera: "signature",
+    )
+
+    summaries = train_patchcore_models(service)
+
+    summary = summaries[0]
+    assert summary["accepted_image_count"] == 1
+    assert summary["skipped_image_count"] == 0
+    audit_dir = Path(summary["training_audit_dir"])
+    records_path = Path(summary["training_audit_records_path"])
+    assert records_path.is_file()
+    loaded_records = json.loads(records_path.read_text(encoding="utf-8"))["records"]
+    assert loaded_records[0]["status"] == "accepted"
+    assert Path(loaded_records[0]["artifacts"]["patchcore_input"]).is_file()
+    assert Path(loaded_records[0]["artifacts"]["valid_mask"]).is_file()
+    assert audit_dir.is_dir()
+    summary_path = Path(camera.patchcore_model_path).with_suffix(".summary.json")
+    assert summary_path.is_file()
 
 
 def test_full_patchcore_fit_predict_and_reload(tmp_path, monkeypatch) -> None:
