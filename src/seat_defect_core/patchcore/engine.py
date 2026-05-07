@@ -21,7 +21,7 @@ from .scoring import (
     _threshold_margin,
     coreset_subsample_indices,
     min_distance_to_bank,
-    normalize_map,
+    normalize_map_against_threshold,
 )
 from ..config import PatchCoreConfig
 from ..schemas import TextureAnomalyResult
@@ -195,9 +195,12 @@ class PatchCoreService:
             _as_binary_mask(target_mask, image.shape[:2]) > 0,
             resized_patch_mask > 0.5,
         )
-        heatmap = normalize_map(heatmap, mask=active_mask)
-
         decision_threshold = float(self.threshold) * _threshold_margin(self.config.decision_score_margin)
+        heatmap = normalize_map_against_threshold(
+            heatmap,
+            threshold=decision_threshold,
+            mask=active_mask,
+        )
         evidence = _analyze_patch_evidence(
             patch_map,
             score=float(score),
@@ -226,6 +229,14 @@ class PatchCoreService:
             largest_component_patch_count=int(evidence["largest_component_patch_count"]),
             strong_patch_ratio=float(evidence["strong_patch_ratio"]),
             largest_component_patch_ratio=float(evidence["largest_component_patch_ratio"]),
+            decision_patch_count=int(evidence["decision_patch_count"]),
+            largest_decision_component_patch_count=int(
+                evidence["largest_decision_component_patch_count"],
+            ),
+            decision_patch_ratio=float(evidence["decision_patch_ratio"]),
+            largest_decision_component_patch_ratio=float(
+                evidence["largest_decision_component_patch_ratio"],
+            ),
             decision_mode=decision_mode,
         )
 

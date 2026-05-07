@@ -14,7 +14,7 @@ from seat_defect_core.cvops import ImageQualityGuard, RoiRefineEngine
 from seat_defect_core.fusion import fuse_camera_results, should_early_stop_on_ng
 from seat_defect_core.patchcore import PatchCoreService, _decide_patchcore_anomaly
 from seat_defect_core.patchcore.features import _PatchBatch, _prepare_feature_image
-from seat_defect_core.patchcore.scoring import _analyze_patch_evidence
+from seat_defect_core.patchcore.scoring import _analyze_patch_evidence, normalize_map_against_threshold
 from seat_defect_core.schemas import BoundingBox, CameraInspectionResult, DetectionResult, DetectionObject, FramePacket, ImageQualityDecision, ImageQualityMetrics, RoiRefineResult, TextureAnomalyResult
 from seat_defect_core.service.inspection_camera import inspect_one_camera
 from seat_defect_core.yolo import DetectionService
@@ -151,6 +151,8 @@ def test_patchcore_peak_rule_triggers_for_small_local_defect() -> None:
         "largest_component_patch_count": 2,
         "strong_patch_ratio": 0.008,
         "largest_component_patch_ratio": 0.008,
+        "decision_patch_count": 2,
+        "largest_decision_component_patch_count": 2,
     }
 
     is_anomaly, decision_mode = _decide_patchcore_anomaly(
@@ -172,6 +174,8 @@ def test_patchcore_peak_rule_rejects_single_patch_noise() -> None:
         "largest_component_patch_count": 1,
         "strong_patch_ratio": 0.01,
         "largest_component_patch_ratio": 0.01,
+        "decision_patch_count": 1,
+        "largest_decision_component_patch_count": 1,
     }
 
     is_anomaly, decision_mode = _decide_patchcore_anomaly(
@@ -203,6 +207,8 @@ def test_patchcore_peak_rule_triggers_for_cam0_like_visible_defect() -> None:
         "largest_component_patch_count": 3,
         "strong_patch_ratio": 0.0049504950495,
         "largest_component_patch_ratio": 0.0024752475247,
+        "decision_patch_count": 3,
+        "largest_decision_component_patch_count": 2,
     }
 
     is_anomaly, decision_mode = _decide_patchcore_anomaly(
@@ -234,6 +240,8 @@ def test_patchcore_peak_rule_rejects_cam1_like_small_hotspot() -> None:
         "largest_component_patch_count": 2,
         "strong_patch_ratio": 0.0031678986272,
         "largest_component_patch_ratio": 0.0021119324181,
+        "decision_patch_count": 1,
+        "largest_decision_component_patch_count": 1,
     }
 
     is_anomaly, decision_mode = _decide_patchcore_anomaly(
@@ -267,6 +275,45 @@ def test_patchcore_strong_patch_floor_respects_ratio() -> None:
 
     assert int(evidence["strong_patch_count"]) == 2
     assert int(evidence["largest_component_patch_count"]) == 2
+
+
+def test_patchcore_evidence_tracks_decision_threshold_components() -> None:
+    config = PatchCoreConfig(
+        decision_score_margin=1.0,
+        strong_patch_score_ratio=0.8,
+    )
+    patch_map = np.asarray(
+        [
+            [0.0, 1.3, 1.35],
+            [0.0, 0.9, 0.2],
+        ],
+        dtype=np.float32,
+    )
+
+    evidence = _analyze_patch_evidence(
+        patch_map,
+        score=0.95,
+        threshold=1.0,
+        valid_patch_count=6,
+        config=config,
+    )
+
+    assert int(evidence["decision_patch_count"]) == 2
+    assert int(evidence["largest_decision_component_patch_count"]) == 2
+
+
+def test_threshold_normalized_heatmap_stays_cool_below_threshold() -> None:
+    heatmap = np.asarray(
+        [
+            [20.0, 40.0],
+            [45.0, 49.0],
+        ],
+        dtype=np.float32,
+    )
+
+    normalized = normalize_map_against_threshold(heatmap, threshold=100.0)
+
+    assert float(normalized.max()) < 0.01
 
 
 def test_full_patchcore_threshold_uses_sample_exclusive_calibration(monkeypatch) -> None:

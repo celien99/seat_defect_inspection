@@ -174,6 +174,10 @@ class TextureAnomalyResult:
     largest_component_patch_count: int = 0
     strong_patch_ratio: float = 0.0
     largest_component_patch_ratio: float = 0.0
+    decision_patch_count: int = 0
+    largest_decision_component_patch_count: int = 0
+    decision_patch_ratio: float = 0.0
+    largest_decision_component_patch_ratio: float = 0.0
     decision_mode: str = "none"
 
 

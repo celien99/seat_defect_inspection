@@ -74,6 +74,14 @@ def _camera_result_to_dict(result: CameraInspectionResult) -> dict:
                 "largest_component_patch_count": result.texture_result.largest_component_patch_count,
                 "strong_patch_ratio": result.texture_result.strong_patch_ratio,
                 "largest_component_patch_ratio": result.texture_result.largest_component_patch_ratio,
+                "decision_patch_count": result.texture_result.decision_patch_count,
+                "largest_decision_component_patch_count": (
+                    result.texture_result.largest_decision_component_patch_count
+                ),
+                "decision_patch_ratio": result.texture_result.decision_patch_ratio,
+                "largest_decision_component_patch_ratio": (
+                    result.texture_result.largest_decision_component_patch_ratio
+                ),
                 "decision_mode": result.texture_result.decision_mode,
             }
             if result.texture_result is not None

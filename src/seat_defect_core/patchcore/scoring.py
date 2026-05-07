@@ -12,7 +12,7 @@ def _determine_memory_bank_size(
     embeddings: np.ndarray,
     config: PatchCoreConfig,
 ) -> int:
-    """根据配置和样本量确定 memory bank 目标容量。"""
+    """Choose a target memory-bank size from config and sample count."""
     ratio = float(np.clip(config.coreset_sampling_ratio, 0.0, 1.0))
     if ratio > 0.0:
         ratio_target = max(1, int(round(len(embeddings) * ratio)))
@@ -22,7 +22,7 @@ def _determine_memory_bank_size(
 
 
 def coreset_subsample_indices(embeddings: np.ndarray, max_points: int) -> np.ndarray:
-    """贪心 coreset 采样，返回被保留的 embedding 行索引。"""
+    """Greedy coreset sampling that keeps representative embedding rows."""
     if len(embeddings) <= max_points:
         return np.arange(len(embeddings), dtype=np.int32)
 
@@ -41,7 +41,7 @@ def coreset_subsample_indices(embeddings: np.ndarray, max_points: int) -> np.nda
 
 
 def _exclude_embedding_slice(embeddings: np.ndarray, start: int, end: int) -> np.ndarray:
-    """从拼接后的 embedding 中排除当前样本切片。"""
+    """Exclude the current sample slice from a concatenated embedding array."""
     if start <= 0:
         return embeddings[end:]
     if end >= len(embeddings):
@@ -54,7 +54,7 @@ def min_distance_to_bank(
     memory_bank: np.ndarray,
     chunk_size: int = 128,
 ) -> np.ndarray:
-    """分块计算每个 embedding 到 memory bank 的最近距离。"""
+    """Compute per-embedding nearest distance to the memory bank in chunks."""
     scores = []
     for start in range(0, len(embeddings), chunk_size):
         chunk = embeddings[start : start + chunk_size]
@@ -64,7 +64,7 @@ def min_distance_to_bank(
 
 
 def _score_embeddings_leave_one_out(embeddings: np.ndarray) -> tuple[float, np.ndarray]:
-    """缺少外部校准 bank 时，退化成样本内 leave-one-out 打分。"""
+    """Fallback leave-one-out scoring when no external bank is available."""
     if len(embeddings) <= 1:
         patch_scores = np.zeros((len(embeddings),), dtype=np.float32)
         return 0.0, patch_scores
@@ -81,7 +81,7 @@ def normalize_map(
     *,
     mask: np.ndarray | None = None,
 ) -> np.ndarray:
-    """把热力图线性归一化到 [0, 1]，可选只在有效区域内归一化。"""
+    """Normalize a heatmap to [0, 1] within the active region."""
     normalized = np.zeros_like(heatmap, dtype=np.float32)
     if mask is None:
         active_mask = np.ones(heatmap.shape, dtype=bool)
@@ -102,8 +102,38 @@ def normalize_map(
     return normalized.astype(np.float32)
 
 
+def normalize_map_against_threshold(
+    heatmap: np.ndarray,
+    *,
+    threshold: float,
+    mask: np.ndarray | None = None,
+    floor_ratio: float = 0.5,
+) -> np.ndarray:
+    """Normalize a heatmap against an absolute decision threshold."""
+    normalized = np.zeros_like(heatmap, dtype=np.float32)
+    reference = float(threshold)
+    if reference <= 1e-6:
+        return normalize_map(heatmap, mask=mask)
+
+    if mask is None:
+        active_mask = np.ones(heatmap.shape, dtype=bool)
+    else:
+        active_mask = np.asarray(mask).astype(bool)
+        if active_mask.shape != heatmap.shape:
+            raise ValueError("normalize_map_against_threshold mask shape must match heatmap")
+        if not active_mask.any():
+            return normalized
+
+    clipped_floor_ratio = float(np.clip(floor_ratio, 0.0, 0.95))
+    floor_value = reference * clipped_floor_ratio
+    scale = max(reference - floor_value, 1e-6)
+    active_values = heatmap[active_mask].astype(np.float32)
+    normalized[active_mask] = np.clip((active_values - floor_value) / scale, 0.0, 1.0)
+    return normalized.astype(np.float32)
+
+
 def _threshold_margin(value: float) -> float:
-    """阈值倍率默认不允许低于 1，避免把模型阈值反向调松。"""
+    """Do not allow threshold multipliers below 1.0."""
     return max(float(value), 1.0)
 
 
@@ -114,16 +144,16 @@ def _decide_patchcore_anomaly(
     evidence: dict[str, float | int],
     config: PatchCoreConfig,
 ) -> tuple[bool, str]:
-    """组合常规规则和小缺陷快路径，给出最终异常判定。"""
+    """Combine normal and small-defect rules into one final anomaly decision."""
     decision_threshold = float(threshold) * _threshold_margin(config.decision_score_margin)
     critical_score_threshold = float(threshold) * _threshold_margin(config.critical_score_margin)
     critical_peak_threshold = float(threshold) * _threshold_margin(config.critical_peak_score_margin)
     peak_min_patch_count = max(2, int(config.critical_min_component_patch_count))
     component_min_patch_count = max(2, int(config.critical_min_component_patch_count))
-    # peak_rule 仍然要比 normal_rule 更宽松，否则小面积真实缺陷会被漏掉；
-    # 但也不能宽松到把边缘/附件热点都放行。
-    peak_strong_patch_ratio_threshold = min(float(config.min_strong_patch_ratio) * 0.8, 0.0048)
-    peak_component_ratio_threshold = min(float(config.min_strong_component_ratio) * 0.6, 0.0024)
+    decision_patch_count = int(evidence.get("decision_patch_count", 0))
+    largest_decision_component_patch_count = int(
+        evidence.get("largest_decision_component_patch_count", 0),
+    )
 
     normal_trigger = (
         float(score) > decision_threshold
@@ -137,13 +167,12 @@ def _decide_patchcore_anomaly(
         and float(evidence["peak_patch_score"]) > critical_peak_threshold
         and int(evidence["largest_component_patch_count"]) >= component_min_patch_count
     )
-    # 小面积缺陷容易被 99 分位 image score 稀释，这里补一条“局部峰值”直通规则。
+    # Small visible defects may not lift the image-level score enough, but they
+    # should still fire when a compact patch cluster already exceeds the final decision threshold.
     peak_trigger = (
         float(evidence["peak_patch_score"]) > critical_peak_threshold
-        and int(evidence["strong_patch_count"]) >= peak_min_patch_count
-        and int(evidence["largest_component_patch_count"]) >= component_min_patch_count
-        and float(evidence["strong_patch_ratio"]) >= peak_strong_patch_ratio_threshold
-        and float(evidence["largest_component_patch_ratio"]) >= peak_component_ratio_threshold
+        and decision_patch_count >= peak_min_patch_count
+        and largest_decision_component_patch_count >= component_min_patch_count
     )
 
     if normal_trigger and critical_trigger:
@@ -165,7 +194,7 @@ def _analyze_patch_evidence(
     valid_patch_count: int,
     config: PatchCoreConfig,
 ) -> dict[str, float | int]:
-    """从 patch map 中提取最终判定依赖的统计证据。"""
+    """Extract patch statistics consumed by the final anomaly decision."""
     peak_patch_score = float(patch_map.max()) if patch_map.size > 0 else 0.0
     if patch_map.size == 0 or valid_patch_count <= 0:
         return {
@@ -174,28 +203,43 @@ def _analyze_patch_evidence(
             "largest_component_patch_count": 0,
             "strong_patch_ratio": 0.0,
             "largest_component_patch_ratio": 0.0,
+            "decision_patch_count": 0,
+            "largest_decision_component_patch_count": 0,
+            "decision_patch_ratio": 0.0,
+            "largest_decision_component_patch_ratio": 0.0,
         }
 
-    # 强 patch 门槛按比例收紧，而不是强行抬到完整 threshold。
     strong_patch_ratio = float(np.clip(config.strong_patch_score_ratio, 0.0, 1.0))
     strong_patch_floor = max(float(threshold), float(score)) * strong_patch_ratio
     strong_patch_mask = (patch_map >= strong_patch_floor).astype(np.uint8)
-    strong_patch_count = int(strong_patch_mask.sum())
-    if strong_patch_count == 0:
-        return {
-            "peak_patch_score": peak_patch_score,
-            "strong_patch_count": 0,
-            "largest_component_patch_count": 0,
-            "strong_patch_ratio": 0.0,
-            "largest_component_patch_ratio": 0.0,
-        }
+    strong_patch_count, largest_component_patch_count = _measure_patch_components(strong_patch_mask)
 
-    _, _, stats, _ = cv2.connectedComponentsWithStats(strong_patch_mask, connectivity=8)
-    largest_component_patch_count = int(stats[1:, cv2.CC_STAT_AREA].max()) if len(stats) > 1 else 0
+    decision_threshold = float(threshold) * _threshold_margin(config.decision_score_margin)
+    decision_patch_mask = (patch_map >= decision_threshold).astype(np.uint8)
+    decision_patch_count, largest_decision_component_patch_count = _measure_patch_components(
+        decision_patch_mask,
+    )
+
     return {
         "peak_patch_score": peak_patch_score,
         "strong_patch_count": strong_patch_count,
         "largest_component_patch_count": largest_component_patch_count,
         "strong_patch_ratio": float(strong_patch_count) / float(max(1, valid_patch_count)),
         "largest_component_patch_ratio": float(largest_component_patch_count) / float(max(1, valid_patch_count)),
+        "decision_patch_count": decision_patch_count,
+        "largest_decision_component_patch_count": largest_decision_component_patch_count,
+        "decision_patch_ratio": float(decision_patch_count) / float(max(1, valid_patch_count)),
+        "largest_decision_component_patch_ratio": float(largest_decision_component_patch_count)
+        / float(max(1, valid_patch_count)),
     }
+
+
+def _measure_patch_components(binary_mask: np.ndarray) -> tuple[int, int]:
+    """Return active patch count and largest connected component size."""
+    patch_count = int(binary_mask.sum())
+    if patch_count == 0:
+        return 0, 0
+
+    _, _, stats, _ = cv2.connectedComponentsWithStats(binary_mask, connectivity=8)
+    largest_component_patch_count = int(stats[1:, cv2.CC_STAT_AREA].max()) if len(stats) > 1 else 0
+    return patch_count, largest_component_patch_count
