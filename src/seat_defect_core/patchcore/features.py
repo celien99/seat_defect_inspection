@@ -12,6 +12,11 @@ import numpy as np
 try:
     import torch
     import torch.nn.functional as torch_f
+except ImportError:  # pragma: no cover - fallback for minimal runtime
+    torch = None
+    torch_f = None
+
+try:
     from torchvision.models import (
         ResNet18_Weights,
         ResNet50_Weights,
@@ -21,14 +26,33 @@ try:
         wide_resnet50_2,
     )
 except ImportError:  # pragma: no cover - fallback for minimal runtime
-    torch = None
-    torch_f = None
     ResNet18_Weights = None
     ResNet50_Weights = None
     Wide_ResNet50_2_Weights = None
     resnet18 = None
     resnet50 = None
     wide_resnet50_2 = None
+
+try:
+    from torchvision.models import (
+        ViT_B_16_Weights,
+        ViT_B_32_Weights,
+        ViT_L_16_Weights,
+        ViT_L_32_Weights,
+        vit_b_16,
+        vit_b_32,
+        vit_l_16,
+        vit_l_32,
+    )
+except ImportError:  # pragma: no cover - depends on torchvision version
+    ViT_B_16_Weights = None
+    ViT_B_32_Weights = None
+    ViT_L_16_Weights = None
+    ViT_L_32_Weights = None
+    vit_b_16 = None
+    vit_b_32 = None
+    vit_l_16 = None
+    vit_l_32 = None
 
 from ..config import PatchCoreConfig
 
@@ -52,12 +76,19 @@ def extract_patch_embeddings(
     *,
     target_mask: np.ndarray | None = None,
     ignore_mask: np.ndarray | None = None,
-    feature_extractor: "_TorchPatchFeatureExtractor | None" = None,
+    feature_extractor: "_TorchPatchFeatureExtractor | _TorchTransformerPatchFeatureExtractor | None" = None,
 ) -> tuple[np.ndarray, _PatchBatch]:
     """按配置后端提取有效 patch embedding。"""
     backend = config.backend.strip().lower()
     if backend == "full":
         extractor = feature_extractor or _TorchPatchFeatureExtractor(config)
+        return extractor.extract(
+            image,
+            target_mask=target_mask,
+            ignore_mask=ignore_mask,
+        )
+    if backend == "transformer":
+        extractor = feature_extractor or _TorchTransformerPatchFeatureExtractor(config)
         return extractor.extract(
             image,
             target_mask=target_mask,
@@ -293,6 +324,69 @@ class _TorchPatchFeatureExtractor:
         return _hook
 
 
+class _TorchTransformerPatchFeatureExtractor:
+    """Vision Transformer 特征提取器，用于 Transformer PatchCore 后端。"""
+
+    def __init__(self, config: PatchCoreConfig) -> None:
+        if torch is None:
+            raise RuntimeError(
+                "Transformer PatchCore 依赖 torch 和 torchvision，请先安装可用运行环境。"
+            )
+        self.config = config
+        self.device = _resolve_torch_device(config.backbone_device)
+        self.model = _load_torch_transformer_backbone(config)
+        self.model.to(self.device)
+        self.model.eval()
+
+    def extract(
+        self,
+        image: np.ndarray,
+        *,
+        target_mask: np.ndarray | None = None,
+        ignore_mask: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, _PatchBatch]:
+        """提取 ViT patch token embedding，并按 mask 筛出有效 token。"""
+        feature_image = _prepare_feature_image(image, target_mask=target_mask)
+        resized_image = cv2.resize(
+            feature_image,
+            (self.config.image_size, self.config.image_size),
+            interpolation=cv2.INTER_AREA,
+        )
+        input_tensor = _prepare_torch_input(resized_image, self.config).to(self.device)
+        with torch.inference_mode():
+            token_embeddings = _extract_vit_patch_tokens(self.model, input_tensor)
+
+        token_array = token_embeddings[0].detach().cpu().numpy().astype(np.float32)
+        token_count = int(token_array.shape[0])
+        grid_rows, grid_cols = _resolve_square_token_grid(token_count)
+
+        target_grid = _resize_mask_to_grid(
+            target_mask,
+            grid_rows,
+            grid_cols,
+            interpolation=cv2.INTER_AREA,
+        )
+        ignore_grid = _resize_mask_to_grid(
+            ignore_mask,
+            grid_rows,
+            grid_cols,
+            interpolation=cv2.INTER_AREA,
+        )
+        valid_mask = np.logical_and(
+            target_grid >= float(self.config.min_target_coverage),
+            ignore_grid <= float(self.config.max_ignore_overlap),
+        )
+        valid_indices = np.flatnonzero(valid_mask.reshape(-1)).astype(np.int32)
+        embeddings = token_array[valid_indices].astype(np.float32)
+
+        return embeddings, _PatchBatch(
+            grid_shape=(grid_rows, grid_cols),
+            valid_indices=valid_indices,
+            valid_patch_count=int(valid_indices.size),
+            total_patch_count=int(token_count),
+        )
+
+
 def _prepare_torch_input(image: np.ndarray, config: PatchCoreConfig) -> Any:
     """把 ROI 图像转成 torchvision backbone 可直接消费的输入。"""
     image = _prepare_feature_image(image)
@@ -398,6 +492,52 @@ def _load_torch_backbone(config: PatchCoreConfig) -> Any:
         ) from exc
 
 
+def _load_torch_transformer_backbone(config: PatchCoreConfig) -> Any:
+    """加载 Transformer PatchCore 使用的 torchvision ViT backbone。"""
+    builder, default_weights, default_image_size = _resolve_transformer_builder(config.backbone_name)
+    if config.backbone_weights_path:
+        model = builder(weights=None, image_size=int(config.image_size))
+        state_dict = torch.load(config.backbone_weights_path, map_location="cpu")
+        state_dict = _unwrap_state_dict(state_dict)
+        normalized_state_dict = _normalize_state_dict_keys(state_dict)
+        missing_keys, unexpected_keys = model.load_state_dict(normalized_state_dict, strict=False)
+        critical_missing = [key for key in missing_keys if not key.startswith("heads.")]
+        if critical_missing:
+            raise RuntimeError(
+                "backbone_weights_path 无法正确恢复 Transformer PatchCore backbone，"
+                f"缺少关键参数数量: {len(critical_missing)}"
+            )
+        if unexpected_keys:
+            raise RuntimeError(
+                "backbone_weights_path 包含无法匹配的 Transformer 参数，"
+                f"请确认权重与 backbone_name 对齐，异常参数数量: {len(unexpected_keys)}"
+            )
+        return model
+
+    if not config.backbone_pretrained:
+        raise RuntimeError(
+            "Transformer PatchCore 不能使用随机初始化 backbone。"
+            " 请设置 patchcore.backbone_pretrained=true，"
+            "或配置 patchcore.backbone_weights_path 指向本地预训练权重。"
+        )
+    if int(config.image_size) != int(default_image_size):
+        raise RuntimeError(
+            "torchvision 预训练 ViT 权重要求 patchcore.image_size="
+            f"{default_image_size}，当前为 {config.image_size}。"
+            " 请把 image_size 调整为该值，或配置 backbone_weights_path 使用本地匹配权重。"
+        )
+
+    torch.hub.set_dir(str(Path.cwd() / ".torch_cache"))
+    try:
+        return builder(weights=default_weights)
+    except Exception as exc:  # pragma: no cover - depends on local cache/network
+        raise RuntimeError(
+            "Transformer PatchCore 已启用 backbone_pretrained=True，但当前环境无法加载预训练权重。"
+            "可选方案：1) 配置 patchcore.backbone_weights_path 指向本地权重；"
+            "2) 先把 torchvision ViT 权重缓存到项目 .torch_cache。"
+        ) from exc
+
+
 def _resolve_backbone_builder(backbone_name: str) -> tuple[Any, Any]:
     """根据 backbone 名称返回构造器和默认权重枚举。"""
     normalized = backbone_name.strip().lower()
@@ -414,6 +554,42 @@ def _resolve_backbone_builder(backbone_name: str) -> tuple[Any, Any]:
         supported = ", ".join(sorted(builders))
         raise ValueError(f"Unsupported PatchCore backbone `{backbone_name}`，当前支持：{supported}")
     return builder
+
+
+def _resolve_transformer_builder(backbone_name: str) -> tuple[Any, Any, int]:
+    """根据 Transformer backbone 名称返回构造器、默认权重和输入尺寸。"""
+    normalized = backbone_name.strip().lower()
+    builders = {
+        "vit_b_16": (vit_b_16, ViT_B_16_Weights.DEFAULT if ViT_B_16_Weights is not None else None, 224),
+        "vit_b_32": (vit_b_32, ViT_B_32_Weights.DEFAULT if ViT_B_32_Weights is not None else None, 224),
+        "vit_l_16": (vit_l_16, ViT_L_16_Weights.DEFAULT if ViT_L_16_Weights is not None else None, 224),
+        "vit_l_32": (vit_l_32, ViT_L_32_Weights.DEFAULT if ViT_L_32_Weights is not None else None, 224),
+    }
+    builder = builders.get(normalized)
+    if builder is None or builder[0] is None:
+        supported = ", ".join(sorted(builders))
+        raise ValueError(f"Unsupported Transformer PatchCore backbone `{backbone_name}`，当前支持：{supported}")
+    return builder
+
+
+def _extract_vit_patch_tokens(model: Any, input_tensor: Any) -> Any:
+    """Return final ViT patch tokens without the classification head."""
+    if not hasattr(model, "_process_input") or not hasattr(model, "class_token") or not hasattr(model, "encoder"):
+        raise ValueError("Transformer PatchCore 当前只支持 torchvision VisionTransformer 模型")
+    tokens = model._process_input(input_tensor)
+    batch_size = tokens.shape[0]
+    class_token = model.class_token.expand(batch_size, -1, -1)
+    tokens = torch.cat([class_token, tokens], dim=1)
+    encoded = model.encoder(tokens)
+    return encoded[:, 1:, :]
+
+
+def _resolve_square_token_grid(token_count: int) -> tuple[int, int]:
+    """Resolve torchvision ViT's square patch-token grid."""
+    grid_size = int(round(token_count ** 0.5))
+    if grid_size * grid_size != token_count:
+        raise ValueError(f"Transformer patch token 数量不是方形网格: {token_count}")
+    return grid_size, grid_size
 
 
 def _unwrap_state_dict(payload: Any) -> dict[str, Any]:

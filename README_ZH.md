@@ -85,15 +85,16 @@ print(summary["sample_count"], summary["ok_count"], summary["ng_count"])
 
 `train_good_dir` 保存的是相机原图。训练 PatchCore 时仍会复用正式链路，先走预处理、YOLO、ROI 和 mask 构造，再拟合 PatchCore。
 
-如果修改了 `preprocess`、YOLO 检测参数、ROI/mask、PatchCore 输入模式或 full 后端配置，必须重新执行 `train-patchcore`。模型包会保存 `pipeline_signature`，线上加载时会校验签名。
+如果修改了 `preprocess`、YOLO 检测参数、ROI/mask、PatchCore 输入模式或 PatchCore 后端配置，必须重新执行 `train-patchcore`。模型包会保存 `pipeline_signature`，线上加载时会校验签名。
 
-当前运行配置只允许完整版本 PatchCore：
+当前运行配置支持两类 torch 后端：
 
-- `patchcore.backend = full`
-- 默认 backbone 为 `wide_resnet50_2`
-- 默认特征层为 `layer2 / layer3`
-- 需要可用的 `torch / torchvision`
-- 如 `backbone_pretrained = false`，必须配置本地 `backbone_weights_path`
+- `patchcore.backend = full`：默认 CNN PatchCore，backbone 为 `wide_resnet50_2`，默认特征层为 `layer2 / layer3`。
+- `patchcore.backend = transformer`：ViT token PatchCore，当前支持 `vit_b_16`、`vit_b_32`、`vit_l_16`、`vit_l_32`。
+- 两类后端都需要可用的 `torch / torchvision`。
+- 如 `backbone_pretrained = false`，必须配置本地 `backbone_weights_path`。
+
+Transformer 后端示例配置见 `configs/seat_defect_inspection.transformer_patchcore.example.json`。该后端只替代 PatchCore 特征提取与异常检测步骤，不替代 YOLO 定位、ROI/mask、质量门控或多机位融合。
 
 PatchCore 参数排查见 [PATCHCORE_TUNING_GUIDE_ZH.md](./PATCHCORE_TUNING_GUIDE_ZH.md)。
 

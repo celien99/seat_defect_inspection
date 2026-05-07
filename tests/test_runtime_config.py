@@ -265,6 +265,75 @@ def test_load_config_rejects_full_patchcore_without_backbone_weights(tmp_path: P
     raise AssertionError("expected ValueError for full patchcore without backbone weights")
 
 
+def test_load_config_accepts_transformer_patchcore_with_backbone_weights(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "seat_defect_inspection": {
+                    "cameras": [
+                        {
+                            "camera_id": "cam_0",
+                            "source": "0",
+                            "patchcore_model_path": "model.npz",
+                            "patchcore": {
+                                "backend": "transformer",
+                                "backbone_name": "vit_b_16",
+                                "backbone_weights_path": "models/vit_b_16.pth",
+                                "image_size": 224,
+                            },
+                        }
+                    ],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_config(str(config_path))
+
+    camera = config.cameras[0]
+    assert camera.patchcore.backend == "transformer"
+    assert camera.patchcore.backbone_name == "vit_b_16"
+    assert camera.patchcore.image_size == 224
+    assert camera.patchcore.backbone_weights_path == str(
+        (tmp_path / "models/vit_b_16.pth").resolve()
+    )
+
+
+def test_load_config_rejects_transformer_patchcore_without_backbone_weights(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "seat_defect_inspection": {
+                    "cameras": [
+                        {
+                            "camera_id": "cam_0",
+                            "source": "0",
+                            "patchcore_model_path": "model.npz",
+                            "patchcore": {
+                                "backend": "transformer",
+                                "backbone_pretrained": False,
+                            },
+                        }
+                    ],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        load_config(str(config_path))
+    except ValueError as exc:
+        message = str(exc)
+        assert "patchcore.backend=transformer" in message
+        assert "cam_0" in message
+        return
+    raise AssertionError("expected ValueError for transformer patchcore without backbone weights")
+
+
 def test_load_config_rejects_handcrafted_patchcore_backend(tmp_path: Path) -> None:
     config_path = tmp_path / "config.json"
     config_path.write_text(
@@ -293,7 +362,8 @@ def test_load_config_rejects_handcrafted_patchcore_backend(tmp_path: Path) -> No
         message = str(exc)
         assert "patchcore.backend" in message
         assert "handcrafted" in message
-        assert "可选值: full" in message
+        assert "full" in message
+        assert "transformer" in message
         return
     raise AssertionError("expected ValueError for handcrafted patchcore backend")
 

@@ -9,7 +9,7 @@ from typing import Any
 from .config import CameraConfig, InspectionConfig
 from .runtime_config_parsers import _parse_inspection_config
 
-_SUPPORTED_PATCHCORE_BACKENDS = {"full"}
+_SUPPORTED_PATCHCORE_BACKENDS = {"full", "transformer"}
 
 
 def load_config(path: str) -> InspectionConfig:
@@ -77,12 +77,12 @@ def _validate_patchcore_config(camera: CameraConfig, *, scope: str) -> None:
             f"{scope} 中 camera `{camera.camera_id}` 的 patchcore.backend "
             f"`{camera.patchcore.backend}` 不受支持，可选值: {supported}"
         )
-    if backend != "full":
+    if backend not in {"full", "transformer"}:
         return
     if camera.patchcore.backbone_pretrained or camera.patchcore.backbone_weights_path:
         return
     raise ValueError(
-        f"{scope} 中 camera `{camera.camera_id}` 配置了 patchcore.backend=full，"
+        f"{scope} 中 camera `{camera.camera_id}` 配置了 patchcore.backend={backend}，"
         "但没有提供可用 backbone 权重。"
         " 请设置 patchcore.backbone_pretrained=true，"
         "或配置 patchcore.backbone_weights_path。"

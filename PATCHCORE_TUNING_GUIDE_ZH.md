@@ -87,17 +87,36 @@ configs/seat_defect_inspection.mvs.json
 
 | 参数 | 当前值 | 作用 | 调大/调强的效果 | 调小/调弱的效果 |
 | --- | --- | --- | --- | --- |
-| `backend` | `full` | 选择 PatchCore 后端 | 当前项目必须使用 full CNN 深特征 | 不应改成 handcrafted |
+| `backend` | `full` | 选择 PatchCore 后端 | `full` 使用 CNN feature map；`transformer` 使用 ViT patch token | 不应改成 handcrafted |
 | `image_size` | `320` | PatchCore ROI 输入尺寸 | 保留更多细节，小缺陷更容易被看见，但更慢 | 更快，但小划痕、小脏污可能被压掉 |
 | `texture_input` | `lab_l` | CNN 输入前的纹理口径 | `lab_l` 更关注亮度和纹理，降低颜色波动影响 | 若改 RGB，可增强颜色缺陷敏感度，但也更容易受光照/色差影响 |
-| `backbone_name` | `wide_resnet50_2` | CNN 特征骨干 | 特征更强，分布表达更稳，但更慢 | 较小 backbone 更快，可能降低复杂纹理区分能力 |
-| `feature_layers` | `layer2/layer3` | 使用哪些 CNN 中间层 | 增加层可能增强表达，但计算更重 | 层太少会丢部分纹理或结构信息 |
+| `backbone_name` | `wide_resnet50_2` | 特征骨干 | `full` 支持 `resnet18/resnet50/wide_resnet50_2`；`transformer` 支持 `vit_b_16/vit_b_32/vit_l_16/vit_l_32` | 较小 backbone 更快，可能降低复杂纹理区分能力 |
+| `feature_layers` | `layer2/layer3` | CNN 中间层 | 只对 `full` 后端生效，增加层可能增强表达但计算更重 | 层太少会丢部分纹理或结构信息 |
 | `feature_pool_kernel_size` | `3` | 对特征图做局部平均 | 更抗噪，热力图更平滑 | 更敏感，小缺陷更尖锐，也更容易误报 |
 | `backbone_pretrained` | `true` | 是否使用预训练权重 | 必须启用或提供本地权重 | 随机初始化 backbone 没有工业检测意义 |
 | `backbone_weights_path` | 空 | 本地预训练权重路径 | 离线现场推荐配置，避免下载依赖 | 为空时依赖 torchvision 缓存或网络 |
 | `backbone_device` | `cuda` | CNN 特征提取设备 | 影响速度，不应影响质量 | CPU 更慢 |
 
-注意：当前 full 后端主要从 CNN feature map 提 embedding，`patch_size` 和 `stride` 对质量影响较弱，更多是历史 handcrafted 路径留下的配置项和模型元数据。
+注意：`full` 后端主要从 CNN feature map 提 embedding，`patch_size` 和 `stride` 对质量影响较弱，更多是历史 handcrafted 路径留下的配置项和模型元数据。`transformer` 后端从 ViT patch token 提 embedding，token 网格由 ViT 自身 patch size 决定；使用 torchvision 预训练 ViT 权重时，`image_size` 应设为 `224`，或改用与本地权重匹配的输入尺寸。
+
+Transformer 后端示例：
+
+```json
+"patchcore": {
+  "backend": "transformer",
+  "image_size": 224,
+  "texture_input": "lab_l",
+  "backbone_name": "vit_b_16",
+  "backbone_pretrained": true,
+  "backbone_device": "cuda",
+  "max_memory": 512,
+  "coreset_sampling_ratio": 0.1,
+  "min_target_coverage": 0.55,
+  "max_ignore_overlap": 0.15
+}
+```
+
+该后端只替代 PatchCore 的特征提取和异常评分步骤。YOLO 定位、ROI/mask、质量门控、多机位融合仍沿用当前确定性流程。
 
 ## 5. Memory Bank 和阈值参数
 
@@ -304,4 +323,3 @@ seat-defect-inspection train-patchcore \
 REJECT 先查 YOLO / 质量 / valid_mask；
 改了输入链路就重训。
 ```
-

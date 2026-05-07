@@ -69,6 +69,51 @@ def _install_stubbed_full_patchcore(monkeypatch) -> None:
     )
 
 
+def _install_stubbed_transformer_patchcore(monkeypatch) -> None:
+    """Avoid torch/backbone dependencies while exercising the transformer backend contract."""
+
+    def fake_get_torch_feature_extractor(self):
+        return object()
+
+    def fake_extract_patch_embeddings(
+        image,
+        _config,
+        *,
+        target_mask=None,
+        ignore_mask=None,
+        feature_extractor=None,
+    ):
+        mean_value = float(np.asarray(image)[:, :, :3].mean())
+        base = 0.0 if mean_value < 128.0 else 5.0
+        embeddings = np.asarray(
+            [
+                [base, base + 0.1, base + 0.2],
+                [base + 0.3, base + 0.4, base + 0.5],
+                [base + 0.6, base + 0.7, base + 0.8],
+                [base + 0.9, base + 1.0, base + 1.1],
+            ],
+            dtype=np.float32,
+        )
+        batch = _PatchBatch(
+            grid_shape=(2, 2),
+            valid_indices=np.asarray([0, 1, 2, 3], dtype=np.int64),
+            valid_patch_count=4,
+            total_patch_count=4,
+        )
+        return embeddings, batch
+
+    monkeypatch.setattr(
+        PatchCoreService,
+        "_get_torch_feature_extractor",
+        fake_get_torch_feature_extractor,
+    )
+    monkeypatch.setattr(
+        patchcore_engine,
+        "extract_patch_embeddings",
+        fake_extract_patch_embeddings,
+    )
+
+
 def _camera_result(camera_id: str, status: str) -> CameraInspectionResult:
     return CameraInspectionResult(
         camera_id=camera_id,
@@ -1051,6 +1096,48 @@ def test_full_patchcore_fit_predict_and_reload(tmp_path, monkeypatch) -> None:
     loaded = PatchCoreService.load_bundle(model_path).patchcore
     reloaded_result = loaded.predict(*samples[1])
 
+    assert reloaded_result.heatmap.shape == samples[1][0].shape[:2]
+    assert reloaded_result.total_patch_count >= reloaded_result.valid_patch_count > 0
+
+
+def test_transformer_patchcore_fit_predict_and_reload(tmp_path, monkeypatch) -> None:
+    _install_stubbed_transformer_patchcore(monkeypatch)
+    config = PatchCoreConfig(
+        backend="transformer",
+        backbone_name="vit_b_16",
+        backbone_weights_path="local_vit_b_16.pth",
+        image_size=224,
+        max_memory=32,
+        texture_input="lab_l",
+        coreset_sampling_ratio=0.5,
+    )
+    service = PatchCoreService(config)
+
+    rng = np.random.default_rng(43)
+    samples = []
+    for _ in range(3):
+        image = rng.integers(0, 255, size=(64, 64, 3), dtype=np.uint8)
+        target_mask = np.ones((64, 64), dtype=np.uint8) * 255
+        ignore_mask = np.zeros((64, 64), dtype=np.uint8)
+        samples.append((image, target_mask, ignore_mask))
+
+    summary = service.fit(samples)
+    assert summary["backend"] == "transformer"
+    assert int(summary["train_sample_count"]) == 3
+    assert int(summary["memory_bank_size"]) > 0
+
+    result = service.predict(*samples[0])
+    assert result.heatmap.shape == samples[0][0].shape[:2]
+    assert result.total_patch_count >= result.valid_patch_count > 0
+
+    model_path = tmp_path / "transformer_patchcore_test.npz"
+    service.save(model_path)
+    loaded = PatchCoreService.load_bundle(model_path).patchcore
+    reloaded_result = loaded.predict(*samples[1])
+
+    assert loaded.config.backend == "transformer"
+    assert loaded.config.backbone_name == "vit_b_16"
+    assert loaded.config.image_size == 224
     assert reloaded_result.heatmap.shape == samples[1][0].shape[:2]
     assert reloaded_result.total_patch_count >= reloaded_result.valid_patch_count > 0
 

@@ -11,7 +11,11 @@ import cv2
 import numpy as np
 
 from .color_branch import ColorReferenceProfile
-from .features import _TorchPatchFeatureExtractor, extract_patch_embeddings
+from .features import (
+    _TorchPatchFeatureExtractor,
+    _TorchTransformerPatchFeatureExtractor,
+    extract_patch_embeddings,
+)
 from .scoring import (
     _analyze_patch_evidence,
     _decide_patchcore_anomaly,
@@ -65,7 +69,9 @@ class PatchCoreService:
         self.feature_mean = feature_mean
         self.feature_std = feature_std
         self.threshold = threshold
-        self._torch_feature_extractor: _TorchPatchFeatureExtractor | None = None
+        self._torch_feature_extractor: (
+            _TorchPatchFeatureExtractor | _TorchTransformerPatchFeatureExtractor | None
+        ) = None
 
     def fit(
         self,
@@ -386,12 +392,18 @@ class PatchCoreService:
         """Apply training-time feature normalization."""
         return ((embeddings - self.feature_mean) / self.feature_std).astype(np.float32)
 
-    def _get_torch_feature_extractor(self) -> "_TorchPatchFeatureExtractor | None":
-        """Lazy-init the full-backend torch feature extractor."""
-        if self.config.backend.strip().lower() != "full":
+    def _get_torch_feature_extractor(
+        self,
+    ) -> "_TorchPatchFeatureExtractor | _TorchTransformerPatchFeatureExtractor | None":
+        """Lazy-init torch-backed feature extractors."""
+        backend = self.config.backend.strip().lower()
+        if backend not in {"full", "transformer"}:
             return None
         if self._torch_feature_extractor is None:
-            self._torch_feature_extractor = _TorchPatchFeatureExtractor(self.config)
+            if backend == "transformer":
+                self._torch_feature_extractor = _TorchTransformerPatchFeatureExtractor(self.config)
+            else:
+                self._torch_feature_extractor = _TorchPatchFeatureExtractor(self.config)
         return self._torch_feature_extractor
 
 
