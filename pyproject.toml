@@ -3,24 +3,36 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "seat-defect-inspection"
+name = "seat-defect-sdk"
 version = "0.1.0"
-description = "Independent production-grade automotive seat defect inspection project"
-readme = "README.md"
+description = "SDK runtime for automotive seat defect inspection from externally captured images"
+readme = "SDK_README.md"
 requires-python = ">=3.10"
 dependencies = [
+  "numpy",
   "opencv-python",
-  "pyyaml",
   "torch",
   "torchvision",
   "ultralytics",
 ]
 
-[project.scripts]
-seat-defect-inspection = "seat_defect_inspection.cli:main"
-
 [tool.setuptools]
 package-dir = {"" = "src"}
+include-package-data = false
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = [
+  "seat_defect_sdk",
+  "seat_defect_sdk.*",
+  "seat_defect_core",
+  "seat_defect_core.*",
+]
+exclude = [
+  "seat_defect_inspection",
+  "seat_defect_inspection.*",
+  "media_inputs",
+  "media_inputs.*",
+  "mvsCamera",
+  "mvsCamera.*",
+]

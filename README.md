@@ -33,32 +33,47 @@ seat-defect-inspection inspect --config configs/seat_defect_inspection.mvs.json 
 seat-defect-inspection inspect-folder --config configs/seat_defect_inspection.mvs.json --input-dir offline_samples
 ```
 
-## Python API
+## Python SDK
 
-External projects can call the inspection flow directly instead of driving the CLI:
+External projects can call the inspection flow directly through the standalone `seat_defect_sdk` package. The SDK does not capture images; callers pass one image per configured camera:
 
 ```python
-from seat_defect_inspection import inspect_once
+import cv2
+from seat_defect_sdk import inspect_once
 
-result = inspect_once(
+cam_0_image = cv2.imread("cam_0.png")
+cam_1_image = cv2.imread("cam_1.png")
+
+response = inspect_once(
     "configs/seat_defect_inspection.mvs.json",
+    frames=[
+        {"camera_id": "cam_0", "image": cam_0_image, "source": "memory://cam_0"},
+        {"camera_id": "cam_1", "image": cam_1_image, "source": "memory://cam_1"},
+    ],
     part_id="seat_000001",
     seat_model_id="seat_model_a",
 )
-print(result.status, result.decision_reason)
-print(result.report_path)
-print(result.archive_report_path)
-print(result.artifact_paths)
+print(response.status, response.decision_reason)
+print(response.report_path)
+print(response.archive_report_path)
+print(response.artifact_paths)
 ```
 
-For long-running services, reuse one inspector instance so model and camera pipeline caches stay warm:
+For long-running services, reuse one inspector instance so model and pipeline caches stay warm:
 
 ```python
-from seat_defect_inspection import SeatDefectInspector
+from seat_defect_sdk import CameraFrame, SeatDefectInspector
 
 inspector = SeatDefectInspector("configs/seat_defect_inspection.mvs.json")
-result = inspector.inspect(part_id="seat_000001", seat_model_id="seat_model_a")
-payload = result.to_dict()
+response = inspector.inspect(
+    frames=[
+        CameraFrame(camera_id="cam_0", image=cam_0_image, source="memory://cam_0"),
+        CameraFrame(camera_id="cam_1", image=cam_1_image, source="memory://cam_1"),
+    ],
+    part_id="seat_000001",
+    seat_model_id="seat_model_a",
+)
+payload = response.to_dict()
 print(payload["status"], payload["report_path"], payload["artifact_paths"])
 ```
 

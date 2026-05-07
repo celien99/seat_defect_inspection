@@ -75,39 +75,54 @@ seat-defect-inspection inspect-folder \
   --input-dir offline_samples
 ```
 
-## Python API 调用
+## Python SDK 调用
 
-外部项目不需要通过命令行驱动主流程，可以直接把本项目作为包安装后调用：
+外部项目不需要通过命令行驱动主流程，可以直接把本项目作为 SDK 包安装后调用：
 
 ```bash
 pip install -e /path/to/seat_defect_inspection
 ```
 
-单次检测：
+SDK 包名是 `seat_defect_sdk`。SDK 的 `inspect` 不负责采图，调用方需要自己从相机或其它系统拿到图片，再按 `camera_id + image` 传入：
 
 ```python
-from seat_defect_inspection import inspect_once
+import cv2
+from seat_defect_sdk import inspect_once
 
-result = inspect_once(
+cam_0_image = cv2.imread("cam_0.png")
+cam_1_image = cv2.imread("cam_1.png")
+
+response = inspect_once(
     "configs/seat_defect_inspection.mvs.json",
+    frames=[
+        {"camera_id": "cam_0", "image": cam_0_image, "source": "memory://cam_0"},
+        {"camera_id": "cam_1", "image": cam_1_image, "source": "memory://cam_1"},
+    ],
     part_id="seat_000001",
     seat_model_id="seat_model_a",
 )
-print(result.status, result.decision_reason)
-print(result.report_path)
-print(result.archive_report_path)
-print(result.artifact_paths)
+print(response.status, response.decision_reason)
+print(response.report_path)
+print(response.archive_report_path)
+print(response.artifact_paths)
 ```
 
-长期运行的服务建议复用同一个 `SeatDefectInspector` 实例，避免每次检测都重新构造相机、YOLO、PatchCore 和机位管线缓存：
+长期运行的服务建议复用同一个 `SeatDefectInspector` 实例，避免每次检测都重新构造 YOLO、PatchCore 和机位管线缓存：
 
 ```python
-from seat_defect_inspection import SeatDefectInspector
+from seat_defect_sdk import CameraFrame, SeatDefectInspector
 
 inspector = SeatDefectInspector("configs/seat_defect_inspection.mvs.json")
 
-result = inspector.inspect(part_id="seat_000001", seat_model_id="seat_model_a")
-payload = result.to_dict()
+response = inspector.inspect(
+    frames=[
+        CameraFrame(camera_id="cam_0", image=cam_0_image, source="memory://cam_0"),
+        CameraFrame(camera_id="cam_1", image=cam_1_image, source="memory://cam_1"),
+    ],
+    part_id="seat_000001",
+    seat_model_id="seat_model_a",
+)
+payload = response.to_dict()
 print(payload["status"], payload["report_path"], payload["artifact_paths"])
 ```
 
