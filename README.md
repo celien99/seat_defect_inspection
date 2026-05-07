@@ -33,6 +33,43 @@ seat-defect-inspection inspect --config configs/seat_defect_inspection.mvs.json 
 seat-defect-inspection inspect-folder --config configs/seat_defect_inspection.mvs.json --input-dir offline_samples
 ```
 
+## Python API
+
+External projects can call the inspection flow directly instead of driving the CLI:
+
+```python
+from seat_defect_inspection import inspect_once
+
+result = inspect_once(
+    "configs/seat_defect_inspection.mvs.json",
+    part_id="seat_000001",
+    seat_model_id="seat_model_a",
+)
+print(result.status, result.decision_reason)
+```
+
+For long-running services, reuse one inspector instance so model and camera pipeline caches stay warm:
+
+```python
+from seat_defect_inspection import SeatDefectInspector
+
+inspector = SeatDefectInspector("configs/seat_defect_inspection.mvs.json")
+result = inspector.inspect(part_id="seat_000001", seat_model_id="seat_model_a")
+```
+
+Offline folder inspection is available through the same package API:
+
+```python
+from seat_defect_inspection import inspect_folder_once
+
+summary = inspect_folder_once(
+    "configs/seat_defect_inspection.mvs.json",
+    input_dir="offline_samples",
+    output_dir="outputs/offline_check",
+)
+print(summary["sample_count"], summary["ok_count"], summary["ng_count"])
+```
+
 ## Recommended Workflow
 
 1. Capture normal samples with `capture`.

@@ -75,6 +75,51 @@ seat-defect-inspection inspect-folder \
   --input-dir offline_samples
 ```
 
+## Python API 调用
+
+外部项目不需要通过命令行驱动主流程，可以直接把本项目作为包安装后调用：
+
+```bash
+pip install -e /path/to/seat_defect_inspection
+```
+
+单次检测：
+
+```python
+from seat_defect_inspection import inspect_once
+
+result = inspect_once(
+    "configs/seat_defect_inspection.mvs.json",
+    part_id="seat_000001",
+    seat_model_id="seat_model_a",
+)
+print(result.status, result.decision_reason)
+```
+
+长期运行的服务建议复用同一个 `SeatDefectInspector` 实例，避免每次检测都重新构造相机、YOLO、PatchCore 和机位管线缓存：
+
+```python
+from seat_defect_inspection import SeatDefectInspector
+
+inspector = SeatDefectInspector("configs/seat_defect_inspection.mvs.json")
+
+result = inspector.inspect(part_id="seat_000001", seat_model_id="seat_model_a")
+print(result.status)
+```
+
+离线图片文件夹批测也可以直接调用：
+
+```python
+from seat_defect_inspection import inspect_folder_once
+
+summary = inspect_folder_once(
+    "configs/seat_defect_inspection.mvs.json",
+    input_dir="offline_samples",
+    output_dir="outputs/offline_check",
+)
+print(summary["sample_count"], summary["ok_count"], summary["ng_count"])
+```
+
 ## 推荐工作流
 
 1. 先用 `capture` 采集正常样本。

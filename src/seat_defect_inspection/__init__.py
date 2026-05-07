@@ -36,8 +36,11 @@ __all__ = [
     "QualityGuardConfig",
     "RoiRefineConfig",
     "SeatModelConfig",
+    "SeatDefectInspector",
     "YoloTrainingConfig",
     "capture_samples",
+    "inspect_folder_once",
+    "inspect_once",
     "load_config",
     "load_yolo_training_config",
     "run_inspection",
@@ -47,7 +50,10 @@ __all__ = [
 
 _LAZY_EXPORTS = {
     "InspectionService": (".service", "InspectionService"),
+    "SeatDefectInspector": (".api", "SeatDefectInspector"),
     "capture_samples": (".service", "capture_samples"),
+    "inspect_folder_once": (".api", "inspect_folder_once"),
+    "inspect_once": (".api", "inspect_once"),
     "run_inspection": (".service", "run_inspection"),
     "train_patchcore_models": (".service", "train_patchcore_models"),
     "train_yolo_model": (".yolo", "train_yolo_model"),
