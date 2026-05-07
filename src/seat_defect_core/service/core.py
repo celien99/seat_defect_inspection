@@ -74,7 +74,10 @@ class CameraPipeline:
                 detection=detection,
                 rejection_reason=str(exc),
             )
-        quality = self.quality_guard.evaluate(roi.roi_image, valid_mask=roi.valid_mask)
+        quality = self.quality_guard.evaluate(
+            roi.aligned_roi_image,
+            valid_mask=roi.valid_mask,
+        )
         if not quality.accepted:
             return PreparedCameraSample(
                 quality=quality,
