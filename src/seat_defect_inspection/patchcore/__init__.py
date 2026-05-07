@@ -1,14 +1,3 @@
-"""PatchCore 与颜色分支入口。"""
+"""兼容旧导入路径的 PatchCore 入口。"""
 
-from .color_branch import ColorConsistencyService, ColorReferenceProfile
-from .engine import LoadedModelBundle, PatchCoreService, list_images
-from .scoring import _decide_patchcore_anomaly
-
-__all__ = [
-    "ColorConsistencyService",
-    "ColorReferenceProfile",
-    "LoadedModelBundle",
-    "PatchCoreService",
-    "_decide_patchcore_anomaly",
-    "list_images",
-]
+from seat_defect_core.patchcore import *  # noqa: F401,F403

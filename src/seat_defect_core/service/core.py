@@ -74,10 +74,7 @@ class CameraPipeline:
                 detection=detection,
                 rejection_reason=str(exc),
             )
-        quality = self.quality_guard.evaluate(
-            roi.aligned_roi_image,
-            valid_mask=roi.valid_mask,
-        )
+        quality = self.quality_guard.evaluate(roi.roi_image)
         if not quality.accepted:
             return PreparedCameraSample(
                 quality=quality,
@@ -118,6 +115,10 @@ class InspectionService:
             cameras=cameras,
             pipelines=pipelines,
         )
+
+    def _resolve_context(self, seat_model_id: str | None) -> ResolvedInspectionContext:
+        """Backward-compatible alias for the previous engineering package service API."""
+        return self.resolve_context(seat_model_id)
 
     def _resolve_active_cameras(self, seat_model_id: str | None) -> tuple[str | None, list[CameraConfig]]:
         if self.config.seat_models:
@@ -160,6 +161,10 @@ class InspectionService:
             "roi": asdict(camera.roi),
         }
 
+    def _build_patchcore_pipeline_context(self, camera: CameraConfig) -> dict[str, Any]:
+        """Backward-compatible alias for the previous engineering package service API."""
+        return self.build_patchcore_pipeline_context(camera)
+
     def build_patchcore_pipeline_signature(self, camera: CameraConfig) -> str:
         payload = json.dumps(
             self.build_patchcore_pipeline_context(camera),
@@ -168,6 +173,10 @@ class InspectionService:
             separators=(",", ":"),
         )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def _build_patchcore_pipeline_signature(self, camera: CameraConfig) -> str:
+        """Backward-compatible alias for the previous engineering package service API."""
+        return self.build_patchcore_pipeline_signature(camera)
 
     def build_patchcore_service(self, camera: CameraConfig) -> PatchCoreService:
         patchcore_config = camera.patchcore
@@ -178,12 +187,16 @@ class InspectionService:
             patchcore_config = replace(patchcore_config, texture_input="lab_l")
         return PatchCoreService(patchcore_config)
 
+    def _build_patchcore_service(self, camera: CameraConfig) -> PatchCoreService:
+        """Backward-compatible alias for the previous engineering package service API."""
+        return self.build_patchcore_service(camera)
+
     def load_model_bundle(
         self,
         camera: CameraConfig,
         seat_model_id: str | None,
     ) -> LoadedModelBundle:
-        pipeline_signature = self.build_patchcore_pipeline_signature(camera)
+        pipeline_signature = self._build_patchcore_pipeline_signature(camera)
         model_mtime_ns = Path(camera.patchcore_model_path).stat().st_mtime_ns
         cache_key = (
             seat_model_id or "__default__",
@@ -207,7 +220,15 @@ class InspectionService:
         ):
             raise RuntimeError(
                 f"机位 `{camera.camera_id}` 已启用颜色分支，但模型包缺少颜色参考分布。"
-                " 请重新训练 PatchCore，或关闭颜色分支 / 启用 color_insensitive_mode。"
+                " 请重新执行 train-patchcore，或关闭颜色分支 / 启用 color_insensitive_mode。"
             )
         self._model_cache[cache_key] = loaded
         return loaded
+
+    def _load_model_bundle(
+        self,
+        camera: CameraConfig,
+        seat_model_id: str | None,
+    ) -> LoadedModelBundle:
+        """Backward-compatible alias for the previous engineering package service API."""
+        return self.load_model_bundle(camera, seat_model_id)

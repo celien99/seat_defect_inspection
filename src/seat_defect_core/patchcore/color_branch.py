@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import Iterable
 
 import cv2
 import numpy as np
@@ -49,6 +50,39 @@ class ColorConsistencyService:
     ) -> None:
         self.config = config
         self.profile = profile
+
+    def fit(self, samples: Iterable[tuple[np.ndarray, np.ndarray]]) -> dict[str, float | int]:
+        """从正常 ROI 样本中拟合颜色统计量。"""
+        features = [
+            _extract_color_feature(image, valid_mask)
+            for image, valid_mask in samples
+            if _valid_pixel_ratio(valid_mask) >= self.config.min_valid_pixel_ratio
+        ]
+        if not features:
+            raise ValueError("颜色分支没有可用的有效 ROI 样本")
+
+        stacked = np.stack(features).astype(np.float32)
+        feature_mean = stacked.mean(axis=0)
+        feature_std = stacked.std(axis=0) + 1e-6
+        normalized_distances = np.linalg.norm((stacked - feature_mean) / feature_std, axis=1)
+        if self.config.threshold is not None:
+            threshold = float(self.config.threshold)
+        else:
+            threshold = max(
+                float(np.quantile(normalized_distances, self.config.threshold_quantile)),
+                float(normalized_distances.mean() + 3.0 * normalized_distances.std()),
+                float(normalized_distances.max() * 1.1 + 1e-6),
+            )
+
+        self.profile = ColorReferenceProfile(
+            feature_mean=feature_mean,
+            feature_std=feature_std,
+            threshold=threshold,
+        )
+        return {
+            "train_sample_count": int(len(features)),
+            "color_threshold": float(threshold),
+        }
 
     def predict(self, image: np.ndarray, valid_mask: np.ndarray) -> ColorAnomalyResult:
         """用学习到的正常颜色分布对单张 ROI 打分。"""

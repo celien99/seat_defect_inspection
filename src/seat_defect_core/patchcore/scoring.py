@@ -8,6 +8,47 @@ import numpy as np
 from ..config import PatchCoreConfig
 
 
+def _determine_memory_bank_size(
+    embeddings: np.ndarray,
+    config: PatchCoreConfig,
+) -> int:
+    """根据配置和样本量确定 memory bank 目标容量。"""
+    ratio = float(np.clip(config.coreset_sampling_ratio, 0.0, 1.0))
+    if ratio > 0.0:
+        ratio_target = max(1, int(round(len(embeddings) * ratio)))
+    else:
+        ratio_target = max(64, min(config.max_memory, len(embeddings) // 4 or 1))
+    return min(len(embeddings), max(1, min(config.max_memory, ratio_target)))
+
+
+def coreset_subsample_indices(embeddings: np.ndarray, max_points: int) -> np.ndarray:
+    """贪心 coreset 采样，返回被保留的 embedding 行索引。"""
+    if len(embeddings) <= max_points:
+        return np.arange(len(embeddings), dtype=np.int32)
+
+    rng = np.random.default_rng(42)
+    first_index = int(rng.integers(0, len(embeddings)))
+    chosen_indices = [first_index]
+    min_distances = np.linalg.norm(embeddings - embeddings[first_index], axis=1)
+
+    while len(chosen_indices) < max_points:
+        next_index = int(np.argmax(min_distances))
+        chosen_indices.append(next_index)
+        next_distances = np.linalg.norm(embeddings - embeddings[next_index], axis=1)
+        min_distances = np.minimum(min_distances, next_distances)
+
+    return np.asarray(chosen_indices, dtype=np.int32)
+
+
+def _exclude_embedding_slice(embeddings: np.ndarray, start: int, end: int) -> np.ndarray:
+    """从拼接后的 embedding 中排除当前样本切片。"""
+    if start <= 0:
+        return embeddings[end:]
+    if end >= len(embeddings):
+        return embeddings[:start]
+    return np.concatenate((embeddings[:start], embeddings[end:]), axis=0)
+
+
 def min_distance_to_bank(
     embeddings: np.ndarray,
     memory_bank: np.ndarray,
@@ -20,6 +61,19 @@ def min_distance_to_bank(
         distances = np.linalg.norm(chunk[:, None, :] - memory_bank[None, :, :], axis=2)
         scores.append(distances.min(axis=1))
     return np.concatenate(scores).astype(np.float32)
+
+
+def _score_embeddings_leave_one_out(embeddings: np.ndarray) -> tuple[float, np.ndarray]:
+    """缺少外部校准 bank 时，退化成样本内 leave-one-out 打分。"""
+    if len(embeddings) <= 1:
+        patch_scores = np.zeros((len(embeddings),), dtype=np.float32)
+        return 0.0, patch_scores
+
+    distances = np.linalg.norm(embeddings[:, None, :] - embeddings[None, :, :], axis=2)
+    np.fill_diagonal(distances, np.inf)
+    patch_scores = distances.min(axis=1).astype(np.float32)
+    image_score = float(np.percentile(patch_scores, 99))
+    return image_score, patch_scores
 
 
 def normalize_map(

@@ -1,623 +1,189 @@
 # Seat Defect Inspection 架构说明
 
-本文档用于同步当前 `seat_defect_inspection` 项目在再次拆分后的真实结构，重点说明：
+当前仓库已经收敛为“唯一 runtime + 工程工具层 + SDK 门面”的结构。核心目标是避免 `seat_defect_core` 和 `seat_defect_inspection` 各自维护一套预处理、YOLO、ROI、PatchCore、融合和报告逻辑。
 
-- 现在的目录与模块职责
-- `capture / inspect / inspect-folder / train-patchcore / train-yolo` 五条主流程
-- 主流程拆分后哪些文件负责“编排”，哪些文件负责“细节”
-- 当前关键缓存与维护建议
-
-## 1. 当前拆分原则
-
-本轮代码调整遵循的是“做减法”，不是“做花活”：
-
-1. 主入口文件只保留编排，不堆实现细节。
-2. 配置解析、YOLO 训练、ROI、PatchCore、单机位检测都按功能拆到各自包内。
-3. 不引入 manager / factory / registry 之类额外抽象。
-4. 尽量维持对外 API 不变，例如：
-   - `seat_defect_inspection.capture_samples`
-   - `seat_defect_inspection.run_inspection`
-   - `seat_defect_inspection.train_patchcore_models`
-   - `seat_defect_inspection.train_yolo_model`
-
-## 2. 顶层结构
+## 1. 架构边界
 
 ```text
-seat_defect_inspection/
-├── PROJECT_ARCHITECTURE_ZH.md
-├── README.md
-├── README_ZH.md
-├── configs/
-│   ├── seat_defect_inspection.mvs.json
-│   ├── seat_defect_inspection.multimodel.example.json
-│   └── seat_defect_yolo.dataset.example.yaml
-└── src/
-    ├── media_inputs/
-    ├── mvsCamera/
-    └── seat_defect_inspection/
-        ├── __init__.py
-        ├── __main__.py
-        ├── cli.py
-        ├── cli_commands/
-        │   ├── __init__.py
-        │   ├── common.py
-        │   ├── capture.py
-        │   ├── inspect.py
-        │   ├── inspect_folder.py
-        │   ├── train_patchcore.py
-        │   └── train_yolo.py
-        ├── acquisition.py
-        ├── config.py
-        ├── debug_artifacts.py
-        ├── fusion.py
-        ├── reporting.py
-        ├── runtime_config.py
-        ├── runtime_config_parsers.py
-        ├── runtime_config_camera_parsers.py
-        ├── runtime_config_values.py
-        ├── schemas.py
-        ├── util.py
-        ├── cvops/
-        ├── preprocess/
-        ├── patchcore/
-        ├── service/
-        │   ├── __init__.py
-        │   ├── capture.py
-        │   ├── core.py
-        │   ├── inspection.py
-        │   ├── inspection_camera.py
-        │   ├── offline_inspection.py
-        │   └── training.py
-        └── yolo/
+seat_defect_core
+  唯一检测 runtime 真源
+  - config / schemas
+  - preprocess
+  - yolo detection
+  - cvops / ROI / debug artifacts
+  - patchcore / color branch
+  - fusion / reporting
+  - service core / single-camera inspection
+
+seat_defect_inspection
+  工程与现场工具层
+  - CLI
+  - runtime_config 解析工程字段
+  - acquisition / media_inputs / mvsCamera
+  - capture
+  - inspect / inspect-folder 编排
+  - train-patchcore
+  - train-yolo / labelme conversion
+  - 旧 runtime 导入路径的兼容转发层
+
+seat_defect_sdk
+  外部图片输入 SDK 门面
+  - CameraFrame
+  - SeatDefectInspector
+  - inspect_once
 ```
 
-## 3. 模块分层
+`pyproject.toml` 发布包名为 `seat-defect-sdk`，只打包 `seat_defect_sdk` 和 `seat_defect_core`。CLI、采图、MVS 相机、YOLO 训练等工程能力不进入 SDK wheel。
 
-| 分层 | 文件/目录 | 作用 |
-| --- | --- | --- |
-| 命令入口层 | `cli.py` `cli_commands/` | `cli.py` 只组装命令树，每个子命令分别在独立文件里维护 |
-| 配置层 | `config.py` `runtime_config.py` `runtime_config_parsers.py` `runtime_config_camera_parsers.py` `runtime_config_values.py` | dataclass 定义、配置加载、字段解析、路径解析、顶层校验 |
-| 采图层 | `acquisition.py` `media_inputs/` `mvsCamera/` | 统一图片、视频、普通摄像头、MVS 相机输入 |
-| OpenCV 中间层 | `cvops/` `preprocess/` | 图像质量门控、OpenCV 预处理、ROI 精修、纹理准备、调试图输出 |
-| 检测层 | `yolo/detection.py` | YOLO 目标/忽略区检测与 fallback box |
-| 异常检测层 | `patchcore/` | PatchCore 训练/推理、特征提取、打分判定、颜色分支 |
-| 主流程编排层 | `service/` | 采图、训练、在线检测、离线批测四条业务主链路 |
-| 融合与输出层 | `fusion.py` `reporting.py` | 多机位结果融合与落盘 |
-| 公共结构/工具 | `schemas.py` `util.py` | 流程数据结构和通用辅助函数 |
-
-## 4. 各目录职责
-
-### 4.1 `service/`
-
-这是主流程目录，现在已经拆成几块清晰职责：
-
-- `service/__init__.py`
-  对外路由层。只负责 new `InspectionService(config)` 再转发到对应流程文件。
-- `service/core.py`
-  共享骨架。包含：
-  - `InspectionService`
-  - `_ResolvedInspectionContext`
-  - `_CameraPipeline`
-  - `PreparedCameraSample`
-- `service/capture.py`
-  采图流程。
-- `service/inspection.py`
-  多机位检测编排，负责：
-  - 并发采集全部启用机位图像
-  - 按配置顺序执行单机位检测
-  - 采图异常兜底
-  - fail-fast
-  - 最终融合和落盘
-- `service/inspection_camera.py`
-  单机位检测细节，负责：
-  - `_CameraPipeline.prepare_image`
-  - PatchCore 推理
-  - 颜色分支推理
-  - 调试图挂载
-  - REJECT 结果构造
-- `service/offline_inspection.py`
-  离线图片文件夹检测流程，负责：
-  - 识别输入目录布局
-  - 为每个样本绑定各机位图片
-  - 复用 `run_inspection` 批量跑完整检测链
-  - 输出批量汇总 `summary.json`
-- `service/training.py`
-  PatchCore 训练流程。
-
-### 4.2 `cvops/`
-
-这是 OpenCV 中间层：
-
-- `cvops/quality.py`
-  图像质量门控。
-- `cvops/roi.py`
-  ROI 主流程编排。
-- `cvops/roi_geometry.py`
-  ROI 裁剪、框扩张、掩膜裁切等几何/掩膜辅助。
-- `cvops/debug_artifacts.py`
-  调试图生成与保存细节。
-
-### 4.3 `preprocess/`
-
-- `preprocess/engine.py`
-  预处理链路，负责 resize、去噪、白平衡、光照校正、CLAHE、锐化等。
-
-### 4.4 `patchcore/`
-
-PatchCore 现在不再堆在一个文件里：
-
-- `patchcore/engine.py`
-  PatchCore 生命周期编排：
-  - 训练
-  - 推理
-  - 模型保存/加载
-- `patchcore/features.py`
-  特征提取细节：
-  - 当前运行配置只允许 `full` CNN backbone 后端
-  - 历史 `handcrafted` 路径仅保留为旧模型排查代码，不作为项目运行模式
-  - patch embedding 提取
-- `patchcore/scoring.py`
-  记忆库采样和打分逻辑：
-  - coreset
-  - 最近邻距离
-  - leave-one-out 校准
-  - 强证据统计
-  - 最终判定规则
-- `patchcore/color_branch.py`
-  LAB 颜色一致性分支。
-
-### 4.5 `yolo/`
-
-- `yolo/__init__.py`
-  延迟导出，避免普通命令被训练依赖提前拖上。
-- `yolo/detection.py`
-  YOLO 推理和 fallback box。
-- `yolo/training.py`
-  YOLO 训练入口。
-- `yolo/dataset_validation.py`
-  训练前的数据集与标签校验。
-- `yolo/labelme_to_yolo.py`
-  标注格式转换。
-
-### 4.6 配置解析链
-
-配置链现在也拆开了：
-
-- `runtime_config.py`
-  入口和顶层校验。
-- `runtime_config_parsers.py`
-  主配置、型号配置、融合配置、YOLO 训练配置解析。
-- `runtime_config_camera_parsers.py`
-  相机子配置解析。
-- `runtime_config_values.py`
-  通用字段和路径解析小工具。
-
-## 5. 关键文件与核心符号
-
-### 5.1 入口层
-
-文件：`src/seat_defect_inspection/cli.py` `src/seat_defect_inspection/cli_commands/*.py`
-
-| 符号 | 作用 |
-| --- | --- |
-| `build_parser` | 构建 CLI 命令树 |
-| `register_*_command` | 各子命令的参数注册入口 |
-| `run_capture_command` | `capture` 命令入口 |
-| `run_train_patchcore_command` | `train-patchcore` 命令入口 |
-| `run_train_yolo_command` | `train-yolo` 命令入口 |
-| `run_inspect_command` | `inspect` 命令入口 |
-| `run_inspect_folder_command` | `inspect-folder` 离线批测入口 |
-| `main` | 程序入口 |
-
-### 5.2 配置层
-
-文件：`src/seat_defect_inspection/runtime_config.py`
-
-| 符号 | 作用 |
-| --- | --- |
-| `load_config` | 加载缺陷检测主配置 |
-| `load_yolo_training_config` | 加载 YOLO 训练配置 |
-| `_validate_inspection_config` | 顶层配置校验 |
-| `_validate_camera_configs` | 检查重复 `camera_id` 与 PatchCore 后端约束 |
-
-文件：`src/seat_defect_inspection/runtime_config_parsers.py`
-
-| 符号 | 作用 |
-| --- | --- |
-| `_parse_inspection_config` | 解析主配置 |
-| `_parse_seat_model_config` | 解析型号配置 |
-| `_parse_fusion_config` | 解析融合配置 |
-| `_parse_yolo_training_config` | 解析 YOLO 训练配置 |
-| `_resolve_yolo_training_payload` | 根据 `seat_model_id` 选择训练块 |
-
-文件：`src/seat_defect_inspection/runtime_config_camera_parsers.py`
-
-| 符号 | 作用 |
-| --- | --- |
-| `_parse_camera_config` | 解析单机位总配置 |
-| `_parse_quality_guard_config` | 解析质量门控配置 |
-| `_parse_preprocess_config` | 解析预处理配置 |
-| `_parse_alignment_config` | 解析对齐配置 |
-| `_parse_roi_refine_config` | 解析 ROI 配置 |
-| `_parse_detection_config` | 解析 YOLO 检测配置 |
-| `_parse_patchcore_config` | 解析 PatchCore 配置 |
-| `_parse_color_branch_config` | 解析颜色分支配置 |
-
-### 5.3 采图层
-
-文件：`src/seat_defect_inspection/acquisition.py`
-
-| 符号 | 作用 |
-| --- | --- |
-| `AcquisitionService` | 统一媒体源采图服务 |
-| `AcquisitionService.capture` | 按机位抓一帧并返回 `FramePacket` |
-
-### 5.4 OpenCV 中间层
-
-文件：`src/seat_defect_inspection/cvops/quality.py`
-
-| 符号 | 作用 |
-| --- | --- |
-| `ImageQualityGuard` | 模糊、亮度、过曝、欠曝门控 |
-
-文件：`src/seat_defect_inspection/preprocess/engine.py`
-
-| 符号 | 作用 |
-| --- | --- |
-| `PreprocessEngine` | 图像预处理主链路 |
-
-文件：`src/seat_defect_inspection/cvops/roi.py`
-
-| 符号 | 作用 |
-| --- | --- |
-| `RoiRefineEngine` | ROI 精修主流程 |
-
-文件：`src/seat_defect_inspection/cvops/roi_geometry.py`
-
-| 符号 | 作用 |
-| --- | --- |
-| `_expand_box` | 扩框/缩框 |
-| `_crop_mask` | 掩膜裁切 |
-| `_resolve_crop_source_box` | 优先根据分割掩膜确定裁剪范围 |
-
-### 5.5 YOLO 层
-
-文件：`src/seat_defect_inspection/yolo/detection.py`
-
-| 符号 | 作用 |
-| --- | --- |
-| `DetectionService` | YOLO 推理服务 |
-| `DetectionService.detect` | 返回 `DetectionResult` |
-
-文件：`src/seat_defect_inspection/yolo/training.py`
-
-| 符号 | 作用 |
-| --- | --- |
-| `train_yolo_model` | YOLO 训练入口 |
-| `_load_yolo_model` | 加载/兜底初始化分割模型 |
-
-文件：`src/seat_defect_inspection/yolo/dataset_validation.py`
-
-| 符号 | 作用 |
-| --- | --- |
-| `_prepare_training_dataset` | 数据集解析与预检 |
-| `_validate_dataset_split` | train/val 切分校验 |
-| `_validate_label_line` | 单行标签校验 |
-
-### 5.6 PatchCore 层
-
-文件：`src/seat_defect_inspection/patchcore/engine.py`
-
-| 符号 | 作用 |
-| --- | --- |
-| `LoadedModelBundle` | PatchCore 模型包 |
-| `PatchCoreService` | PatchCore 训练/推理主类 |
-| `PatchCoreService.fit` | 训练模型 |
-| `PatchCoreService.predict` | ROI 推理 |
-| `PatchCoreService.save` | 保存模型 |
-| `PatchCoreService.load_bundle` | 加载模型 |
-
-文件：`src/seat_defect_inspection/patchcore/features.py`
-
-| 符号 | 作用 |
-| --- | --- |
-| `extract_patch_embeddings` | 根据配置提取 patch embedding；当前运行配置只允许 `full` |
-| `_TorchPatchFeatureExtractor` | 完整 CNN 特征后端，默认使用 `wide_resnet50_2` 的中间层特征 |
-| `extract_handcrafted_patch_embeddings` | 历史兼容路径，不作为当前项目运行后端 |
-
-文件：`src/seat_defect_inspection/patchcore/scoring.py`
-
-| 符号 | 作用 |
-| --- | --- |
-| `coreset_subsample_indices` | 记忆库采样 |
-| `min_distance_to_bank` | 最近邻距离计算 |
-| `_score_embeddings_leave_one_out` | 训练期 LOOCV 校准 |
-| `_analyze_patch_evidence` | 强 patch 证据统计 |
-| `_decide_patchcore_anomaly` | 最终异常判定 |
-
-文件：`src/seat_defect_inspection/patchcore/color_branch.py`
-
-| 符号 | 作用 |
-| --- | --- |
-| `ColorReferenceProfile` | 颜色正常分布 |
-| `ColorConsistencyService` | 颜色分支训练/推理 |
-
-### 5.7 主流程编排层
-
-文件：`src/seat_defect_inspection/service/core.py`
-
-| 符号 | 作用 |
-| --- | --- |
-| `PreparedCameraSample` | 单机位共享中间结果 |
-| `_ResolvedInspectionContext` | 当前型号上下文 |
-| `_CameraPipeline` | 单机位预处理、检测、ROI 精修链 |
-| `_CameraPipeline.prepare_image` | 线上/训练共用图像准备入口 |
-| `InspectionService` | 总编排服务 |
-| `InspectionService._resolve_context` | 解析型号路由与流程缓存 |
-| `InspectionService._resolve_active_cameras` | 确定当前启用机位 |
-| `InspectionService._build_patchcore_service` | 创建 PatchCore 服务 |
-| `InspectionService._load_model_bundle` | 加载模型包 |
-
-文件：`src/seat_defect_inspection/service/capture.py`
-
-| 符号 | 作用 |
-| --- | --- |
-| `capture_samples` | 多机位采图主流程 |
-
-文件：`src/seat_defect_inspection/service/inspection.py`
-
-| 符号 | 作用 |
-| --- | --- |
-| `run_inspection` | 多机位检测编排 |
-| `_capture_cameras_concurrently` | 在线检测前并发采集全部启用机位图像 |
-| `_build_exported_early_stop_result` | fail-fast 统一出口 |
-
-文件：`src/seat_defect_inspection/service/inspection_camera.py`
-
-| 符号 | 作用 |
-| --- | --- |
-| `_inspect_one_camera` | 单机位完整检测 |
-| `_attach_debug_artifacts` | 挂载调试图路径 |
-| `_build_reject_result` | 构造 REJECT 结果 |
-| `_build_capture_failed_result` | 构造采图失败结果 |
-
-文件：`src/seat_defect_inspection/service/training.py`
-
-| 符号 | 作用 |
-| --- | --- |
-| `train_patchcore_models` | 按型号/机位训练 PatchCore |
-| `_train_one_camera` | 单机位训练流程 |
-
-文件：`src/seat_defect_inspection/service/offline_inspection.py`
-
-| 符号 | 作用 |
-| --- | --- |
-| `inspect_image_folder` | 离线图片文件夹批量检测主流程 |
-| `_discover_offline_samples` | 自动识别目录布局并解析样本 |
-| `_discover_camera_layout_samples` | 解析“按机位分目录”布局 |
-
-## 6. 五条主流程
-
-### 6.1 `capture`
+## 2. 当前顶层结构
 
 ```text
-cli.main
-  -> cli_commands/capture.py:run_capture_command
-  -> runtime_config.load_config
-  -> service.capture_samples
-  -> InspectionService(config)
-  -> service/capture.py:capture_samples
+src/
+├── seat_defect_core/
+│   ├── config.py
+│   ├── schemas.py
+│   ├── runtime_config.py
+│   ├── runtime_config_parsers.py
+│   ├── preprocess/
+│   ├── cvops/
+│   ├── yolo/
+│   ├── patchcore/
+│   ├── service/
+│   ├── fusion.py
+│   ├── reporting.py
+│   └── util.py
+├── seat_defect_sdk/
+│   └── client.py
+├── seat_defect_inspection/
+│   ├── cli.py
+│   ├── cli_commands/
+│   ├── runtime_config.py
+│   ├── runtime_config_parsers.py
+│   ├── acquisition.py
+│   ├── service/
+│   ├── yolo/training.py
+│   ├── yolo/dataset_validation.py
+│   ├── yolo/labelme_to_yolo.py
+│   └── compat runtime modules
+├── media_inputs/
+└── mvsCamera/
 ```
 
-内部顺序：
+`seat_defect_inspection/preprocess`、`cvops`、`patchcore`、`yolo/detection.py`、`fusion.py` 现在都是兼容旧导入路径的转发层，真实实现位于 `seat_defect_core`。
 
-1. `_resolve_context` 选择当前型号和启用机位。
-2. 循环机位调用 `AcquisitionService.capture`。
-3. 把 `FramePacket` 写到采图目录。
-4. 如启用 `save_to_train_good_dir`，同步写入训练目录。
-5. 用 `export_capture_manifest` 输出 `manifest.json`。
+## 3. Runtime 真源
 
-### 6.2 `inspect`
+检测链路只允许在 `seat_defect_core` 改：
+
+| 能力 | 真源文件 |
+| --- | --- |
+| 配置模型 | `src/seat_defect_core/config.py` |
+| 流程数据结构 | `src/seat_defect_core/schemas.py` |
+| 配置解析 | `src/seat_defect_core/runtime_config.py`、`runtime_config_parsers.py` |
+| 图像预处理 | `src/seat_defect_core/preprocess/engine.py` |
+| 质量门控 | `src/seat_defect_core/cvops/quality.py` |
+| ROI 与 mask 构造 | `src/seat_defect_core/cvops/roi.py`、`roi_geometry.py` |
+| 调试图 | `src/seat_defect_core/cvops/debug_artifacts.py` |
+| YOLO 推理 | `src/seat_defect_core/yolo/detection.py` |
+| PatchCore | `src/seat_defect_core/patchcore/engine.py`、`features.py`、`scoring.py` |
+| 颜色分支 | `src/seat_defect_core/patchcore/color_branch.py` |
+| 单机位检测 | `src/seat_defect_core/service/inspection_camera.py` |
+| runtime 缓存与模型加载 | `src/seat_defect_core/service/core.py` |
+| 多机位融合 | `src/seat_defect_core/fusion.py` |
+| 检测报告 | `src/seat_defect_core/reporting.py` |
+
+注意：`seat_defect_core.patchcore` 同时提供训练所需的 `fit/save/list_images`，这样 `train-patchcore` 也不会再依赖工程层副本。
+
+## 4. 工程层职责
+
+`seat_defect_inspection` 只负责把 runtime 组织成现场工作流。
+
+| 文件/目录 | 职责 |
+| --- | --- |
+| `cli.py`、`cli_commands/` | 命令入口和参数路由 |
+| `config.py` | 继承/复用 core 配置，并扩展 `train_good_dir`、`capture_dir`、`capture_retries`、`YoloTrainingConfig` |
+| `schemas.py` | 复用 core 结果结构，并额外定义 `CaptureRecord`、`CaptureSummary` |
+| `runtime_config.py`、`runtime_config_parsers.py` | 解析工程配置和 YOLO 训练块 |
+| `acquisition.py` | 把图片、视频、普通相机、MVS 相机统一成 `FramePacket` |
+| `service/core.py` | 继承 `seat_defect_core.service.core.InspectionService`，只补充 `AcquisitionService` |
+| `service/inspection.py` | 在线多机位采图、检测编排和 fail-fast |
+| `service/capture.py` | 多机位采图与 manifest |
+| `service/offline_inspection.py` | 离线目录样本发现，临时替换 camera source 后复用在线检测链 |
+| `service/training.py` | PatchCore 训练编排，调用 core pipeline 与 core PatchCore |
+| `yolo/training.py` | YOLO segmentation 训练 |
+| `yolo/dataset_validation.py` | YOLO 数据集预检 |
+| `yolo/labelme_to_yolo.py` | LabelMe 到 YOLO segmentation 转换 |
+| `reporting.py` | 检测报告转发到 core，只保留采图 manifest |
+
+## 5. 主流程
+
+### `inspect`
 
 ```text
-cli.main
-  -> cli_commands/inspect.py:run_inspect_command
+seat_defect_inspection.cli
+  -> cli_commands/inspect.py
   -> runtime_config.load_config
   -> service.run_inspection
-  -> InspectionService(config)
+  -> service/inspection.py
+  -> seat_defect_core.service.inspection_camera.inspect_one_camera
+  -> seat_defect_core fusion/reporting
+```
+
+在线检测仍由工程层负责采图；每个机位的预处理、YOLO、ROI、PatchCore、颜色分支和调试图全部走 core。
+
+### `inspect-folder`
+
+```text
+service/offline_inspection.py
+  -> 解析单样本/按样本分目录/按机位分目录
+  -> 临时把图片路径写入 camera.source
   -> service/inspection.py:run_inspection
 ```
 
-内部顺序：
+离线批测不维护独立检测逻辑，只切换输入源并复用在线主链。
 
-1. `_resolve_context` 选择当前型号和机位流程缓存。
-2. `_capture_cameras_concurrently` 并发采集全部启用机位图像，并按配置中的机位顺序整理结果。
-3. 采图资源释放后，每张图再交给 `service/inspection_camera.py:_inspect_one_camera`。
-4. `_inspect_one_camera` 内部顺序：
-   - `_CameraPipeline.prepare_image`
-   - `_load_model_bundle`
-   - `PatchCoreService.predict`
-   - 可选 `ColorConsistencyService.predict`
-   - 保存调试图
-   - 生成 `CameraInspectionResult`
-5. `service/inspection.py` 在检测阶段处理 fail-fast；注意此时全部机位已完成采图，fail-fast 只会跳过后续算法处理，不再跳过采图。
-6. 全部机位完成后 `fuse_camera_results`。
-7. `export_inspection_report` 输出最终结果。
-
-### 6.3 `train-patchcore`
+### `train-patchcore`
 
 ```text
-cli.main
-  -> cli_commands/train_patchcore.py:run_train_patchcore_command
-  -> runtime_config.load_config
-  -> service.train_patchcore_models
-  -> InspectionService(config)
-  -> service/training.py:train_patchcore_models
+service/training.py
+  -> core CameraPipeline.prepare_image
+  -> core PatchCoreService.fit
+  -> core ColorConsistencyService.fit
+  -> core PatchCoreService.save
 ```
 
-内部顺序：
+训练和推理共用同一套上游图像链路。模型包保存 `pipeline_signature`，线上加载时会校验签名，避免旧模型静默复用。
 
-1. `_resolve_training_scope` 决定训练哪些型号。
-2. 对每个型号 `_resolve_context`。
-3. 每个机位读取 `train_good_dir` 图片。
-4. 每张图复用 `_CameraPipeline.prepare_image`，保证训练和推理链路一致。
-5. 成功样本送入 `PatchCoreService.fit`。
-6. 如启用颜色分支，再执行 `ColorConsistencyService.fit`。
-7. 保存 `.npz` 模型和 `.summary.json` 摘要。
+### `train-yolo`
 
-### 6.4 `train-yolo`
+YOLO 训练仍在工程层，因为它不是 SDK runtime 的一部分：
 
 ```text
-cli.main
-  -> cli_commands/train_yolo.py:run_train_yolo_command
+cli_commands/train_yolo.py
   -> runtime_config.load_yolo_training_config
-  -> yolo.train_yolo_model
-  -> yolo/training.py:train_yolo_model
+  -> yolo/training.py
+  -> yolo/dataset_validation.py
+  -> ultralytics.YOLO.train
 ```
 
-内部顺序：
+## 6. 兼容转发层
 
-1. `load_yolo_training_config` 解析训练块。
-2. `yolo/dataset_validation.py` 预检数据集和标签。
-3. `yolo/training.py` 加载 Ultralytics 模型。
-4. 调用 `model.train(...)`。
-5. 输出 `best.pt / last.pt / training_summary.json`。
-
-### 6.5 `inspect-folder`
+为了不破坏旧代码，以下旧导入路径仍可用，但它们不是实现真源：
 
 ```text
-cli.main
-  -> cli_commands/inspect_folder.py:run_inspect_folder_command
-  -> runtime_config.load_config
-  -> service.inspect_image_folder
-  -> InspectionService(config)
-  -> service/offline_inspection.py:inspect_image_folder
-  -> service/inspection.py:run_inspection
+seat_defect_inspection.preprocess.engine
+seat_defect_inspection.cvops.*
+seat_defect_inspection.patchcore.*
+seat_defect_inspection.yolo.detection
+seat_defect_inspection.fusion
 ```
 
-内部顺序：
+这些模块通过 `sys.modules` 指向 `seat_defect_core` 对应模块。这样旧测试或外部代码 monkeypatch 私有符号时，也会落到同一个 runtime 模块对象上。
 
-1. 先解析当前型号下的启用机位列表。
-2. 自动识别输入目录是单样本、按样本分目录，还是按机位分目录。
-3. 为每个离线样本绑定各机位图片路径。
-4. 把图片路径临时写回各机位 `source`，复用现有 `run_inspection` 主流程。
-5. 每个样本仍然走 `preprocess -> YOLO -> ROI -> PatchCore -> fusion -> report`。
-6. 额外输出一次批量汇总 `summary.json`。
+## 7. 维护规则
 
-## 7. 当前最关键的几个入口
-
-如果要快速读懂项目，优先看下面这些位置：
-
-| 优先级 | 文件 | 符号 | 原因 |
-| --- | --- | --- | --- |
-| 1 | `cli.py` `cli_commands/` | `main`、`register_*_command`、`run_*_command` | 所有命令都从这里进 |
-| 2 | `runtime_config.py` | `load_config` | 配置到运行对象的第一入口 |
-| 3 | `service/core.py` | `InspectionService` | 总编排服务和共享缓存都在这里 |
-| 4 | `service/core.py` | `_CameraPipeline.prepare_image` | 线上/训练共用的单机位图像链路 |
-| 5 | `service/inspection.py` | `run_inspection` | 多机位检测主编排 |
-| 6 | `service/inspection_camera.py` | `_inspect_one_camera` | 单机位完整检测细节 |
-| 7 | `cvops/roi.py` | `RoiRefineEngine.refine` | ROI 和 PatchCore 输入如何构造 |
-| 8 | `patchcore/engine.py` | `PatchCoreService.fit/predict` | 异常检测主入口 |
-
-## 8. 关键缓存与隐式状态
-
-| 位置 | 变量 | 作用 |
-| --- | --- | --- |
-| `InspectionService` | `_pipeline_cache` | 缓存每个型号下的 `_CameraPipeline` |
-| `InspectionService` | `_model_cache` | 按 `(seat_model_id, camera_id, pipeline_signature, model_mtime_ns)` 缓存模型包，避免旧模型静默复用 |
-| `DetectionService` | `_model` | 延迟加载 YOLO 模型 |
-| `media_inputs` / `mvsCamera` | 流对象与 SDK 状态 | 统一媒体源和工业相机资源管理 |
-
-这些状态说明：
-
-1. 当前默认是“单进程复用服务实例”的写法。
-2. 如果以后要服务化或多进程化，需要重新评估缓存和资源释放。
-
-### 8.1 PatchCore 模型版本治理
-
-当前 PatchCore 模型包不只保存 memory bank，也会保存训练时的上游图像链路签名：
-
-- `signature_version = 2`
-- `patchcore_input_mode = transparent_bgra`
-- `preprocess` 配置
-- YOLO 检测配置
-- ROI 配置
-- 质量门控配置
-- `color_insensitive_mode`
-
-训练时，`service/training.py` 会把 `pipeline_signature` 和 `pipeline_context` 写入 `.npz` 模型包，并在模型旁生成 `.summary.json`。推理时，`InspectionService._load_model_bundle` 会重新计算当前配置签名；如果模型包缺签名或签名不一致，会直接报错要求重新训练。
-
-因此下面这些变更都属于模型分布变更，不能沿用旧 PatchCore 模型：
-
-- OpenCV 预处理参数变化
-- YOLO 模型、目标类别、置信度或 fallback box 变化
-- ROI 裁切、缩放、边缘屏蔽、mask 规则变化
-- PatchCore 输入模式变化，例如透明 BGRA 规则
-- full PatchCore backbone、特征层、训练尺寸等关键配置变化
-
-### 8.2 回归验证建议
-
-项目后续应固定一批小规模样本作为 pipeline regression 数据集，至少覆盖：
-
-- 正常样本
-- 典型 NG 样本
-- 低质量 REJECT 样本
-- 分割边界较窄的样本
-- 背景透明区域占比较大的样本
-
-每次修改 `preprocess / yolo / roi / patchcore / fusion` 后，跑 `inspect-folder` 对比关键输出：最终状态、PatchCore 分数、有效 patch 比例、ROI 尺寸、`target_mask / valid_mask` 面积、热力图是否明显漂移。
-
-## 9. 建议阅读顺序
-
-### 9.1 想快速读懂整体结构
-
-1. `src/seat_defect_inspection/cli.py`
-2. `src/seat_defect_inspection/cli_commands/inspect.py`
-3. `src/seat_defect_inspection/runtime_config.py`
-4. `src/seat_defect_inspection/service/core.py`
-5. `src/seat_defect_inspection/service/inspection.py`
-6. `src/seat_defect_inspection/service/inspection_camera.py`
-7. `src/seat_defect_inspection/cvops/roi.py`
-8. `src/seat_defect_inspection/patchcore/engine.py`
-
-### 9.2 现场排查时按问题读
-
-采图失败：
-
-1. `src/seat_defect_inspection/acquisition.py`
-2. `src/media_inputs/core.py`
-3. `src/mvsCamera/frame_source.py`
-4. `src/mvsCamera/camera_controller.py`
-
-YOLO 检不准：
-
-1. `src/seat_defect_inspection/cvops/quality.py`
-2. `src/seat_defect_inspection/preprocess/engine.py`
-3. `src/seat_defect_inspection/yolo/detection.py`
-
-ROI 或 PatchCore 不稳定：
-
-1. `src/seat_defect_inspection/cvops/roi.py`
-2. `src/seat_defect_inspection/cvops/roi_geometry.py`
-3. `src/seat_defect_inspection/patchcore/engine.py`
-4. `src/seat_defect_inspection/patchcore/scoring.py`
-
-训练和线上结果不一致：
-
-1. `src/seat_defect_inspection/service/training.py`
-2. `src/seat_defect_inspection/service/core.py`
-3. `src/seat_defect_inspection/patchcore/features.py`
-4. `src/seat_defect_inspection/patchcore/engine.py`
-
-## 10. 当前结论
-
-经过这轮拆分后，当前结构相比最早版本有几个明显变化：
-
-1. 主流程不再堆在一个大 `service.py` 里，而是拆成 `core / capture / inspection / inspection_camera / training`。
-2. PatchCore 不再堆在一个大文件里，而是拆成 `engine / features / scoring / color_branch`。
-3. 配置解析不再混在一个大文件里，而是拆成 `runtime_config / runtime_config_parsers / runtime_config_camera_parsers / runtime_config_values`。
-4. YOLO 训练也拆出了独立的数据集校验文件 `dataset_validation.py`。
-5. PatchCore 当前统一走 full CNN 后端，ROI 传入透明 BGRA 输入，并用 pipeline signature 防止旧模型静默复用。
-6. `cli.py`、`cli_commands/`、`service/__init__.py`、`yolo/__init__.py` 都尽量保持为薄入口，并通过按职责拆分降低不必要耦合。
-
-这套结构更接近“按功能分文件、入口只做编排”的维护方式，后续继续改 ROI、PatchCore、YOLO 训练或配置解析时，影响面会更集中，也更容易做减法。
+1. 改检测结果行为时，只改 `seat_defect_core`。
+2. `seat_defect_inspection` 不再新增预处理、YOLO 推理、ROI、PatchCore、融合或检测报告副本。
+3. 工程层新增能力时，应围绕输入、输出、训练、采图、CLI 编排展开。
+4. 如果新增 runtime 配置字段，先加到 `seat_defect_core.config` 和 core 解析器；工程层只在需要 CLI/训练扩展字段时继承补充。
+5. 新增测试优先断言 SDK 和 CLI 使用同一 core 行为，防止再出现双实现分叉。

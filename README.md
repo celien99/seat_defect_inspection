@@ -1,17 +1,8 @@
 # Seat Defect Inspection
 
-`seat_defect_inspection` is a standalone subproject for automotive seat defect inspection.
+`seat_defect_inspection` is the engineering CLI project for automotive seat defect inspection. The detection runtime now lives in `seat_defect_core`; the Python SDK facade lives in `seat_defect_sdk`.
 
-For a detailed Chinese walkthrough of how the main pipeline transforms each input image, see [IMAGE_PIPELINE_DETAILS_ZH.md](./IMAGE_PIPELINE_DETAILS_ZH.md).
-
-It currently provides:
-
-- multi-camera image capture
-- one PatchCore model per camera
-- YOLO seat localization training
-- bundled `media_inputs` and `mvsCamera` support for `mvs://...` sources
-
-The MVS SDK path is already wired in code. Hardware validation against real cameras is intentionally left for later on-site testing.
+For image-pipeline details, see [IMAGE_PIPELINE_DETAILS_ZH.md](./IMAGE_PIPELINE_DETAILS_ZH.md). For architecture details, see [PROJECT_ARCHITECTURE_ZH.md](./PROJECT_ARCHITECTURE_ZH.md).
 
 ## Quick Start
 
@@ -35,77 +26,49 @@ seat-defect-inspection inspect-folder --config configs/seat_defect_inspection.mv
 
 ## Python SDK
 
-External projects can call the inspection flow directly through the standalone `seat_defect_sdk` package. The SDK does not capture images; callers pass one image per configured camera:
+External projects should use `seat_defect_sdk`. The SDK does not capture images; callers pass one image per configured camera.
 
 ```python
 import cv2
-from seat_defect_sdk import inspect_once
-
-cam_0_image = cv2.imread("cam_0.png")
-cam_1_image = cv2.imread("cam_1.png")
-
-response = inspect_once(
-    "configs/seat_defect_inspection.mvs.json",
-    frames=[
-        {"camera_id": "cam_0", "image": cam_0_image, "source": "memory://cam_0"},
-        {"camera_id": "cam_1", "image": cam_1_image, "source": "memory://cam_1"},
-    ],
-    part_id="seat_000001",
-    seat_model_id="seat_model_a",
-)
-print(response.status, response.decision_reason)
-print(response.report_path)
-print(response.archive_report_path)
-print(response.artifact_paths)
-```
-
-For long-running services, reuse one inspector instance so model and pipeline caches stay warm:
-
-```python
 from seat_defect_sdk import CameraFrame, SeatDefectInspector
 
 inspector = SeatDefectInspector("configs/seat_defect_inspection.mvs.json")
 response = inspector.inspect(
     frames=[
-        CameraFrame(camera_id="cam_0", image=cam_0_image, source="memory://cam_0"),
-        CameraFrame(camera_id="cam_1", image=cam_1_image, source="memory://cam_1"),
+        CameraFrame(camera_id="cam_0", image=cv2.imread("cam_0.png")),
+        CameraFrame(camera_id="cam_1", image=cv2.imread("cam_1.png")),
     ],
     part_id="seat_000001",
-    seat_model_id="seat_model_a",
 )
-payload = response.to_dict()
-print(payload["status"], payload["report_path"], payload["artifact_paths"])
-```
 
-Offline folder inspection is available through the same package API:
-
-```python
-from seat_defect_inspection import inspect_folder_once
-
-summary = inspect_folder_once(
-    "configs/seat_defect_inspection.mvs.json",
-    input_dir="offline_samples",
-    output_dir="outputs/offline_check",
-)
-print(summary["sample_count"], summary["ok_count"], summary["ng_count"])
+print(response.status, response.decision_reason)
+print(response.report_path)
+print(response.archive_report_path)
 ```
 
 ## Recommended Workflow
 
 1. Capture normal samples with `capture`.
-2. Save or copy them into each camera `train_good_dir`.
-   Note: `train_good_dir` stores raw camera images, but `train-patchcore` still replays the production preprocessing and mask-driven ROI preparation pipeline before fitting PatchCore.
+2. Save them into each camera `train_good_dir`.
 3. Run `train-patchcore`.
-4. Prepare a YOLO dataset and run `train-yolo`.
-5. Configure the resulting weights and run `inspect` for live cameras, or `inspect-folder` for offline batch verification.
+4. Prepare a YOLO segmentation dataset and run `train-yolo`.
+5. Configure the resulting weights and run live `inspect` or offline `inspect-folder`.
 
-The project now standardizes on `yolo11m-seg.pt`. YOLO segmentation masks are consumed directly to crop the target ROI and build valid/ignore masks. The current ROI layer keeps only the lightweight crop, resize, and mask-cleanup steps instead of the older heavy local enhancement chain.
+`train-patchcore` is offline: it reads raw images from `train_good_dir` and replays the production preprocessing, YOLO, ROI, mask, and PatchCore input pipeline before fitting.
 
-`train-patchcore` is already an offline workflow. As long as each camera `train_good_dir` points to a local image folder, PatchCore training does not require any real camera device.
+`inspect-folder` reuses the same production detection chain, but replaces live camera sources with local images.
 
-`inspect-folder` is the new offline verification path. It reuses the same preprocess, YOLO, ROI, PatchCore, fusion, report, and debug-artifact chain as production `inspect`, but swaps live camera sources for local files.
+## Offline Layouts
 
-Supported `inspect-folder` input layouts:
+Single sample directory:
+
+```text
+offline_samples/
+├── cam_0.jpg
+└── cam_1.jpg
+```
+
+Sample directories:
 
 ```text
 offline_samples/
@@ -117,6 +80,8 @@ offline_samples/
     └── cam_1.jpg
 ```
 
+Camera directories:
+
 ```text
 offline_samples/
 ├── cam_0/
@@ -127,102 +92,17 @@ offline_samples/
     └── sample_002.jpg
 ```
 
-## Key Paths
-
-- `data/seat_defect_inspection/<camera_id>/train/good`
-- `models/seat_defect_inspection/<camera_id>_patchcore.npz`
-- `outputs/seat_defect_inspection/capture`
-- `outputs/seat_defect_inspection/debug`
-- `<output_json_path sibling>/<output_json_path.stem>_history`
-- `outputs/seat_defect_inspection/yolo_training`
-
 ## Code Layout
 
-The project has been split by responsibility rather than kept in a few oversized files.
-
 ```text
-src/seat_defect_inspection/
-├── cli.py
-├── cli_commands/
-│   ├── common.py
-│   ├── capture.py
-│   ├── inspect.py
-│   ├── inspect_folder.py
-│   ├── train_patchcore.py
-│   └── train_yolo.py
-├── acquisition.py
-├── config.py
-├── debug_artifacts.py
-├── fusion.py
-├── reporting.py
-├── runtime_config.py
-├── runtime_config_parsers.py
-├── runtime_config_camera_parsers.py
-├── runtime_config_values.py
-├── schemas.py
-├── util.py
-├── cvops/
-│   ├── quality.py
-│   ├── roi.py
-│   ├── roi_geometry.py
-│   └── debug_artifacts.py
-├── preprocess/
-│   └── engine.py
-├── patchcore/
-│   ├── engine.py
-│   ├── features.py
-│   ├── scoring.py
-│   └── color_branch.py
-├── service/
-│   ├── __init__.py
-│   ├── core.py
-│   ├── capture.py
-│   ├── inspection.py
-│   ├── inspection_camera.py
-│   ├── offline_inspection.py
-│   └── training.py
-└── yolo/
-    ├── __init__.py
-    ├── detection.py
-    ├── training.py
-    ├── dataset_validation.py
-    └── labelme_to_yolo.py
+src/
+├── seat_defect_core/        # single runtime source of truth
+├── seat_defect_sdk/         # external-image SDK facade
+├── seat_defect_inspection/  # CLI, capture, training, offline workflows
+├── media_inputs/            # image/video/camera source abstraction
+└── mvsCamera/               # Hikvision MVS adapter
 ```
 
-## Module Responsibilities
+Runtime behavior belongs in `seat_defect_core`: preprocessing, YOLO inference, ROI/masks, PatchCore, color branch, fusion, debug artifacts, and inspection reports.
 
-- `cli.py`: CLI bootstrap only. It assembles subcommands and keeps the entry thin.
-- `cli_commands/`: one command per file, including argument registration and routing to the matching business flow.
-- `runtime_config.py`: config file entry and top-level validation.
-- `runtime_config_parsers.py`: inspection-level and seat-model-level parsing.
-- `runtime_config_camera_parsers.py`: camera sub-config parsing for preprocess, ROI, PatchCore, and YOLO detection.
-- `runtime_config_values.py`: shared parsing helpers and path resolution.
-- `service/__init__.py`: thin public routing layer.
-- `service/core.py`: shared service context, caches, and `_CameraPipeline`.
-- `service/capture.py`: capture workflow.
-- `service/inspection.py`: multi-camera inspection orchestration and early-stop handling.
-- `service/inspection_camera.py`: single-camera inspection details.
-- `service/offline_inspection.py`: offline batch inspection from local image folders.
-- `service/training.py`: PatchCore training workflow.
-- `cvops/`: OpenCV middle layer for quality gating, ROI refinement, geometry helpers, texture preparation, and debug artifacts.
-- `preprocess/engine.py`: image preprocessing chain before YOLO and ROI refinement.
-- `patchcore/engine.py`: PatchCore lifecycle orchestration.
-- `patchcore/features.py`: handcrafted and full-backbone feature extraction.
-- `patchcore/scoring.py`: memory bank sampling, distance scoring, evidence analysis, and final decision rules.
-- `patchcore/color_branch.py`: LAB-based color consistency branch.
-- `yolo/detection.py`: YOLO inference and fallback box handling.
-- `yolo/training.py`: YOLO training entry.
-- `yolo/dataset_validation.py`: dataset preflight and label validation.
-
-## Main Runtime Flow
-
-`inspect` now follows a deliberately thin orchestration path:
-
-1. `cli.py` assembles the parser, and `cli_commands/inspect.py` loads config and routes to `service.run_inspection`.
-2. `service/__init__.py` creates `InspectionService`.
-3. `service/inspection.py` captures all enabled cameras concurrently, then runs per-camera inspection in configuration order and handles fail-fast decisions.
-4. `service/inspection_camera.py` runs one camera through `_CameraPipeline`, PatchCore, optional color branch, and debug artifact export.
-5. `fusion.py` merges per-camera results.
-6. `reporting.py` writes the final report.
-
-For a more detailed architecture and flow breakdown, see [PROJECT_ARCHITECTURE_ZH.md](./PROJECT_ARCHITECTURE_ZH.md).
+Engineering behavior belongs in `seat_defect_inspection`: CLI commands, config extensions, acquisition, capture manifest, offline-folder discovery, PatchCore training orchestration, YOLO training, and LabelMe conversion.

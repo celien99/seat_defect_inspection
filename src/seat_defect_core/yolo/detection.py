@@ -131,3 +131,7 @@ class DetectionService:
             masks.append((resized > 0.5).astype(np.uint8))
         return masks
 
+
+def _ensure_local_yolo_config_dir() -> None:
+    """Compatibility hook for training code that wants to prepare Ultralytics config dirs."""
+    return None
