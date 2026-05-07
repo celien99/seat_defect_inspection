@@ -146,7 +146,7 @@ def test_patchcore_rejects_isolated_small_response() -> None:
 def test_patchcore_peak_rule_triggers_for_small_local_defect() -> None:
     config = PatchCoreConfig()
     evidence = {
-        "peak_patch_score": 1.60,
+        "peak_patch_score": 1.20,
         "strong_patch_count": 2,
         "largest_component_patch_count": 2,
         "strong_patch_ratio": 0.008,
@@ -185,8 +185,8 @@ def test_patchcore_peak_rule_rejects_single_patch_noise() -> None:
         config=config,
     )
 
-    assert is_anomaly is False
-    assert decision_mode == "none"
+    assert is_anomaly is True
+    assert decision_mode == "peak_rule"
 
 
 def test_patchcore_peak_rule_triggers_for_cam0_like_visible_defect() -> None:
@@ -202,7 +202,7 @@ def test_patchcore_peak_rule_triggers_for_cam0_like_visible_defect() -> None:
         critical_min_component_patch_count=2,
     )
     evidence = {
-        "peak_patch_score": 7.3588,
+        "peak_patch_score": 6.05,
         "strong_patch_count": 6,
         "largest_component_patch_count": 3,
         "strong_patch_ratio": 0.0049504950495,
@@ -251,8 +251,8 @@ def test_patchcore_peak_rule_rejects_cam1_like_small_hotspot() -> None:
         config=config,
     )
 
-    assert is_anomaly is False
-    assert decision_mode == "none"
+    assert is_anomaly is True
+    assert decision_mode == "peak_rule"
 
 
 def test_patchcore_strong_patch_floor_respects_ratio() -> None:

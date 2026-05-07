@@ -167,12 +167,12 @@ def _decide_patchcore_anomaly(
         and float(evidence["peak_patch_score"]) > critical_peak_threshold
         and int(evidence["largest_component_patch_count"]) >= component_min_patch_count
     )
-    # Small visible defects may not lift the image-level score enough, but they
-    # should still fire when a compact patch cluster already exceeds the final decision threshold.
+    # If the heatmap already contains a peak that crosses the final decision
+    # threshold, the result should not stay at OK even when the anomaly is very
+    # small and does not form a large connected region.
     peak_trigger = (
-        float(evidence["peak_patch_score"]) > critical_peak_threshold
-        and decision_patch_count >= peak_min_patch_count
-        and largest_decision_component_patch_count >= component_min_patch_count
+        float(evidence["peak_patch_score"]) > decision_threshold
+        and decision_patch_count >= 1
     )
 
     if normal_trigger and critical_trigger:
