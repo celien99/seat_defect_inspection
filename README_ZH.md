@@ -94,6 +94,9 @@ result = inspect_once(
     seat_model_id="seat_model_a",
 )
 print(result.status, result.decision_reason)
+print(result.report_path)
+print(result.archive_report_path)
+print(result.artifact_paths)
 ```
 
 长期运行的服务建议复用同一个 `SeatDefectInspector` 实例，避免每次检测都重新构造相机、YOLO、PatchCore 和机位管线缓存：
@@ -104,7 +107,8 @@ from seat_defect_inspection import SeatDefectInspector
 inspector = SeatDefectInspector("configs/seat_defect_inspection.mvs.json")
 
 result = inspector.inspect(part_id="seat_000001", seat_model_id="seat_model_a")
-print(result.status)
+payload = result.to_dict()
+print(payload["status"], payload["report_path"], payload["artifact_paths"])
 ```
 
 离线图片文件夹批测也可以直接调用：

@@ -46,6 +46,9 @@ result = inspect_once(
     seat_model_id="seat_model_a",
 )
 print(result.status, result.decision_reason)
+print(result.report_path)
+print(result.archive_report_path)
+print(result.artifact_paths)
 ```
 
 For long-running services, reuse one inspector instance so model and camera pipeline caches stay warm:
@@ -55,6 +58,8 @@ from seat_defect_inspection import SeatDefectInspector
 
 inspector = SeatDefectInspector("configs/seat_defect_inspection.mvs.json")
 result = inspector.inspect(part_id="seat_000001", seat_model_id="seat_model_a")
+payload = result.to_dict()
+print(payload["status"], payload["report_path"], payload["artifact_paths"])
 ```
 
 Offline folder inspection is available through the same package API:

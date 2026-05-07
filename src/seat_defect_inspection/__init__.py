@@ -29,6 +29,7 @@ __all__ = [
     "DetectionConfig",
     "FusionConfig",
     "InspectionConfig",
+    "InspectionApiResponse",
     "InspectionResult",
     "InspectionService",
     "PatchCoreConfig",
@@ -49,6 +50,7 @@ __all__ = [
 ]
 
 _LAZY_EXPORTS = {
+    "InspectionApiResponse": (".api", "InspectionApiResponse"),
     "InspectionService": (".service", "InspectionService"),
     "SeatDefectInspector": (".api", "SeatDefectInspector"),
     "capture_samples": (".service", "capture_samples"),

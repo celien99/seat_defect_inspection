@@ -9,7 +9,7 @@ from seat_defect_inspection.api import (
     inspect_once,
 )
 from seat_defect_inspection.config import InspectionConfig
-from seat_defect_inspection.schemas import InspectionResult
+from seat_defect_inspection.schemas import CameraInspectionResult, InspectionResult
 
 
 def _result(part_id: str | None, seat_model_id: str | None) -> InspectionResult:
@@ -20,12 +20,30 @@ def _result(part_id: str | None, seat_model_id: str | None) -> InspectionResult:
         status="OK",
         decision_reason="all_checks_passed",
         seat_model_id=seat_model_id,
+        camera_results=[
+            CameraInspectionResult(
+                camera_id="cam_0",
+                frame_id="frame_001",
+                source="cam_0.png",
+                source_kind="image",
+                status="OK",
+                reason="all_checks_passed",
+                artifact_paths={
+                    "raw": "outputs/debug/cam_0/raw.png",
+                    "overlay": "outputs/debug/cam_0/overlay.png",
+                },
+            )
+        ],
     )
 
 
 def test_inspect_once_accepts_config_path(monkeypatch, tmp_path: Path) -> None:
     config_path = tmp_path / "config.json"
-    loaded_config = InspectionConfig(part_id="loaded_part")
+    report_path = tmp_path / "results.json"
+    loaded_config = InspectionConfig(
+        part_id="loaded_part",
+        output_json_path=str(report_path),
+    )
     observed: dict[str, object] = {}
 
     def fake_load_config(path: str) -> InspectionConfig:
@@ -60,6 +78,19 @@ def test_inspect_once_accepts_config_path(monkeypatch, tmp_path: Path) -> None:
     assert observed["part_id"] == "seat_001"
     assert observed["seat_model_id"] == "model_a"
     assert result.status == "OK"
+    assert result.result.status == "OK"
+    assert result.report_path == str(report_path)
+    assert result.archive_report_path.endswith("results_history/model_a/seat_001/frame_001.json")
+    assert result.artifact_paths == {
+        "cam_0": {
+            "raw": "outputs/debug/cam_0/raw.png",
+            "overlay": "outputs/debug/cam_0/overlay.png",
+        }
+    }
+    assert result.to_dict()["report_path"] == str(report_path)
+    assert result.to_dict()["artifact_paths"]["cam_0"]["overlay"] == (
+        "outputs/debug/cam_0/overlay.png"
+    )
 
 
 def test_seat_defect_inspector_reuses_service_between_inspections(monkeypatch) -> None:
@@ -87,6 +118,7 @@ def test_seat_defect_inspector_reuses_service_between_inspections(monkeypatch) -
     assert len(created_services) == 1
     assert first.part_id == "seat_001:0"
     assert second.part_id == "seat_002:0"
+    assert first.result.part_id == "seat_001:0"
 
 
 def test_inspect_folder_once_routes_to_offline_api(monkeypatch) -> None:
