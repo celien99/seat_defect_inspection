@@ -33,6 +33,9 @@ class RoiRefineConfig:
     crop_expand_ratio: float = 0.05
     crop_shrink_ratio: float = 0.0
 
+    # 对 YOLO 前景 mask 做保守内缩，剔除座椅轮廓边缘的无效像素。
+    mask_erode_pixels: int = 1
+
     # 屏蔽边缘像素，减少座椅边界和背景混入 PatchCore。
     edge_ignore_pixels: int = 6
     alignment: AlignmentConfig = field(default_factory=AlignmentConfig)

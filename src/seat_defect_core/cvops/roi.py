@@ -53,6 +53,9 @@ class RoiRefineEngine:
             target_mask,
         )
         target_mask = (target_mask > 0).astype(np.uint8)
+        target_mask = self._erode_target_mask(target_mask)
+        if int(target_mask.sum()) <= 0:
+            raise ValueError("target_mask_empty_after_erode")
         valid_mask = self._build_valid_mask(target_mask)
         ignore_mask = self._build_ignore_mask(target_mask, valid_mask)
 
@@ -86,6 +89,15 @@ class RoiRefineEngine:
             raise ValueError("target_mask_missing")
         # 只有显式 fallback_box 路径才允许退回矩形 ROI，避免静默污染 PatchCore 输入。
         return np.ones(roi_image.shape[:2], dtype=np.uint8)
+
+    def _erode_target_mask(self, target_mask: np.ndarray) -> np.ndarray:
+        """按配置把 YOLO 前景 mask 向内收缩，避免边缘噪声进入 PatchCore。"""
+        erode_pixels = int(max(0, self.config.mask_erode_pixels))
+        if erode_pixels <= 0:
+            return target_mask
+        kernel_size = erode_pixels * 2 + 1
+        kernel = np.ones((kernel_size, kernel_size), dtype=np.uint8)
+        return cv2.erode(target_mask, kernel, iterations=1).astype(np.uint8)
 
     def _resize_bundle(
         self,

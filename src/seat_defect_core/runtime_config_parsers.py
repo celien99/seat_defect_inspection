@@ -247,6 +247,10 @@ def _parse_roi_refine_config(payload: Any, *, scope: str) -> RoiRefineConfig:
             payload.get("crop_shrink_ratio"),
             defaults.crop_shrink_ratio,
         ),
+        mask_erode_pixels=_int_or_default(
+            payload.get("mask_erode_pixels"),
+            defaults.mask_erode_pixels,
+        ),
         edge_ignore_pixels=_int_or_default(
             payload.get("edge_ignore_pixels"),
             defaults.edge_ignore_pixels,
