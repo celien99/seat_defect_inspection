@@ -1,0 +1,21 @@
+{
+  "settings_version": "0.0.6",
+  "datasets_dir": "E:\\code\\seat_defect_inspection\\datasets",
+  "weights_dir": "weights",
+  "runs_dir": "runs",
+  "uuid": "e6949871ab83ff0fd9a2a9b64b73d2d700578af00540b2afe816070e9df25da8",
+  "sync": true,
+  "api_key": "",
+  "openai_api_key": "",
+  "clearml": true,
+  "comet": true,
+  "dvc": true,
+  "hub": true,
+  "mlflow": true,
+  "neptune": true,
+  "raytune": true,
+  "tensorboard": false,
+  "wandb": false,
+  "vscode_msg": true,
+  "openvino_msg": true
+}

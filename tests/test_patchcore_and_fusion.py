@@ -1104,9 +1104,9 @@ def test_transformer_patchcore_fit_predict_and_reload(tmp_path, monkeypatch) -> 
     _install_stubbed_transformer_patchcore(monkeypatch)
     config = PatchCoreConfig(
         backend="transformer",
-        backbone_name="vit_b_16",
-        backbone_weights_path="local_vit_b_16.pth",
-        image_size=224,
+        backbone_name="swin_t",
+        backbone_weights_path="local_swin_t.pth",
+        image_size=384,
         max_memory=32,
         texture_input="lab_l",
         coreset_sampling_ratio=0.5,
@@ -1136,8 +1136,8 @@ def test_transformer_patchcore_fit_predict_and_reload(tmp_path, monkeypatch) -> 
     reloaded_result = loaded.predict(*samples[1])
 
     assert loaded.config.backend == "transformer"
-    assert loaded.config.backbone_name == "vit_b_16"
-    assert loaded.config.image_size == 224
+    assert loaded.config.backbone_name == "swin_t"
+    assert loaded.config.image_size == 384
     assert reloaded_result.heatmap.shape == samples[1][0].shape[:2]
     assert reloaded_result.total_patch_count >= reloaded_result.valid_patch_count > 0
 

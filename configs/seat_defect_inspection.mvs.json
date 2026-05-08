@@ -26,14 +26,14 @@
           "max_underexposed_ratio": 0.35
         },
         "preprocess": {
-          "denoise_method": "gaussian",
+          "denoise_method": "none",
           "gaussian_kernel_size": 5,
-          "white_balance_method": "gray_world",
+          "white_balance_method": "none",
           "max_white_balance_gain": 1.2,
-          "apply_illumination_correction": true,
+          "apply_illumination_correction": false,
           "illumination_blur_kernel_size": 51,
           "illumination_strength": 0.65,
-          "apply_clahe": true,
+          "apply_clahe": false,
           "clahe_clip_limit": 2.0,
           "clahe_tile_grid_size": 8,
           "sharpen": false
@@ -61,7 +61,7 @@
           }
         },
         "patchcore": {
-          "backend": "full",
+          "backend": "transformer",
           "image_size": 384,
           "patch_size": 16,
           "stride": 8,
@@ -69,7 +69,7 @@
           "threshold_quantile": 0.9,
           "coreset_sampling_ratio": 0.1,
           "texture_input": "lab_l",
-          "backbone_name": "wide_resnet50_2",
+          "backbone_name": "swin_t",
           "backbone_pretrained": true,
           "backbone_device": "cuda",
           "min_target_coverage": 0.55,
@@ -105,14 +105,14 @@
           "max_underexposed_ratio": 0.35
         },
         "preprocess": {
-          "denoise_method": "gaussian",
+          "denoise_method": "none",
           "gaussian_kernel_size": 5,
-          "white_balance_method": "gray_world",
+          "white_balance_method": "none",
           "max_white_balance_gain": 1.2,
-          "apply_illumination_correction": true,
+          "apply_illumination_correction": false,
           "illumination_blur_kernel_size": 51,
           "illumination_strength": 0.65,
-          "apply_clahe": true,
+          "apply_clahe": false,
           "clahe_clip_limit": 2.0,
           "clahe_tile_grid_size": 8,
           "sharpen": false
@@ -140,7 +140,7 @@
           }
         },
         "patchcore": {
-          "backend": "full",
+          "backend": "transformer",
           "image_size": 384,
           "patch_size": 16,
           "stride": 8,
@@ -148,7 +148,7 @@
           "threshold_quantile": 0.9,
           "coreset_sampling_ratio": 0.1,
           "texture_input": "lab_l",
-          "backbone_name": "wide_resnet50_2",
+          "backbone_name": "swin_t",
           "backbone_pretrained": true,
           "backbone_device": "cuda",
           "min_target_coverage": 0.55,
@@ -184,14 +184,14 @@
           "max_underexposed_ratio": 0.35
         },
         "preprocess": {
-          "denoise_method": "gaussian",
+          "denoise_method": "none",
           "gaussian_kernel_size": 5,
-          "white_balance_method": "gray_world",
+          "white_balance_method": "none",
           "max_white_balance_gain": 1.2,
-          "apply_illumination_correction": true,
+          "apply_illumination_correction": false,
           "illumination_blur_kernel_size": 51,
           "illumination_strength": 0.65,
-          "apply_clahe": true,
+          "apply_clahe": false,
           "clahe_clip_limit": 2.0,
           "clahe_tile_grid_size": 8,
           "sharpen": false
@@ -219,7 +219,7 @@
           }
         },
         "patchcore": {
-          "backend": "full",
+          "backend": "transformer",
           "image_size": 384,
           "patch_size": 16,
           "stride": 8,
@@ -227,7 +227,7 @@
           "threshold_quantile": 0.9,
           "coreset_sampling_ratio": 0.1,
           "texture_input": "lab_l",
-          "backbone_name": "wide_resnet50_2",
+          "backbone_name": "swin_t",
           "backbone_pretrained": true,
           "backbone_device": "cuda",
           "min_target_coverage": 0.55,
@@ -263,14 +263,14 @@
           "max_underexposed_ratio": 0.35
         },
         "preprocess": {
-          "denoise_method": "gaussian",
+          "denoise_method": "none",
           "gaussian_kernel_size": 5,
-          "white_balance_method": "gray_world",
+          "white_balance_method": "none",
           "max_white_balance_gain": 1.2,
-          "apply_illumination_correction": true,
+          "apply_illumination_correction": false,
           "illumination_blur_kernel_size": 51,
           "illumination_strength": 0.65,
-          "apply_clahe": true,
+          "apply_clahe": false,
           "clahe_clip_limit": 2.0,
           "clahe_tile_grid_size": 8,
           "sharpen": false
@@ -298,7 +298,7 @@
           }
         },
         "patchcore": {
-          "backend": "full",
+          "backend": "transformer",
           "image_size": 384,
           "patch_size": 16,
           "stride": 8,
@@ -306,7 +306,7 @@
           "threshold_quantile": 0.9,
           "coreset_sampling_ratio": 0.1,
           "texture_input": "lab_l",
-          "backbone_name": "wide_resnet50_2",
+          "backbone_name": "swin_t",
           "backbone_pretrained": true,
           "backbone_device": "cuda",
           "min_target_coverage": 0.55,
@@ -342,14 +342,14 @@
           "max_underexposed_ratio": 0.35
         },
         "preprocess": {
-          "denoise_method": "gaussian",
+          "denoise_method": "none",
           "gaussian_kernel_size": 5,
-          "white_balance_method": "gray_world",
+          "white_balance_method": "none",
           "max_white_balance_gain": 1.2,
-          "apply_illumination_correction": true,
+          "apply_illumination_correction": false,
           "illumination_blur_kernel_size": 51,
           "illumination_strength": 0.65,
-          "apply_clahe": true,
+          "apply_clahe": false,
           "clahe_clip_limit": 2.0,
           "clahe_tile_grid_size": 8,
           "sharpen": false
@@ -377,7 +377,7 @@
           }
         },
         "patchcore": {
-          "backend": "full",
+          "backend": "transformer",
           "image_size": 384,
           "patch_size": 16,
           "stride": 8,
@@ -385,7 +385,7 @@
           "threshold_quantile": 0.9,
           "coreset_sampling_ratio": 0.1,
           "texture_input": "lab_l",
-          "backbone_name": "wide_resnet50_2",
+          "backbone_name": "swin_t",
           "backbone_pretrained": true,
           "backbone_device": "cuda",
           "min_target_coverage": 0.55,

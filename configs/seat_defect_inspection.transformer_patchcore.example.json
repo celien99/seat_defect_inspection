@@ -49,20 +49,20 @@
           "crop_shrink_ratio": 0.0,
           "edge_ignore_pixels": 4,
           "alignment": {
-            "output_width": 224,
-            "output_height": 224
+            "output_width": 384,
+            "output_height": 384
           }
         },
         "patchcore": {
           "backend": "transformer",
-          "image_size": 224,
+          "image_size": 384,
           "patch_size": 16,
           "stride": 16,
           "max_memory": 512,
           "threshold_quantile": 0.9,
           "coreset_sampling_ratio": 0.1,
           "texture_input": "lab_l",
-          "backbone_name": "vit_b_16",
+          "backbone_name": "swin_t",
           "backbone_pretrained": true,
           "backbone_device": "cuda",
           "min_target_coverage": 0.55,

@@ -278,9 +278,9 @@ def test_load_config_accepts_transformer_patchcore_with_backbone_weights(tmp_pat
                             "patchcore_model_path": "model.npz",
                             "patchcore": {
                                 "backend": "transformer",
-                                "backbone_name": "vit_b_16",
-                                "backbone_weights_path": "models/vit_b_16.pth",
-                                "image_size": 224,
+                                "backbone_name": "swin_t",
+                                "backbone_weights_path": "models/swin_t.pth",
+                                "image_size": 384,
                             },
                         }
                     ],
@@ -294,10 +294,10 @@ def test_load_config_accepts_transformer_patchcore_with_backbone_weights(tmp_pat
 
     camera = config.cameras[0]
     assert camera.patchcore.backend == "transformer"
-    assert camera.patchcore.backbone_name == "vit_b_16"
-    assert camera.patchcore.image_size == 224
+    assert camera.patchcore.backbone_name == "swin_t"
+    assert camera.patchcore.image_size == 384
     assert camera.patchcore.backbone_weights_path == str(
-        (tmp_path / "models/vit_b_16.pth").resolve()
+        (tmp_path / "models/swin_t.pth").resolve()
     )
 
 
