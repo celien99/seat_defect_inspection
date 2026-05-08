@@ -1,16 +1,9 @@
-"""工程层 JSON 输出工具。
-
-检测报告导出统一复用 ``seat_defect_core.reporting``；本模块只保留采图 manifest。
-"""
+"""工程层采图 manifest 输出工具。"""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from seat_defect_core.reporting import (
-    export_inspection_report,
-    resolve_inspection_archive_path,
-)
 from seat_defect_core.util import write_json
 
 from .schemas import CaptureRecord, CaptureSummary
@@ -51,6 +44,4 @@ def _capture_record_to_dict(record: CaptureRecord) -> dict[str, str | None]:
 
 __all__ = [
     "export_capture_manifest",
-    "export_inspection_report",
-    "resolve_inspection_archive_path",
 ]

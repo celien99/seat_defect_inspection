@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 
 from seat_defect_core.cvops import split_roi_regions
-from seat_defect_core.patchcore import ColorConsistencyService, list_images
+from seat_defect_core.patchcore import ColorConsistencyService
 from seat_defect_core.util import (
     format_reason_counter,
     select_patchcore_input,
@@ -18,6 +18,7 @@ from seat_defect_core.util import (
 )
 
 from ..config import CameraConfig
+from ..patchcore import PatchCoreTrainer, list_images
 
 if TYPE_CHECKING:
     from .core import CameraPipeline, InspectionService
@@ -113,7 +114,7 @@ def _train_one_camera(
             "3) ROI 精修后的有效区域是否正常。"
         )
 
-    patchcore = service.build_patchcore_service(camera)
+    patchcore = PatchCoreTrainer(service.resolve_patchcore_config(camera))
     try:
         patchcore_summary = patchcore.fit(patchcore_samples)
     except ValueError as exc:
@@ -242,7 +243,7 @@ def _train_one_camera_regions(
                 f"跳过原因：{format_reason_counter(skipped_reason_counter)}。"
             )
 
-        patchcore = service.build_patchcore_service(camera, region)
+        patchcore = PatchCoreTrainer(service.resolve_patchcore_config(camera, region))
         try:
             patchcore_summary = patchcore.fit(samples)
         except ValueError as exc:

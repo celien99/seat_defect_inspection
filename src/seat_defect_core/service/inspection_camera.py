@@ -1,4 +1,4 @@
-"""Single-camera SDK inspection details."""
+"""Single-camera core inspection details."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from ..config import CameraConfig
 from ..cvops import save_debug_artifacts, split_roi_regions
 from ..patchcore import ColorConsistencyService
-from ..schemas import BoundingBox, CameraInspectionResult, FramePacket, RegionPatchCoreResult
+from ..types import BoundingBox, CameraInspectionResult, FramePacket, RegionPatchCoreResult
 from ..util import select_patchcore_input
 
 if TYPE_CHECKING:
@@ -21,7 +21,7 @@ def inspect_one_camera(
     pipeline: "CameraPipeline",
     seat_model_id: str | None,
 ) -> CameraInspectionResult:
-    """Run one camera through preprocess, detection, PatchCore and artifacts."""
+    """Run one camera through detection, ROI, PatchCore and artifacts."""
     prepared = pipeline.prepare_image(frame_packet.image)
     shared_result_fields = {
         "camera_id": frame_packet.camera_id,

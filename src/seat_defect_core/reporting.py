@@ -6,7 +6,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from .schemas import (
+from .types import (
     BoundingBox,
     CameraInspectionResult,
     InspectionResult,

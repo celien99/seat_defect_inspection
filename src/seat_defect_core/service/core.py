@@ -1,4 +1,4 @@
-"""SDK runtime context and cached camera pipelines."""
+"""Core runtime context and cached camera pipelines."""
 
 from __future__ import annotations
 
@@ -11,8 +11,7 @@ from typing import Any
 from ..config import CameraConfig, InspectionConfig, PatchCoreConfig, RegionConfig
 from ..cvops import ImageQualityGuard, RoiRefineEngine
 from ..patchcore import LoadedModelBundle, PatchCoreService
-from ..preprocess import PreprocessEngine
-from ..schemas import DetectionResult, ImageQualityDecision, RoiRefineResult
+from ..types import DetectionResult, ImageQualityDecision, RoiRefineResult
 from ..yolo import DetectionService
 
 
@@ -21,7 +20,6 @@ class PreparedCameraSample:
     """Shared intermediate data for one camera."""
 
     quality: ImageQualityDecision | None
-    preprocessed_image: Any | None = None
     detection: DetectionResult | None = None
     roi: RoiRefineResult | None = None
     rejection_reason: str | None = None
@@ -37,22 +35,19 @@ class ResolvedInspectionContext:
 
 
 class CameraPipeline:
-    """Per-camera preprocess, detection, ROI and quality pipeline."""
+    """Per-camera detection, ROI and quality pipeline."""
 
     def __init__(self, config: CameraConfig) -> None:
         self.config = config
         self.quality_guard = ImageQualityGuard(config.quality)
-        self.preprocess_engine = PreprocessEngine(config.preprocess)
         self.detection_service = DetectionService(config.detection)
         self.roi_refine_engine = RoiRefineEngine(config.roi)
 
     def prepare_image(self, image: Any) -> PreparedCameraSample:
-        preprocessed = self.preprocess_engine.process(image)
-        detection = self.detection_service.detect(preprocessed)
+        detection = self.detection_service.detect(image)
         if detection.target is None:
             return PreparedCameraSample(
                 quality=None,
-                preprocessed_image=preprocessed,
                 detection=detection,
                 rejection_reason="target_not_found",
             )
@@ -60,17 +55,15 @@ class CameraPipeline:
         if detection.target.segmentation_mask is None and not detection.used_fallback:
             return PreparedCameraSample(
                 quality=None,
-                preprocessed_image=preprocessed,
                 detection=detection,
                 rejection_reason="target_mask_missing",
             )
 
         try:
-            roi = self.roi_refine_engine.refine(preprocessed, detection)
+            roi = self.roi_refine_engine.refine(image, detection)
         except ValueError as exc:
             return PreparedCameraSample(
                 quality=None,
-                preprocessed_image=preprocessed,
                 detection=detection,
                 rejection_reason=str(exc),
             )
@@ -81,7 +74,6 @@ class CameraPipeline:
         if not quality.accepted:
             return PreparedCameraSample(
                 quality=quality,
-                preprocessed_image=preprocessed,
                 detection=detection,
                 roi=roi,
                 rejection_reason=f"quality_{quality.reason}",
@@ -89,14 +81,13 @@ class CameraPipeline:
 
         return PreparedCameraSample(
             quality=quality,
-            preprocessed_image=preprocessed,
             detection=detection,
             roi=roi,
         )
 
 
 class InspectionService:
-    """SDK inspection service without capture or training responsibilities."""
+    """Core inspection service without capture or training responsibilities."""
 
     def __init__(self, config: InspectionConfig) -> None:
         self.config = config
@@ -149,7 +140,6 @@ class InspectionService:
             "patchcore_input_mode": "transparent_bgra",
             "color_insensitive_mode": bool(camera.color_insensitive_mode),
             "quality": asdict(camera.quality),
-            "preprocess": asdict(camera.preprocess),
             "detection": {
                 "model_path": camera.detection.model_path,
                 "target_class": camera.detection.target_class,
@@ -207,14 +197,6 @@ class InspectionService:
         ):
             patchcore_config = replace(patchcore_config, texture_input="lab_l")
         return patchcore_config
-
-    def build_patchcore_service(
-        self,
-        camera: CameraConfig,
-        region: RegionConfig | None = None,
-    ) -> PatchCoreService:
-        patchcore_config = self.resolve_patchcore_config(camera, region)
-        return PatchCoreService(patchcore_config)
 
     def load_model_bundle(
         self,

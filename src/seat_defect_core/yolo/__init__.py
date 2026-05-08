@@ -1,4 +1,4 @@
-"""YOLO detection entrypoint for SDK runtime."""
+"""YOLO detection entrypoint for core runtime."""
 
 from __future__ import annotations
 

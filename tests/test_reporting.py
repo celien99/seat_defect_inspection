@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from seat_defect_core.reporting import export_inspection_report
-from seat_defect_core.schemas import BoundingBox, CameraInspectionResult, DetectionObject, DetectionResult, InspectionResult
+from seat_defect_core.types import BoundingBox, CameraInspectionResult, DetectionObject, DetectionResult, InspectionResult
 
 
 def test_export_inspection_report_keeps_latest_and_history(tmp_path: Path) -> None:

@@ -5,10 +5,10 @@
 当前项目的 PatchCore 不是直接拿整张原图训练，而是先走完整图像链路：
 
 ```text
-原图 -> preprocess -> YOLO / fallback_box -> ROI -> target_mask / valid_mask -> 透明 BGRA PatchCore 输入 -> full PatchCore
+原图 -> YOLO / fallback_box -> ROI -> target_mask / valid_mask -> 透明 BGRA PatchCore 输入 -> full PatchCore
 ```
 
-因此调参时不要只盯着 `patchcore` 小节。上游预处理、YOLO 定位、ROI 裁剪和 mask 质量都会直接影响 PatchCore 学到的正常分布。
+因此调参时不要只盯着 `patchcore` 小节。上游 YOLO 定位、ROI 裁剪和 mask 质量都会直接影响 PatchCore 学到的正常分布。
 
 ## 1. 先记住三条原则
 
@@ -16,7 +16,7 @@
    `train_good_dir` 里混入 NG 图，会把缺陷学成正常，后续会漏检。
 
 2. 训练和推理看到的图像必须一致。
-   修改 `preprocess`、YOLO、ROI、mask、`patchcore.image_size`、backbone 或透明 BGRA 规则后，都要重新执行 `train-patchcore`。
+   修改 YOLO、ROI、mask、`patchcore.image_size`、backbone 或透明 BGRA 规则后，都要重新执行 `train-patchcore`。
 
 3. 先查输入，再调阈值。
    如果 ROI 裁偏、mask 错、黑边进入 PatchCore、正常样本不足，单纯调高/调低阈值只会把问题藏起来。
@@ -160,7 +160,6 @@ PatchCore 训练输入来自上游链路，因此这些配置也要纳入调参�
 | 配置区域 | 关键参数 | 对 PatchCore 的影响 |
 | --- | --- | --- |
 | `train_good_dir` | 正常样本目录 | 决定正常分布上限。样本少、覆盖不足、混入 NG 都会直接伤害模型 |
-| `preprocess` | 降噪、白平衡、光照校正、CLAHE | 改变纹理和亮度分布。修改后必须重新训练 PatchCore |
 | `detection` | `model_path`、`confidence`、`iou`、`fallback_box` | 决定目标定位和 mask 来源。定位漂移会让 ROI 分布漂移 |
 | `roi` | `crop_expand_ratio`、`crop_shrink_ratio`、`edge_ignore_pixels`、`alignment` | 决定 PatchCore 看哪些区域、边缘是否被排除、输出尺寸是否稳定 |
 | `color_insensitive_mode` | true/false | 当前为 true 时更偏亮度纹理检测，弱化颜色波动 |
@@ -232,7 +231,6 @@ PatchCore 训练输入来自上游链路，因此这些配置也要纳入调参�
 处理顺序：
 
 1. 增加不同正常光照条件下的训练样本。
-2. 检查 `preprocess` 的白平衡、光照校正和 CLAHE 是否稳定。
 3. 保持 `texture_input = lab_l`，不要轻易切到 RGB。
 4. 若颜色差异本身是缺陷，再单独评估颜色分支，而不是直接让 PatchCore 对颜色过敏。
 
@@ -285,7 +283,6 @@ seat-defect-inspection train-patchcore \
 必须重训的变化包括：
 
 - 正常样本集变化。
-- `preprocess` 参数变化。
 - YOLO 权重、`confidence`、`target_class` 或 `fallback_box` 变化。
 - ROI 裁剪、输出尺寸、边缘忽略、mask 规则变化。
 - `patchcore.image_size`、`texture_input`、backbone、`feature_layers` 变化。

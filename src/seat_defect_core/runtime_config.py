@@ -1,4 +1,4 @@
-"""Load SDK runtime configuration from JSON."""
+"""Load core inspect runtime configuration from JSON."""
 
 from __future__ import annotations
 

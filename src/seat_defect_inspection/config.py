@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from seat_defect_core.config import (
     CameraConfig as CoreCameraConfig,
     InspectionConfig as CoreInspectionConfig,
-    PreprocessConfig,
     SeatModelConfig as CoreSeatModelConfig,
 )
 
@@ -38,7 +37,6 @@ class YoloTrainingConfig:
     cache: bool = False
     pretrained: bool = True
     seat_model_id: str | None = None
-    preprocess: PreprocessConfig | None = None
 
 
 @dataclass(slots=True)
@@ -61,7 +59,6 @@ class InspectionConfig(CoreInspectionConfig):
 __all__ = [
     "CameraConfig",
     "InspectionConfig",
-    "PreprocessConfig",
     "SeatModelConfig",
     "YoloTrainingConfig",
 ]

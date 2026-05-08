@@ -9,16 +9,18 @@ import cv2
 import numpy as np
 
 import seat_defect_core.patchcore.engine as patchcore_engine
+import seat_defect_inspection.patchcore.training as patchcore_training
 from seat_defect_core.config import AlignmentConfig, ColorBranchConfig, DetectionConfig, FusionConfig, PatchCoreConfig, QualityGuardConfig, RoiRefineConfig
 from seat_defect_core.cvops import ImageQualityGuard, RoiRefineEngine
 from seat_defect_core.fusion import fuse_camera_results, should_early_stop_on_ng
 from seat_defect_core.patchcore import PatchCoreService, _decide_patchcore_anomaly
 from seat_defect_core.patchcore.features import _PatchBatch, _prepare_feature_image
 from seat_defect_core.patchcore.scoring import _analyze_patch_evidence, normalize_map_against_threshold
-from seat_defect_core.schemas import BoundingBox, CameraInspectionResult, DetectionResult, DetectionObject, FramePacket, ImageQualityDecision, ImageQualityMetrics, RoiRefineResult, TextureAnomalyResult
 from seat_defect_core.service.inspection_camera import inspect_one_camera
+from seat_defect_core.types import BoundingBox, CameraInspectionResult, DetectionResult, DetectionObject, FramePacket, ImageQualityDecision, ImageQualityMetrics, RoiRefineResult, TextureAnomalyResult
 from seat_defect_core.yolo import DetectionService
 from seat_defect_inspection.config import CameraConfig
+from seat_defect_inspection.patchcore import PatchCoreTrainer
 from seat_defect_inspection.runtime_config import load_yolo_training_config
 from seat_defect_inspection.service import CameraPipeline, InspectionService, PreparedCameraSample
 from seat_defect_inspection.service.inspection import run_inspection as run_online_inspection
@@ -63,7 +65,17 @@ def _install_stubbed_full_patchcore(monkeypatch) -> None:
         fake_get_torch_feature_extractor,
     )
     monkeypatch.setattr(
+        PatchCoreTrainer,
+        "_get_torch_feature_extractor",
+        fake_get_torch_feature_extractor,
+    )
+    monkeypatch.setattr(
         patchcore_engine,
+        "extract_patch_embeddings",
+        fake_extract_patch_embeddings,
+    )
+    monkeypatch.setattr(
+        patchcore_training,
         "extract_patch_embeddings",
         fake_extract_patch_embeddings,
     )
@@ -327,7 +339,7 @@ def test_full_patchcore_threshold_uses_sample_exclusive_calibration(monkeypatch)
         texture_input="gray",
         coreset_sampling_ratio=1.0,
     )
-    service = PatchCoreService(config)
+    service = PatchCoreTrainer(config)
 
     target_mask = np.ones((4, 4), dtype=np.uint8)
     ignore_mask = np.zeros((4, 4), dtype=np.uint8)
@@ -970,7 +982,6 @@ def test_train_patchcore_writes_per_image_audit_artifacts(tmp_path: Path) -> Non
                         is_white_frame=False,
                     ),
                 ),
-                preprocessed_image=np.full((24, 24, 3), 120, dtype=np.uint8),
                 detection=DetectionResult(
                     target=DetectionObject(
                         label="seat",
@@ -1027,7 +1038,7 @@ def test_full_patchcore_fit_predict_and_reload(tmp_path, monkeypatch) -> None:
         texture_input="lab_l",
         coreset_sampling_ratio=0.5,
     )
-    service = PatchCoreService(config)
+    service = PatchCoreTrainer(config)
 
     rng = np.random.default_rng(42)
     samples = []
@@ -1296,7 +1307,6 @@ def test_inspection_service_passes_target_and_ignore_masks_to_patchcore(tmp_path
     )
     prepared = PreparedCameraSample(
         quality=None,
-        preprocessed_image=np.zeros((32, 32, 3), dtype=np.uint8),
         detection=DetectionResult(
             target=DetectionObject(
                 label="seat",
@@ -1401,7 +1411,6 @@ def test_quality_reject_can_still_return_ng_when_patchcore_finds_obvious_defect(
                 is_white_frame=False,
             ),
         ),
-        preprocessed_image=np.zeros((32, 32, 3), dtype=np.uint8),
         detection=DetectionResult(
             target=DetectionObject(
                 label="seat",

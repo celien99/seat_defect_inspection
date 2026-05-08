@@ -5,7 +5,7 @@ from __future__ import annotations
 import cv2
 
 from ..config import QualityGuardConfig
-from ..schemas import ImageQualityDecision, ImageQualityMetrics
+from ..types import ImageQualityDecision, ImageQualityMetrics
 
 
 class ImageQualityGuard:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .config import FusionConfig
-from .schemas import CameraInspectionResult, InspectionResult
+from .types import CameraInspectionResult, InspectionResult
 
 
 def fuse_camera_results(

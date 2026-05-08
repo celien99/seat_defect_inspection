@@ -17,12 +17,11 @@ from seat_defect_core.config import (
     DetectionConfig,
     FusionConfig,
     PatchCoreConfig,
-    PreprocessConfig,
     QualityGuardConfig,
     RegionConfig,
     RoiRefineConfig,
 )
-from seat_defect_core.schemas import BoundingBox
+from seat_defect_core.types import BoundingBox
 
 from .config import (
     CameraConfig,
@@ -174,10 +173,6 @@ def _parse_camera_config(payload: dict[str, Any], config_dir: Path, *, scope: st
             payload.get("quality"),
             scope=f"{scope}.quality",
         ),
-        preprocess=_parse_preprocess_config(
-            payload.get("preprocess"),
-            scope=f"{scope}.preprocess",
-        ),
         detection=_parse_detection_config(
             payload.get("detection"),
             config_dir,
@@ -253,73 +248,6 @@ def _parse_quality_guard_config(payload: Any, *, scope: str) -> QualityGuardConf
         max_underexposed_ratio=_float_or_default(
             payload.get("max_underexposed_ratio"),
             defaults.max_underexposed_ratio,
-        ),
-    )
-
-
-def _parse_preprocess_config(payload: Any, *, scope: str) -> PreprocessConfig:
-    defaults = PreprocessConfig()
-    if payload is None:
-        return defaults
-    payload = _expect_dict(payload, scope)
-    _reject_unknown_keys(payload, _field_names(PreprocessConfig), scope)
-    return PreprocessConfig(
-        resize_width=_optional_int(payload.get("resize_width")),
-        resize_height=_optional_int(payload.get("resize_height")),
-        denoise_method=_string_or_default(payload.get("denoise_method"), defaults.denoise_method),
-        gaussian_kernel_size=_int_or_default(
-            payload.get("gaussian_kernel_size"),
-            defaults.gaussian_kernel_size,
-        ),
-        bilateral_diameter=_int_or_default(
-            payload.get("bilateral_diameter"),
-            defaults.bilateral_diameter,
-        ),
-        bilateral_sigma_color=_float_or_default(
-            payload.get("bilateral_sigma_color"),
-            defaults.bilateral_sigma_color,
-        ),
-        bilateral_sigma_space=_float_or_default(
-            payload.get("bilateral_sigma_space"),
-            defaults.bilateral_sigma_space,
-        ),
-        white_balance_method=_string_or_default(
-            payload.get("white_balance_method"),
-            defaults.white_balance_method,
-        ),
-        max_white_balance_gain=_float_or_default(
-            payload.get("max_white_balance_gain"),
-            defaults.max_white_balance_gain,
-        ),
-        apply_illumination_correction=_bool_or_default(
-            payload.get("apply_illumination_correction"),
-            defaults.apply_illumination_correction,
-        ),
-        illumination_blur_kernel_size=_int_or_default(
-            payload.get("illumination_blur_kernel_size"),
-            defaults.illumination_blur_kernel_size,
-        ),
-        illumination_strength=_float_or_default(
-            payload.get("illumination_strength"),
-            defaults.illumination_strength,
-        ),
-        apply_clahe=_bool_or_default(payload.get("apply_clahe"), defaults.apply_clahe),
-        clahe_clip_limit=_float_or_default(
-            payload.get("clahe_clip_limit"),
-            defaults.clahe_clip_limit,
-        ),
-        clahe_tile_grid_size=_int_or_default(
-            payload.get("clahe_tile_grid_size"),
-            defaults.clahe_tile_grid_size,
-        ),
-        gamma=_optional_float(payload.get("gamma")),
-        sharpen=_bool_or_default(payload.get("sharpen"), defaults.sharpen),
-        sharpen_sigma=_float_or_default(payload.get("sharpen_sigma"), defaults.sharpen_sigma),
-        sharpen_amount=_float_or_default(payload.get("sharpen_amount"), defaults.sharpen_amount),
-        camera_matrix=_float_matrix(payload.get("camera_matrix"), scope=f"{scope}.camera_matrix"),
-        distortion_coeffs=_float_list(
-            payload.get("distortion_coeffs"),
-            scope=f"{scope}.distortion_coeffs",
         ),
     )
 
@@ -625,14 +553,6 @@ def _parse_yolo_training_config(
         cache=_bool_or_default(payload.get("cache"), defaults.cache),
         pretrained=_bool_or_default(payload.get("pretrained"), defaults.pretrained),
         seat_model_id=resolved_seat_model_id,
-        preprocess=(
-            _parse_preprocess_config(
-                payload.get("preprocess"),
-                scope=f"{scope}.preprocess",
-            )
-            if payload.get("preprocess") is not None
-            else None
-        ),
     )
 
 
@@ -744,12 +664,6 @@ def _int_or_default(value: Any, default: int) -> int:
     return int(value)
 
 
-def _optional_int(value: Any) -> int | None:
-    if _is_missing(value):
-        return None
-    return int(value)
-
-
 def _float_or_default(value: Any, default: float) -> float:
     if value is None:
         return default
@@ -770,22 +684,6 @@ def _string_list(value: Any, *, scope: str, default: list[str]) -> list[str]:
     if value is None:
         return list(default)
     return [str(item) for item in _ensure_list(value, scope)]
-
-
-def _float_list(value: Any, *, scope: str) -> list[float] | None:
-    if value is None:
-        return None
-    return [float(item) for item in _ensure_list(value, scope)]
-
-
-def _float_matrix(value: Any, *, scope: str) -> list[list[float]] | None:
-    if value is None:
-        return None
-    rows = _ensure_list(value, scope)
-    return [
-        [float(item) for item in _ensure_list(row, f"{scope}[{index}]")]
-        for index, row in enumerate(rows)
-    ]
 
 
 def _resolve_source_path(config_dir: Path, value: str) -> str:

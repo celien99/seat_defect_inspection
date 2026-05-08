@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from ..config import RegionConfig
-from ..schemas import BoundingBox, RoiRefineResult
+from ..types import BoundingBox, RoiRefineResult
 from ..util import select_patchcore_input
 
 

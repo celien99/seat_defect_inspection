@@ -8,9 +8,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from seat_defect_core.reporting import resolve_inspection_archive_path
 from seat_defect_core.util import write_json
 
-from ..reporting import resolve_inspection_archive_path
 from .inspection import run_inspection
 
 if TYPE_CHECKING:

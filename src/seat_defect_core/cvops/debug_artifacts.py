@@ -53,22 +53,14 @@ def save_debug_artifacts(
         frame_packet.image,
     )
 
-    if prepared.preprocessed_image is not None:
+    if "detections" in selected_artifacts:
         _save_selected_image(
             artifact_paths,
             selected_artifacts,
-            "preprocessed",
-            camera_dir / "preprocessed.png",
-            prepared.preprocessed_image,
+            "detections",
+            camera_dir / "detections.png",
+            _render_detections(frame_packet.image, prepared.detection),
         )
-        if "detections" in selected_artifacts:
-            _save_selected_image(
-                artifact_paths,
-                selected_artifacts,
-                "detections",
-                camera_dir / "detections.png",
-                _render_detections(prepared.preprocessed_image, prepared.detection),
-            )
 
     if prepared.roi is not None:
         _save_selected_image(

@@ -11,18 +11,18 @@ from seat_defect_core.config import (
     AlignmentConfig,
     DetectionConfig,
     PatchCoreConfig,
-    PreprocessConfig,
     QualityGuardConfig,
     RoiRefineConfig,
 )
 from seat_defect_core.cvops.debug_artifacts import _overlay_heatmap, _render_detections
 from seat_defect_core.patchcore import PatchCoreService
-from seat_defect_core.schemas import BoundingBox
 from seat_defect_core.service.core import CameraPipeline
+from seat_defect_core.types import BoundingBox
 from seat_defect_inspection.config import CameraConfig
+from seat_defect_inspection.patchcore import PatchCoreTrainer
 
 # 这个脚本只做：
-# 1. 单张图片进入当前项目里的 YOLO + OpenCV + ROI 链路
+# 1. 单张图片进入当前项目里的 YOLO + ROI 链路
 # 2. 把处理后的结果交给 PatchCore 模型
 # 3. 如果本地没有 PatchCore 模型，就先用少量样本拟合一个 demo 模型
 IMAGE_PATH = "datasets/seat_defect/images/val/1.png"
@@ -46,20 +46,6 @@ QUALITY = {
     "max_brightness_mean": 225.0,
     "max_overexposed_ratio": 0.25,
     "max_underexposed_ratio": 0.35,
-}
-
-PREPROCESS = {
-    "denoise_method": "gaussian",
-    "gaussian_kernel_size": 5,
-    "white_balance_method": "gray_world",
-    "max_white_balance_gain": 1.2,
-    "apply_illumination_correction": True,
-    "illumination_blur_kernel_size": 51,
-    "illumination_strength": 0.65,
-    "apply_clahe": True,
-    "clahe_clip_limit": 2.0,
-    "clahe_tile_grid_size": 8,
-    "sharpen": False,
 }
 
 DETECTION = {
@@ -123,7 +109,6 @@ def _build_camera() -> CameraConfig:
         source=IMAGE_PATH,
         patchcore_model_path=PATCHCORE_MODEL_PATH,
         quality=QualityGuardConfig(**QUALITY),
-        preprocess=PreprocessConfig(**PREPROCESS),
         detection=detection,
         roi=roi,
         patchcore=PatchCoreConfig(**PATCHCORE),
@@ -190,7 +175,7 @@ def _resolve_patchcore_service(
             f" 请检查 TRAIN_IMAGE_PATHS: {TRAIN_IMAGE_PATHS}"
         )
 
-    service = PatchCoreService(camera.patchcore)
+    service = PatchCoreTrainer(camera.patchcore)
     training_summary = service.fit(samples)
     service.save(model_path)
     return (
@@ -235,12 +220,10 @@ def main() -> None:
     sample_dir.mkdir(parents=True, exist_ok=True)
 
     write_image(sample_dir / "raw.png", image)
-    if prepared.preprocessed_image is not None:
-        write_image(sample_dir / "preprocessed.png", prepared.preprocessed_image)
-        write_image(
-            sample_dir / "detections.png",
-            _render_detections(prepared.preprocessed_image, prepared.detection),
-        )
+    write_image(
+        sample_dir / "detections.png",
+        _render_detections(image, prepared.detection),
+    )
     write_image(sample_dir / "roi.png", prepared.roi.aligned_roi_image)
     write_image(sample_dir / "patchcore_input.png", patchcore_input)
     write_mask(sample_dir / "valid_mask.png", prepared.roi.valid_mask)

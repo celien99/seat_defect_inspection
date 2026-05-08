@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 
 from ..config import ColorBranchConfig
-from ..schemas import ColorAnomalyResult
+from ..types import ColorAnomalyResult
 
 
 @dataclass(slots=True)

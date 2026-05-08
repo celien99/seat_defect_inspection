@@ -7,9 +7,9 @@ from typing import Any
 import cv2
 import numpy as np
 from ultralytics.engine.results import Results
-from ..config import DetectionConfig
-from ..schemas import BoundingBox, DetectionObject, DetectionResult
 
+from ..config import DetectionConfig
+from ..types import BoundingBox, DetectionObject, DetectionResult
 
 
 class DetectionService:
@@ -130,8 +130,3 @@ class DetectionService:
             )
             masks.append((resized > 0.5).astype(np.uint8))
         return masks
-
-
-def _ensure_local_yolo_config_dir() -> None:
-    """Compatibility hook for training code that wants to prepare Ultralytics config dirs."""
-    return None

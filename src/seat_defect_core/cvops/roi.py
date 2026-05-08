@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 
 from ..config import RoiRefineConfig
-from ..schemas import BoundingBox, DetectionResult, RoiRefineResult
+from ..types import BoundingBox, DetectionResult, RoiRefineResult
 from .roi_geometry import (
     _box_to_ints,
     _crop_mask,

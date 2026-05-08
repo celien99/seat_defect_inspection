@@ -7,7 +7,7 @@ from typing import Any
 import cv2
 import numpy as np
 
-from ..schemas import BoundingBox, DetectionObject
+from ..types import BoundingBox, DetectionObject
 
 
 def _expand_box(

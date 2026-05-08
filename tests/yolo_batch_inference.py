@@ -2,7 +2,7 @@ from pathlib import Path
 
 from ultralytics import YOLO
 
-from seat_defect_core.patchcore import list_images
+from seat_defect_inspection.patchcore import list_images
 
 # 直接改这里就可以：
 MODEL_PATH = "best.pt"

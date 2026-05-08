@@ -1,4 +1,4 @@
-"""SDK runtime configuration parsing."""
+"""Core inspect runtime configuration parsing."""
 
 from __future__ import annotations
 
@@ -15,13 +15,12 @@ from .config import (
     FusionConfig,
     InspectionConfig,
     PatchCoreConfig,
-    PreprocessConfig,
     QualityGuardConfig,
     RegionConfig,
     RoiRefineConfig,
     SeatModelConfig,
 )
-from .schemas import BoundingBox
+from .types import BoundingBox
 
 _LOCAL_PATH_SUFFIXES = {
     ".pt",
@@ -39,17 +38,6 @@ _LOCAL_PATH_SUFFIXES = {
 # 主配置与座椅型号配置。
 def _parse_inspection_config(payload: dict[str, Any], config_dir: Path) -> InspectionConfig:
     scope = "InspectionConfig"
-    ignored_keys = {
-        "capture_dir",
-        "capture_retries",
-        "debug_artifact_mode",
-        "save_debug_artifacts",
-        "yolo_training",
-    }
-    if any(key in payload for key in ignored_keys):
-        payload = dict(payload)
-        for key in ignored_keys:
-            payload.pop(key, None)
     _reject_unknown_keys(payload, _field_names(InspectionConfig), scope)
 
     cameras_payload = payload.get("cameras") or []
@@ -101,9 +89,6 @@ def _parse_seat_model_config(
     scope: str,
 ) -> SeatModelConfig:
     payload = _expect_dict(payload, scope)
-    if "yolo_training" in payload:
-        payload = dict(payload)
-        payload.pop("yolo_training", None)
     _reject_unknown_keys(payload, _field_names(SeatModelConfig), scope)
 
     seat_model_id = _require_string(payload, "seat_model_id", scope)
@@ -136,29 +121,25 @@ def _parse_camera_list(
 # 单机位及其子配置。
 def _parse_camera_config(payload: dict[str, Any], config_dir: Path, *, scope: str) -> CameraConfig:
     payload = _expect_dict(payload, scope)
-    if "train_good_dir" in payload:
-        payload = dict(payload)
-        payload.pop("train_good_dir", None)
     config_scope = f"CameraConfig {scope}"
     _reject_unknown_keys(payload, _field_names(CameraConfig), config_scope)
 
     return CameraConfig(
         camera_id=_require_string(payload, "camera_id", scope),
-        source=_resolve_source_path(config_dir, _require_string(payload, "source", scope)),
         patchcore_model_path=_resolve_local_path(
             config_dir,
             _require_string(payload, "patchcore_model_path", scope),
             force=True,
+        ),
+        source=_resolve_source_path(
+            config_dir,
+            _string_or_default(payload.get("source"), ""),
         ),
         enabled=_bool_or_default(payload.get("enabled"), True),
         color_insensitive_mode=_bool_or_default(payload.get("color_insensitive_mode"), False),
         quality=_parse_quality_guard_config(
             payload.get("quality"),
             scope=f"{scope}.quality",
-        ),
-        preprocess=_parse_preprocess_config(
-            payload.get("preprocess"),
-            scope=f"{scope}.preprocess",
         ),
         detection=_parse_detection_config(
             payload.get("detection"),
@@ -239,73 +220,6 @@ def _parse_quality_guard_config(payload: Any, *, scope: str) -> QualityGuardConf
     )
 
 
-def _parse_preprocess_config(payload: Any, *, scope: str) -> PreprocessConfig:
-    defaults = PreprocessConfig()
-    if payload is None:
-        return defaults
-    payload = _expect_dict(payload, scope)
-    _reject_unknown_keys(payload, _field_names(PreprocessConfig), scope)
-    return PreprocessConfig(
-        resize_width=_optional_int(payload.get("resize_width")),
-        resize_height=_optional_int(payload.get("resize_height")),
-        denoise_method=_string_or_default(payload.get("denoise_method"), defaults.denoise_method),
-        gaussian_kernel_size=_int_or_default(
-            payload.get("gaussian_kernel_size"),
-            defaults.gaussian_kernel_size,
-        ),
-        bilateral_diameter=_int_or_default(
-            payload.get("bilateral_diameter"),
-            defaults.bilateral_diameter,
-        ),
-        bilateral_sigma_color=_float_or_default(
-            payload.get("bilateral_sigma_color"),
-            defaults.bilateral_sigma_color,
-        ),
-        bilateral_sigma_space=_float_or_default(
-            payload.get("bilateral_sigma_space"),
-            defaults.bilateral_sigma_space,
-        ),
-        white_balance_method=_string_or_default(
-            payload.get("white_balance_method"),
-            defaults.white_balance_method,
-        ),
-        max_white_balance_gain=_float_or_default(
-            payload.get("max_white_balance_gain"),
-            defaults.max_white_balance_gain,
-        ),
-        apply_illumination_correction=_bool_or_default(
-            payload.get("apply_illumination_correction"),
-            defaults.apply_illumination_correction,
-        ),
-        illumination_blur_kernel_size=_int_or_default(
-            payload.get("illumination_blur_kernel_size"),
-            defaults.illumination_blur_kernel_size,
-        ),
-        illumination_strength=_float_or_default(
-            payload.get("illumination_strength"),
-            defaults.illumination_strength,
-        ),
-        apply_clahe=_bool_or_default(payload.get("apply_clahe"), defaults.apply_clahe),
-        clahe_clip_limit=_float_or_default(
-            payload.get("clahe_clip_limit"),
-            defaults.clahe_clip_limit,
-        ),
-        clahe_tile_grid_size=_int_or_default(
-            payload.get("clahe_tile_grid_size"),
-            defaults.clahe_tile_grid_size,
-        ),
-        gamma=_optional_float(payload.get("gamma")),
-        sharpen=_bool_or_default(payload.get("sharpen"), defaults.sharpen),
-        sharpen_sigma=_float_or_default(payload.get("sharpen_sigma"), defaults.sharpen_sigma),
-        sharpen_amount=_float_or_default(payload.get("sharpen_amount"), defaults.sharpen_amount),
-        camera_matrix=_float_matrix(payload.get("camera_matrix"), scope=f"{scope}.camera_matrix"),
-        distortion_coeffs=_float_list(
-            payload.get("distortion_coeffs"),
-            scope=f"{scope}.distortion_coeffs",
-        ),
-    )
-
-
 def _parse_alignment_config(payload: Any, *, scope: str) -> AlignmentConfig:
     defaults = AlignmentConfig()
     if payload is None:
@@ -349,9 +263,6 @@ def _parse_detection_config(payload: Any, config_dir: Path, *, scope: str) -> De
     if payload is None:
         return defaults
     payload = _expect_dict(payload, scope)
-    if "ignore_classes" in payload:
-        payload = dict(payload)
-        payload.pop("ignore_classes", None)
     _reject_unknown_keys(payload, _field_names(DetectionConfig), scope)
     return DetectionConfig(
         model_path=_resolve_optional_model_path(
@@ -628,12 +539,6 @@ def _int_or_default(value: Any, default: int) -> int:
     return int(value)
 
 
-def _optional_int(value: Any) -> int | None:
-    if _is_missing(value):
-        return None
-    return int(value)
-
-
 def _float_or_default(value: Any, default: float) -> float:
     if value is None:
         return default
@@ -656,23 +561,9 @@ def _string_list(value: Any, *, scope: str, default: list[str]) -> list[str]:
     return [str(item) for item in _ensure_list(value, scope)]
 
 
-def _float_list(value: Any, *, scope: str) -> list[float] | None:
-    if value is None:
-        return None
-    return [float(item) for item in _ensure_list(value, scope)]
-
-
-def _float_matrix(value: Any, *, scope: str) -> list[list[float]] | None:
-    if value is None:
-        return None
-    rows = _ensure_list(value, scope)
-    return [
-        [float(item) for item in _ensure_list(row, f"{scope}[{index}]")]
-        for index, row in enumerate(rows)
-    ]
-
-
 def _resolve_source_path(config_dir: Path, value: str) -> str:
+    if _is_missing(value):
+        return ""
     if "://" in value or value.isdigit():
         return value
     return _resolve_local_path(config_dir, value, force=True)
