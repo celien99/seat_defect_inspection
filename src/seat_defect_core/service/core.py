@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from ..config import CameraConfig, InspectionConfig
+from ..config import CameraConfig, InspectionConfig, PatchCoreConfig, RegionConfig
 from ..cvops import ImageQualityGuard, RoiRefineEngine
 from ..patchcore import LoadedModelBundle, PatchCoreService
 from ..preprocess import PreprocessEngine
@@ -101,7 +101,7 @@ class InspectionService:
     def __init__(self, config: InspectionConfig) -> None:
         self.config = config
         self._pipeline_cache: dict[str, dict[str, CameraPipeline]] = {}
-        self._model_cache: dict[tuple[str, str, str, int], LoadedModelBundle] = {}
+        self._model_cache: dict[tuple[str, str, str, str, int], LoadedModelBundle] = {}
 
     def resolve_context(self, seat_model_id: str | None) -> ResolvedInspectionContext:
         resolved_seat_model_id, cameras = self._resolve_active_cameras(seat_model_id)
@@ -160,6 +160,19 @@ class InspectionService:
             "roi": asdict(camera.roi),
         }
 
+    def build_region_patchcore_pipeline_context(
+        self,
+        camera: CameraConfig,
+        region: RegionConfig,
+    ) -> dict[str, Any]:
+        context = self.build_patchcore_pipeline_context(camera)
+        context["region"] = {
+            "region_id": region.region_id,
+            "box": [float(value) for value in region.box],
+            "patchcore_input_mode": "transparent_bgra_region",
+        }
+        return context
+
     def build_patchcore_pipeline_signature(self, camera: CameraConfig) -> str:
         payload = json.dumps(
             self.build_patchcore_pipeline_context(camera),
@@ -169,13 +182,38 @@ class InspectionService:
         )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
-    def build_patchcore_service(self, camera: CameraConfig) -> PatchCoreService:
-        patchcore_config = camera.patchcore
+    def build_region_patchcore_pipeline_signature(
+        self,
+        camera: CameraConfig,
+        region: RegionConfig,
+    ) -> str:
+        payload = json.dumps(
+            self.build_region_patchcore_pipeline_context(camera, region),
+            sort_keys=True,
+            ensure_ascii=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def resolve_patchcore_config(
+        self,
+        camera: CameraConfig,
+        region: RegionConfig | None = None,
+    ) -> PatchCoreConfig:
+        patchcore_config = region.patchcore if region is not None and region.patchcore is not None else camera.patchcore
         if (
             camera.color_insensitive_mode
             and patchcore_config.texture_input.strip().lower() not in {"gray", "lab_l"}
         ):
             patchcore_config = replace(patchcore_config, texture_input="lab_l")
+        return patchcore_config
+
+    def build_patchcore_service(
+        self,
+        camera: CameraConfig,
+        region: RegionConfig | None = None,
+    ) -> PatchCoreService:
+        patchcore_config = self.resolve_patchcore_config(camera, region)
         return PatchCoreService(patchcore_config)
 
     def load_model_bundle(
@@ -188,6 +226,7 @@ class InspectionService:
         cache_key = (
             seat_model_id or "__default__",
             camera.camera_id,
+            "__full__",
             pipeline_signature,
             model_mtime_ns,
         )
@@ -197,7 +236,7 @@ class InspectionService:
 
         loaded = PatchCoreService.load_bundle(
             camera.patchcore_model_path,
-            runtime_config=camera.patchcore,
+            runtime_config=self.resolve_patchcore_config(camera),
             expected_pipeline_signature=pipeline_signature,
         )
         if (
@@ -208,6 +247,33 @@ class InspectionService:
             raise RuntimeError(
                 f"机位 `{camera.camera_id}` 已启用颜色分支，但模型包缺少颜色参考分布。"
                 " 请重新执行 train-patchcore，或关闭颜色分支 / 启用 color_insensitive_mode。"
+        )
+        self._model_cache[cache_key] = loaded
+        return loaded
+
+    def load_region_model_bundle(
+        self,
+        camera: CameraConfig,
+        region: RegionConfig,
+        seat_model_id: str | None,
+    ) -> LoadedModelBundle:
+        pipeline_signature = self.build_region_patchcore_pipeline_signature(camera, region)
+        model_mtime_ns = Path(region.patchcore_model_path).stat().st_mtime_ns
+        cache_key = (
+            seat_model_id or "__default__",
+            camera.camera_id,
+            region.region_id,
+            pipeline_signature,
+            model_mtime_ns,
+        )
+        bundle = self._model_cache.get(cache_key)
+        if bundle is not None:
+            return bundle
+
+        loaded = PatchCoreService.load_bundle(
+            region.patchcore_model_path,
+            runtime_config=self.resolve_patchcore_config(camera, region),
+            expected_pipeline_signature=pipeline_signature,
         )
         self._model_cache[cache_key] = loaded
         return loaded

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
+import re
 from typing import Any
 
 import cv2
@@ -10,6 +12,16 @@ import numpy as np
 
 from ..debug_artifacts import get_debug_artifact_names
 from ..util import build_model_scoped_root, select_patchcore_input, write_image
+from .regions import build_region_roi_sample
+
+
+@dataclass(slots=True)
+class _RegionArtifactConfig:
+    region_id: str
+    box: list[float]
+    patchcore_model_path: str
+    enabled: bool = True
+    patchcore: Any | None = None
 
 
 def save_debug_artifacts(
@@ -19,6 +31,7 @@ def save_debug_artifacts(
     prepared: Any,
     texture_result: Any | None,
     seat_model_id: str | None,
+    region_results: Any | None = None,
 ) -> dict[str, str]:
     """Persist the selected debug artifacts for one camera result."""
     selected_artifacts = get_debug_artifact_names()
@@ -135,7 +148,65 @@ def save_debug_artifacts(
                 ),
             )
 
+    if region_results and prepared.roi is not None:
+        for region_result in region_results:
+            _save_region_artifacts(
+                artifact_paths,
+                selected_artifacts,
+                camera_dir,
+                prepared.roi,
+                region_result,
+            )
+
     return artifact_paths
+
+
+def _save_region_artifacts(
+    artifact_paths: dict[str, str],
+    selected_artifacts: set[str],
+    camera_dir: Path,
+    roi,
+    region_result,
+) -> None:
+    """Save region-level heatmap and overlay artifacts."""
+    if region_result.texture_result is None:
+        return
+    region_proxy = _RegionArtifactConfig(
+        region_id=region_result.region_id,
+        box=[
+            region_result.box.x1 / max(1.0, float(roi.aligned_roi_image.shape[1])),
+            region_result.box.y1 / max(1.0, float(roi.aligned_roi_image.shape[0])),
+            region_result.box.x2 / max(1.0, float(roi.aligned_roi_image.shape[1])),
+            region_result.box.y2 / max(1.0, float(roi.aligned_roi_image.shape[0])),
+        ],
+        enabled=True,
+        patchcore_model_path=region_result.patchcore_model_path or "",
+        patchcore=None,
+    )
+    sample = build_region_roi_sample(roi, region_proxy)
+    if sample is None:
+        return
+    region_dir = camera_dir / "regions" / _sanitize_region_id(region_result.region_id)
+    heatmap_base = sample.image
+    _save_selected_image(
+        artifact_paths,
+        selected_artifacts,
+        f"regions.{region_result.region_id}.heatmap",
+        region_dir / "heatmap.png",
+        _render_heatmap(heatmap_base, region_result.texture_result.heatmap),
+    )
+    if "overlay" in selected_artifacts:
+        _save_selected_image(
+            artifact_paths,
+            selected_artifacts,
+            f"regions.{region_result.region_id}.overlay",
+            region_dir / "overlay.png",
+            _overlay_heatmap(heatmap_base, region_result.texture_result.heatmap),
+        )
+
+
+def _sanitize_region_id(value: str) -> str:
+    return re.sub(r"[\\\\/:*?\"<>|\\s]+", "_", value).strip("_") or "region"
 
 
 def _save_selected_image(
@@ -146,8 +217,10 @@ def _save_selected_image(
     image: Any | None,
 ) -> None:
     """Write an image artifact when the current mode enables it."""
-    if image is None or key not in selected_artifacts:
+    artifact_name = key.rsplit(".", 1)[-1]
+    if image is None or artifact_name not in selected_artifacts:
         return
+    path.parent.mkdir(parents=True, exist_ok=True)
     write_image(path, image)
     artifact_paths[key] = str(path)
 
@@ -160,8 +233,10 @@ def _save_selected_mask(
     mask: np.ndarray | None,
 ) -> None:
     """Write a mask artifact when the current mode enables it."""
-    if mask is None or key not in selected_artifacts:
+    artifact_name = key.rsplit(".", 1)[-1]
+    if mask is None or artifact_name not in selected_artifacts:
         return
+    path.parent.mkdir(parents=True, exist_ok=True)
     _write_mask(path, mask)
     artifact_paths[key] = str(path)
 

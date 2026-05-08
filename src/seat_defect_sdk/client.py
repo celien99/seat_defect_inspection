@@ -81,6 +81,16 @@ class InspectionSdkResponse:
                     "reason": camera_result.reason,
                     "seat_model_id": camera_result.seat_model_id,
                     "artifact_paths": dict(camera_result.artifact_paths),
+                    "region_results": [
+                        {
+                            "region_id": region_result.region_id,
+                            "status": region_result.status,
+                            "reason": region_result.reason,
+                            "patchcore_model_path": region_result.patchcore_model_path,
+                            "artifact_paths": dict(region_result.artifact_paths),
+                        }
+                        for region_result in camera_result.region_results
+                    ],
                 }
                 for camera_result in self.result.camera_results
             ],

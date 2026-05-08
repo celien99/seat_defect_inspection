@@ -74,7 +74,24 @@
             },
             "color_branch": {
               "enabled": false
-            }
+            },
+            "regions": [
+              {
+                "region_id": "upper",
+                "box": [0.05, 0.05, 0.95, 0.40],
+                "patchcore_model_path": "../models/seat_defect_inspection/seat_model_a/cam_front_upper_patchcore.npz"
+              },
+              {
+                "region_id": "middle",
+                "box": [0.05, 0.35, 0.95, 0.72],
+                "patchcore_model_path": "../models/seat_defect_inspection/seat_model_a/cam_front_middle_patchcore.npz"
+              },
+              {
+                "region_id": "lower",
+                "box": [0.05, 0.68, 0.95, 0.95],
+                "patchcore_model_path": "../models/seat_defect_inspection/seat_model_a/cam_front_lower_patchcore.npz"
+              }
+            ]
           }
         ]
       },
@@ -139,7 +156,24 @@
             },
             "color_branch": {
               "enabled": false
-            }
+            },
+            "regions": [
+              {
+                "region_id": "upper",
+                "box": [0.05, 0.05, 0.95, 0.40],
+                "patchcore_model_path": "../models/seat_defect_inspection/seat_model_b/cam_front_upper_patchcore.npz"
+              },
+              {
+                "region_id": "middle",
+                "box": [0.05, 0.35, 0.95, 0.72],
+                "patchcore_model_path": "../models/seat_defect_inspection/seat_model_b/cam_front_middle_patchcore.npz"
+              },
+              {
+                "region_id": "lower",
+                "box": [0.05, 0.68, 0.95, 0.95],
+                "patchcore_model_path": "../models/seat_defect_inspection/seat_model_b/cam_front_lower_patchcore.npz"
+              }
+            ]
           }
         ]
       }

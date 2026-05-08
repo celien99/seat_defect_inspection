@@ -197,6 +197,19 @@ class ColorAnomalyResult:
 
 
 @dataclass(slots=True)
+class RegionPatchCoreResult:
+    """标准 ROI 内单个局部区域的 PatchCore 输出。"""
+
+    region_id: str
+    status: str
+    reason: str
+    box: BoundingBox
+    texture_result: TextureAnomalyResult | None = None
+    patchcore_model_path: str | None = None
+    artifact_paths: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
 class CameraInspectionResult:
     """单机位检测结果。
 
@@ -205,7 +218,7 @@ class CameraInspectionResult:
     - status / reason: 单机位最终状态与原因
     - seat_model_id: 当前路由到的型号
     - quality / detection: 前处理阶段中间结果
-    - texture_result / color_result: 纹理与颜色分支结果
+    - texture_result / region_results / color_result: 纹理、局部区域与颜色分支结果
     - crop_box: 最终使用的 ROI 框
     - artifact_paths: 调试图路径集合
     """
@@ -220,6 +233,7 @@ class CameraInspectionResult:
     quality: ImageQualityDecision | None = None
     detection: DetectionResult | None = None
     texture_result: TextureAnomalyResult | None = None
+    region_results: list[RegionPatchCoreResult] = field(default_factory=list)
     color_result: ColorAnomalyResult | None = None
     crop_box: BoundingBox | None = None
     artifact_paths: dict[str, str] = field(default_factory=dict)

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 import cv2
 import numpy as np
 
+from seat_defect_core.cvops import split_roi_regions
 from seat_defect_core.patchcore import ColorConsistencyService, list_images
 from seat_defect_core.util import (
     format_reason_counter,
@@ -51,6 +52,15 @@ def _train_one_camera(
     pipeline: "CameraPipeline",
 ) -> dict[str, Any]:
     """训练单个机位的 PatchCore 模型，并按需补充颜色分支。"""
+    active_regions = [region for region in camera.regions if region.enabled]
+    if active_regions:
+        return _train_one_camera_regions(
+            service,
+            seat_model_id=seat_model_id,
+            camera=camera,
+            pipeline=pipeline,
+        )
+
     if not camera.train_good_dir:
         raise ValueError(f"机位 `{camera.camera_id}` 缺少 `train_good_dir` 配置")
 
@@ -191,6 +201,186 @@ def _train_one_camera(
         "accepted_image_count": len(patchcore_samples),
         "skipped_image_count": len(skipped_images),
         "skipped_reasons": dict(sorted(skipped_reason_counter.items())),
+        "training_audit_dir": str(audit_dir),
+        "training_audit_records_path": str(audit_records_path),
+        "training_audit_records": audit_records,
+    }
+    _write_training_summary(camera.patchcore_model_path, summary)
+    return summary
+
+
+def _train_one_camera_regions(
+    service: InspectionService,
+    *,
+    seat_model_id: str | None,
+    camera: CameraConfig,
+    pipeline: "CameraPipeline",
+) -> dict[str, Any]:
+    """按配置区域分别训练一个机位下的多个 PatchCore 模型。"""
+    if not camera.train_good_dir:
+        raise ValueError(f"机位 `{camera.camera_id}` 缺少 `train_good_dir` 配置")
+
+    train_dir = Path(camera.train_good_dir)
+    image_paths = list_images(train_dir)
+    if not image_paths:
+        raise FileNotFoundError(f"训练目录中没有图像：{train_dir}")
+
+    active_regions = [region for region in camera.regions if region.enabled]
+    patchcore_samples_by_region: dict[str, list[tuple[np.ndarray, np.ndarray, np.ndarray]]] = {
+        region.region_id: []
+        for region in active_regions
+    }
+    skipped_images: list[str] = []
+    skipped_reason_counter: Counter[str] = Counter()
+    audit_dir = _build_training_audit_dir(camera.patchcore_model_path)
+    audit_dir.mkdir(parents=True, exist_ok=True)
+    audit_records: list[dict[str, Any]] = []
+
+    for image_index, image_path in enumerate(image_paths):
+        audit_record: dict[str, Any] = {
+            "image_path": str(image_path),
+            "status": "skipped",
+            "reason": None,
+            "regions": {},
+        }
+        image = cv2.imread(str(image_path))
+        if image is None:
+            skipped_images.append(str(image_path))
+            skipped_reason_counter["image_read_failed"] += 1
+            audit_record["reason"] = "image_read_failed"
+            audit_records.append(audit_record)
+            continue
+
+        prepared = pipeline.prepare_image(image)
+        if prepared.rejection_reason is not None or prepared.roi is None:
+            reason = prepared.rejection_reason or "roi_missing"
+            skipped_images.append(str(image_path))
+            skipped_reason_counter[reason] += 1
+            audit_record["reason"] = reason
+            if prepared.roi is not None:
+                audit_record.update(
+                    _write_training_audit_artifacts(
+                        audit_dir,
+                        image_index=image_index,
+                        image_path=image_path,
+                        prepared=prepared,
+                    )
+                )
+                audit_record.update(_build_training_audit_metrics(prepared))
+            audit_records.append(audit_record)
+            continue
+
+        sample_by_region = {
+            sample.region_id: sample
+            for sample in split_roi_regions(prepared.roi, active_regions)
+        }
+        accepted_region_count = 0
+        for region in active_regions:
+            sample = sample_by_region.get(region.region_id)
+            if sample is None:
+                audit_record["regions"][region.region_id] = {
+                    "status": "skipped",
+                    "reason": "region_empty",
+                }
+                skipped_reason_counter[f"region_empty:{region.region_id}"] += 1
+                continue
+            patchcore_samples_by_region[region.region_id].append(
+                (
+                    sample.image,
+                    sample.target_mask,
+                    sample.ignore_mask,
+                )
+            )
+            accepted_region_count += 1
+            audit_record["regions"][region.region_id] = {
+                "status": "accepted",
+                "box": {
+                    "x1": float(sample.box.x1),
+                    "y1": float(sample.box.y1),
+                    "x2": float(sample.box.x2),
+                    "y2": float(sample.box.y2),
+                },
+                "target_pixel_count": int(np.asarray(sample.target_mask > 0).sum()),
+                "valid_pixel_count": int(np.asarray(sample.valid_mask > 0).sum()),
+            }
+
+        if accepted_region_count <= 0:
+            skipped_images.append(str(image_path))
+            skipped_reason_counter["no_region_samples"] += 1
+            audit_record["reason"] = "no_region_samples"
+        else:
+            audit_record["status"] = "accepted"
+            audit_record.update(
+                _write_training_audit_artifacts(
+                    audit_dir,
+                    image_index=image_index,
+                    image_path=image_path,
+                    prepared=prepared,
+                )
+            )
+            audit_record.update(_build_training_audit_metrics(prepared))
+        audit_records.append(audit_record)
+
+    region_summaries: list[dict[str, Any]] = []
+    for region in active_regions:
+        samples = patchcore_samples_by_region[region.region_id]
+        if not samples:
+            audit_records_path = _write_training_audit_records(audit_dir, audit_records)
+            raise ValueError(
+                "PatchCore 区域训练前没有可用样本。"
+                f" 机位：{camera.camera_id}，区域：{region.region_id}，"
+                f"训练目录：{train_dir}，原始图像数：{len(image_paths)}，"
+                f"跳过原因：{format_reason_counter(skipped_reason_counter)}，"
+                f"训练审计目录：{audit_dir}，记录：{audit_records_path}。"
+            )
+
+        patchcore = service.build_patchcore_service(camera, region)
+        try:
+            patchcore_summary = patchcore.fit(samples)
+        except ValueError as exc:
+            if str(exc) != "PatchCore 没有可用的有效训练样本":
+                raise
+            audit_records_path = _write_training_audit_records(audit_dir, audit_records)
+            patchcore_config = service.resolve_patchcore_config(camera, region)
+            raise ValueError(
+                "PatchCore 区域样本已通过 ROI 阶段，但有效 patch 数仍为 0。"
+                f" 机位：{camera.camera_id}，区域：{region.region_id}，"
+                f"ROI 样本数：{len(samples)}，"
+                f"训练审计目录：{audit_dir}，记录：{audit_records_path}，"
+                f"patch 参数：min_target_coverage={patchcore_config.min_target_coverage}, "
+                f"max_ignore_overlap={patchcore_config.max_ignore_overlap}, "
+                f"min_valid_patch_ratio={patchcore_config.min_valid_patch_ratio}。"
+            ) from exc
+
+        patchcore_pipeline_context = service.build_region_patchcore_pipeline_context(camera, region)
+        patchcore_pipeline_signature = service.build_region_patchcore_pipeline_signature(camera, region)
+        patchcore.save(
+            region.patchcore_model_path,
+            color_profile=None,
+            pipeline_signature=patchcore_pipeline_signature,
+            pipeline_context=patchcore_pipeline_context,
+        )
+        region_summary = {
+            "region_id": region.region_id,
+            "model_path": region.patchcore_model_path,
+            "box": [float(value) for value in region.box],
+            "pipeline_signature": patchcore_pipeline_signature,
+            "patchcore": patchcore_summary,
+            "accepted_region_sample_count": len(samples),
+        }
+        _write_training_summary(region.patchcore_model_path, region_summary)
+        region_summaries.append(region_summary)
+
+    audit_records_path = _write_training_audit_records(audit_dir, audit_records)
+    summary = {
+        "seat_model_id": seat_model_id,
+        "camera_id": camera.camera_id,
+        "mode": "regions",
+        "train_image_count": len(image_paths),
+        "accepted_image_count": sum(1 for item in audit_records if item.get("status") == "accepted"),
+        "skipped_image_count": len(skipped_images),
+        "skipped_reasons": dict(sorted(skipped_reason_counter.items())),
+        "regions": region_summaries,
         "training_audit_dir": str(audit_dir),
         "training_audit_records_path": str(audit_records_path),
         "training_audit_records": audit_records,

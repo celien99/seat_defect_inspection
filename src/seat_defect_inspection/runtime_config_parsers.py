@@ -19,6 +19,7 @@ from seat_defect_core.config import (
     PatchCoreConfig,
     PreprocessConfig,
     QualityGuardConfig,
+    RegionConfig,
     RoiRefineConfig,
 )
 from seat_defect_core.schemas import BoundingBox
@@ -194,6 +195,11 @@ def _parse_camera_config(payload: dict[str, Any], config_dir: Path, *, scope: st
         color_branch=_parse_color_branch_config(
             payload.get("color_branch"),
             scope=f"{scope}.color_branch",
+        ),
+        regions=_parse_region_configs(
+            payload.get("regions"),
+            config_dir,
+            scope=f"{scope}.regions",
         ),
     )
 
@@ -493,6 +499,59 @@ def _parse_color_branch_config(payload: Any, *, scope: str) -> ColorBranchConfig
             defaults.min_valid_pixel_ratio,
         ),
     )
+
+
+def _parse_region_configs(
+    payload: Any,
+    config_dir: Path,
+    *,
+    scope: str,
+) -> list[RegionConfig]:
+    if payload is None:
+        return []
+    return [
+        _parse_region_config(item, config_dir, scope=f"{scope}[{index}]")
+        for index, item in enumerate(_ensure_list(payload, scope))
+    ]
+
+
+def _parse_region_config(
+    payload: Any,
+    config_dir: Path,
+    *,
+    scope: str,
+) -> RegionConfig:
+    payload = _expect_dict(payload, scope)
+    _reject_unknown_keys(payload, _field_names(RegionConfig), scope)
+    return RegionConfig(
+        region_id=_require_string(payload, "region_id", scope),
+        box=_region_box(payload.get("box"), scope=f"{scope}.box"),
+        patchcore_model_path=_resolve_local_path(
+            config_dir,
+            _require_string(payload, "patchcore_model_path", scope),
+            force=True,
+        ),
+        enabled=_bool_or_default(payload.get("enabled"), True),
+        patchcore=(
+            _parse_patchcore_config(
+                payload.get("patchcore"),
+                config_dir,
+                scope=f"{scope}.patchcore",
+            )
+            if payload.get("patchcore") is not None
+            else None
+        ),
+    )
+
+
+def _region_box(value: Any, *, scope: str) -> list[float]:
+    items = [float(item) for item in _ensure_list(value, scope)]
+    if len(items) != 4:
+        raise ValueError(f"{scope} 必须包含 4 个归一化坐标")
+    x1, y1, x2, y2 = items
+    if not (0.0 <= x1 < x2 <= 1.0 and 0.0 <= y1 < y2 <= 1.0):
+        raise ValueError(f"{scope} 必须满足 0 <= x1 < x2 <= 1 且 0 <= y1 < y2 <= 1")
+    return items
 
 
 def _parse_bounding_box(payload: Any, *, scope: str) -> BoundingBox | None:

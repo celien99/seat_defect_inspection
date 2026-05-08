@@ -61,32 +61,26 @@ def _camera_result_to_dict(result: CameraInspectionResult) -> dict:
         "target_box": _resolve_target_box(result),
         "crop_box": _box_to_dict(result.crop_box),
         "texture_result": (
-            {
-                "score": result.texture_result.score,
-                "threshold": result.texture_result.threshold,
-                "decision_threshold": result.texture_result.decision_threshold,
-                "is_anomaly": result.texture_result.is_anomaly,
-                "valid_patch_ratio": result.texture_result.valid_patch_ratio,
-                "valid_patch_count": result.texture_result.valid_patch_count,
-                "total_patch_count": result.texture_result.total_patch_count,
-                "peak_patch_score": result.texture_result.peak_patch_score,
-                "strong_patch_count": result.texture_result.strong_patch_count,
-                "largest_component_patch_count": result.texture_result.largest_component_patch_count,
-                "strong_patch_ratio": result.texture_result.strong_patch_ratio,
-                "largest_component_patch_ratio": result.texture_result.largest_component_patch_ratio,
-                "decision_patch_count": result.texture_result.decision_patch_count,
-                "largest_decision_component_patch_count": (
-                    result.texture_result.largest_decision_component_patch_count
-                ),
-                "decision_patch_ratio": result.texture_result.decision_patch_ratio,
-                "largest_decision_component_patch_ratio": (
-                    result.texture_result.largest_decision_component_patch_ratio
-                ),
-                "decision_mode": result.texture_result.decision_mode,
-            }
+            _texture_result_to_dict(result.texture_result)
             if result.texture_result is not None
             else None
         ),
+        "region_results": [
+            {
+                "region_id": item.region_id,
+                "status": item.status,
+                "reason": item.reason,
+                "box": _box_to_dict(item.box),
+                "patchcore_model_path": item.patchcore_model_path,
+                "texture_result": (
+                    _texture_result_to_dict(item.texture_result)
+                    if item.texture_result is not None
+                    else None
+                ),
+                "artifact_paths": item.artifact_paths,
+            }
+            for item in result.region_results
+        ],
         "color_result": (
             {
                 "score": result.color_result.score,
@@ -98,6 +92,32 @@ def _camera_result_to_dict(result: CameraInspectionResult) -> dict:
             else None
         ),
         "artifact_paths": result.artifact_paths,
+    }
+
+
+def _texture_result_to_dict(texture_result) -> dict:
+    return {
+        "score": texture_result.score,
+        "threshold": texture_result.threshold,
+        "decision_threshold": texture_result.decision_threshold,
+        "is_anomaly": texture_result.is_anomaly,
+        "valid_patch_ratio": texture_result.valid_patch_ratio,
+        "valid_patch_count": texture_result.valid_patch_count,
+        "total_patch_count": texture_result.total_patch_count,
+        "peak_patch_score": texture_result.peak_patch_score,
+        "strong_patch_count": texture_result.strong_patch_count,
+        "largest_component_patch_count": texture_result.largest_component_patch_count,
+        "strong_patch_ratio": texture_result.strong_patch_ratio,
+        "largest_component_patch_ratio": texture_result.largest_component_patch_ratio,
+        "decision_patch_count": texture_result.decision_patch_count,
+        "largest_decision_component_patch_count": (
+            texture_result.largest_decision_component_patch_count
+        ),
+        "decision_patch_ratio": texture_result.decision_patch_ratio,
+        "largest_decision_component_patch_ratio": (
+            texture_result.largest_decision_component_patch_ratio
+        ),
+        "decision_mode": texture_result.decision_mode,
     }
 
 

@@ -139,6 +139,18 @@ class ColorBranchConfig:
 
 
 @dataclass(slots=True)
+class RegionConfig:
+    """单机位标准 ROI 内的局部 PatchCore 区域。"""
+
+    region_id: str
+    # 标准 ROI 内的归一化矩形：[x1, y1, x2, y2]，取值范围 0-1。
+    box: list[float]
+    patchcore_model_path: str
+    enabled: bool = True
+    patchcore: PatchCoreConfig | None = None
+
+
+@dataclass(slots=True)
 class CameraConfig:
     """单机位 runtime 配置。"""
 
@@ -153,6 +165,7 @@ class CameraConfig:
     roi: RoiRefineConfig = field(default_factory=RoiRefineConfig)
     patchcore: PatchCoreConfig = field(default_factory=PatchCoreConfig)
     color_branch: ColorBranchConfig = field(default_factory=ColorBranchConfig)
+    regions: list[RegionConfig] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -198,6 +211,7 @@ __all__ = [
     "PatchCoreConfig",
     "PreprocessConfig",
     "QualityGuardConfig",
+    "RegionConfig",
     "RoiRefineConfig",
     "SeatModelConfig",
 ]
