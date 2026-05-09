@@ -18,7 +18,7 @@
 flowchart LR
     A["原始图像 / 相机帧"] --> B["AcquisitionService<br/>采集并标准化成 FramePacket"]
     B --> C["YOLO 检测/分割"]
-    C --> D["DetectionService<br/>YOLO 分割检测 / fallback_box"]
+    C --> D["DetectionService<br/>YOLO 分割检测"]
     D --> E["RoiRefineEngine<br/>裁切 ROI、生成 target_mask / valid_mask、缩放对齐"]
     E --> F["ImageQualityGuard<br/>只在 valid_mask 前景内做质量门控"]
     F -->|通过| G["PatchCore 输入选择<br/>优先 texture_ready_image"]
@@ -95,7 +95,7 @@ YOLO、ROI 裁切、训练流程后续都直接使用调用方传入的原始图
 - 从所有检测框中：
   - 取 `target_class` 里置信度最高的一个作为主目标 `target`
   - 其余检测结果只保留在 `all_objects` 里用于调试观察，不再参与 ROI 忽略物管理
-- 如果没有 `model_path`，就退化成 `fallback_box` 静态框模式。
+- 如果没有配置 `model_path`，或 YOLO 没有输出目标，本次输入会返回 `target_not_found`。
 
 当前示例配置中：
 
@@ -527,12 +527,11 @@ PatchCore 最终不是只看一个 `score > threshold`，而是综合多组证�
 
 融合逻辑分两层。
 
-#### 2.10.1 在线循环中的早停
+#### 2.10.1 在线循环
 
 当前示例配置：
 
 - `ng_strategy = any`
-- `early_stop_on_ng = false`
 - `reject_on_any_reject = true`
 - `defect_overrides_reject = true`
 
@@ -542,7 +541,7 @@ PatchCore 最终不是只看一个 `score > threshold`，而是综合多组证�
 - 系统仍然会继续跑完剩余机位
 - 最终报告会保留整件所有机位结果，方便现场复盘
 
-现在 `inspect` 的采图阶段已经前置为并发屏障：所有启用机位会先完成采图并释放采集资源，之后才按机位顺序进入 YOLO、ROI、PatchCore 和颜色分支。若未来把 `early_stop_on_ng` 打开，早停只会跳过后续机位的算法检测，不再跳过采图。
+现在 `inspect` 的采图阶段已经前置为并发屏障：所有启用机位会先完成采图并释放采集资源，之后才按机位顺序进入 YOLO、ROI、PatchCore 和颜色分支。
 
 也就是说，在当前配置下：
 
@@ -592,7 +591,7 @@ PatchCore 最终不是只看一个 `score > threshold`，而是综合多组证�
 - `src/seat_defect_core/cvops/debug_artifacts.py`
 - `src/seat_defect_inspection/debug_artifacts.py`
 
-只要 `save_debug_artifacts = true`，每个机位都会按：
+只要 `debug_artifacts_enabled = true`，每个机位都会按：
 
 ```text
 debug_dir / seat_model_id / part_id / camera_id / frame_id /
@@ -600,29 +599,14 @@ debug_dir / seat_model_id / part_id / camera_id / frame_id /
 
 落盘调试图。
 
-### 3.1 `standard` 档位
+### 3.1 默认调试图集合
 
-当前示例配置就是：
-
-- `debug_artifact_mode = standard`
-
-会输出：
+当前调试图集合是固定的，会输出：
 
 - `raw.png`
 - `detections.png`
-- `roi.png`
-- `patchcore_input.png`
-- `overlay.png`
-
-### 3.2 `full` 档位
-
-如果切到 `full`，会额外输出：
-
-- `roi_texture.png`
-- `foreground_weight.png`
-- `target_mask.png`
-- `valid_mask.png`
 - `heatmap.png`
+- `overlay.png`
 
 这些文件对于向用户解释“每一步到底对图做了什么”非常有帮助。
 
@@ -815,7 +799,7 @@ prepare_image -> PatchCore / color -> camera result -> fusion -> report
   - `valid_mask / ignore_mask` 继续控制有效 patch 筛选
 6. 当前默认使用 full CNN PatchCore，辅助纹理口径为亮度主导的 `lab_l`，重点看结构/纹理异常并弱化颜色波动。
 7. 当前颜色分支默认关闭，所以主判定主要由 PatchCore 纹理分支承担。
-8. 当前融合策略是一票 NG 即整件 NG；示例配置里 `early_stop_on_ng = false`，会跑完全部机位以便复盘。
+8. 当前融合策略是一票 NG 即整件 NG，并且会跑完全部机位以便复盘。
 
 一句话总结当前主流程：
 

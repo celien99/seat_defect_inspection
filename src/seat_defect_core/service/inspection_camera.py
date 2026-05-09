@@ -5,8 +5,9 @@ from __future__ import annotations
 from time import perf_counter
 from typing import TYPE_CHECKING
 
+from ..artifacts import save_debug_artifacts
 from ..config import CameraConfig
-from ..cvops import save_debug_artifacts, split_roi_regions
+from ..cvops import split_roi_regions
 from ..cvops.regions import RegionRoiSample
 from ..patchcore import ColorConsistencyService
 from ..types import BoundingBox, CameraInspectionResult, FramePacket, InspectionError, RegionPatchCoreResult
@@ -102,20 +103,7 @@ def inspect_one_camera(
             texture_result,
         )
 
-    color_result = None
-    if (
-        camera.color_branch.enabled
-        and not camera.color_insensitive_mode
-        and model_bundle.color_profile is not None
-    ):
-        color_service = ColorConsistencyService(
-            camera.color_branch,
-            profile=model_bundle.color_profile,
-        )
-        color_result = color_service.predict(
-            prepared.roi.aligned_roi_image,
-            prepared.roi.valid_mask,
-        )
+    color_result = _predict_color_branch(camera, model_bundle, prepared)
     camera_timer.mark("color")
 
     if texture_result.is_anomaly and color_result is not None and color_result.is_anomaly:
@@ -256,7 +244,11 @@ def _inspect_region_patchcores(
             camera_timer,
         )
 
-    color_result = None
+    color_model_bundle = None
+    if camera.color_branch.enabled and not camera.color_insensitive_mode:
+        color_model_bundle = service.load_model_bundle(camera, seat_model_id)
+    color_result = _predict_color_branch(camera, color_model_bundle, prepared)
+    camera_timer.mark("color")
 
     status, reason = _merge_region_status(region_results, color_result, quality_rejected, prepared)
     result = CameraInspectionResult(
@@ -336,6 +328,28 @@ def _merge_region_status(
     if quality_rejected:
         return "REJECT", prepared.rejection_reason or "quality_reject"
     return "OK", "all_regions_passed"
+
+
+def _predict_color_branch(
+    camera: CameraConfig,
+    model_bundle,
+    prepared,
+):
+    if (
+        model_bundle is None
+        or not camera.color_branch.enabled
+        or camera.color_insensitive_mode
+        or model_bundle.color_profile is None
+    ):
+        return None
+    color_service = ColorConsistencyService(
+        camera.color_branch,
+        profile=model_bundle.color_profile,
+    )
+    return color_service.predict(
+        prepared.roi.aligned_roi_image,
+        prepared.roi.valid_mask,
+    )
 
 
 def _region_config_box_to_roi_box(

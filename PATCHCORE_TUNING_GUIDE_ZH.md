@@ -5,7 +5,7 @@
 当前项目的 PatchCore 不是直接拿整张原图训练，而是先走完整图像链路：
 
 ```text
-原图 -> YOLO / fallback_box -> ROI -> target_mask / valid_mask -> 透明 BGRA PatchCore 输入 -> full PatchCore
+原图 -> YOLO segmentation -> ROI -> target_mask / valid_mask -> 透明 BGRA PatchCore 输入 -> full PatchCore
 ```
 
 因此调参时不要只盯着 `patchcore` 小节。上游 YOLO 定位、ROI 裁剪和 mask 质量都会直接影响 PatchCore 学到的正常分布。
@@ -26,7 +26,7 @@
 按下面顺序排查，效率最高：
 
 1. 看调试图。
-   重点看 `patchcore_input.png`、`roi.png`、`target_mask.png`、`valid_mask.png`、`heatmap.png`。确认 PatchCore 看到的是座椅有效区域，不是背景、边缘、黑底或夹具。
+   默认输出重点看 `heatmap.png` 和 `overlay.png`；需要检查 PatchCore 输入、ROI 和 mask 时，用准备图像/单图推理 demo 导出 `patchcore_input.png`、`target_mask.png`、`valid_mask.png`。确认 PatchCore 看到的是座椅有效区域，不是背景、边缘、黑底或夹具。
 
 2. 检查训练数据。
    每个机位都要有足够的正常样本，覆盖正常光照、正常材质批次、正常姿态和现场允许的轻微波动。
@@ -160,7 +160,7 @@ PatchCore 训练输入来自上游链路，因此这些配置也要纳入调参�
 | 配置区域 | 关键参数 | 对 PatchCore 的影响 |
 | --- | --- | --- |
 | `train_good_dir` | 正常样本目录 | 决定正常分布上限。样本少、覆盖不足、混入 NG 都会直接伤害模型 |
-| `detection` | `model_path`、`confidence`、`iou`、`fallback_box` | 决定目标定位和 mask 来源。定位漂移会让 ROI 分布漂移 |
+| `detection` | `model_path`、`confidence`、`iou` | 决定目标定位和 mask 来源。定位漂移会让 ROI 分布漂移 |
 | `roi` | `crop_expand_ratio`、`crop_shrink_ratio`、`edge_ignore_pixels`、`alignment` | 决定 PatchCore 看哪些区域、边缘是否被排除、输出尺寸是否稳定 |
 | `color_insensitive_mode` | true/false | 当前为 true 时更偏亮度纹理检测，弱化颜色波动 |
 | `color_branch` | `enabled`、`threshold_quantile` | 当前在 `color_insensitive_mode=true` 时会跳过颜色分支 |
@@ -171,7 +171,7 @@ PatchCore 训练输入来自上游链路，因此这些配置也要纳入调参�
 
 先看：
 
-- `patchcore_input.png` 中缺陷是否清晰可见。
+- PatchCore 输入图中缺陷是否清晰可见。
 - `heatmap.png` 是否在缺陷位置有热点。
 - `target_mask / valid_mask` 是否覆盖缺陷位置。
 
@@ -201,7 +201,7 @@ PatchCore 训练输入来自上游链路，因此这些配置也要纳入调参�
 
 看报告里的 reason：
 
-- `target_not_found`：YOLO 没找到目标，检查 `model_path`、`target_class`、`confidence` 或 `fallback_box`。
+- `target_not_found`：YOLO 没找到目标，检查 `model_path`、`target_class`、`confidence`。
 - `quality_blur / underexposed / overexposed`：采图质量或质量门控问题。
 - `low_valid_patch_ratio`：ROI/mask 有效区域太少，检查 `valid_mask`，必要时降低 `min_valid_patch_ratio`。
 
@@ -283,7 +283,7 @@ seat-defect-inspection train-patchcore \
 必须重训的变化包括：
 
 - 正常样本集变化。
-- YOLO 权重、`confidence`、`target_class` 或 `fallback_box` 变化。
+- YOLO 权重、`confidence` 或 `target_class` 变化。
 - ROI 裁剪、输出尺寸、边缘忽略、mask 规则变化。
 - `patchcore.image_size`、`texture_input`、backbone、`feature_layers` 变化。
 - 透明 BGRA 输入规则变化。
@@ -301,4 +301,3 @@ seat-defect-inspection train-patchcore \
 REJECT 先查 YOLO / 质量 / valid_mask；
 改了输入链路就重训。
 ```
-

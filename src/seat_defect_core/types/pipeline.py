@@ -72,9 +72,6 @@ class DetectionResult:
     all_objects: list[DetectionObject] = field(default_factory=list)
     """YOLO 输出的全部目标，主要用于调试。"""
 
-    used_fallback: bool = False
-    """是否使用 fallback_box 构造目标。"""
-
 
 @dataclass(slots=True)
 class RoiRefineResult:

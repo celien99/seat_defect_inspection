@@ -53,7 +53,7 @@ class CameraPipeline:
                 rejection_reason="target_not_found",
             )
 
-        if detection.target.segmentation_mask is None and not detection.used_fallback:
+        if detection.target.segmentation_mask is None:
             return PreparedCameraSample(
                 quality=None,
                 detection=detection,
@@ -93,8 +93,8 @@ class InspectionService:
     def __init__(self, config: InspectionConfig) -> None:
         self.config = config
         self._pipeline_cache: dict[str, dict[str, CameraPipeline]] = {}
-        self._model_cache: dict[tuple[str, str, str, str, int], LoadedModelBundle] = {}
-        self._feature_extractor_cache: dict[str, _TorchPatchFeatureExtractor] = {}
+        self._model_cache = ModelBundleCache(self)
+        self._patchcore_predictor = PatchCorePredictorPool()
 
     def resolve_context(self, seat_model_id: str | None) -> ResolvedInspectionContext:
         resolved_seat_model_id, cameras = self._resolve_active_cameras(seat_model_id)
@@ -132,11 +132,6 @@ class InspectionService:
         return resolved_seat_model_id, [camera for camera in self.config.cameras if camera.enabled]
 
     def build_patchcore_pipeline_context(self, camera: CameraConfig) -> dict[str, Any]:
-        fallback_box = (
-            asdict(camera.detection.fallback_box)
-            if camera.detection.fallback_box is not None
-            else None
-        )
         return {
             "signature_version": 2,
             "patchcore_input_mode": "transparent_bgra",
@@ -147,7 +142,6 @@ class InspectionService:
                 "target_class": camera.detection.target_class,
                 "confidence": float(camera.detection.confidence),
                 "iou": float(camera.detection.iou),
-                "fallback_box": fallback_box,
             },
             "roi": asdict(camera.roi),
         }
@@ -205,22 +199,55 @@ class InspectionService:
         camera: CameraConfig,
         seat_model_id: str | None,
     ) -> LoadedModelBundle:
-        pipeline_signature = self.build_patchcore_pipeline_signature(camera)
-        model_mtime_ns = Path(camera.patchcore_model_path).stat().st_mtime_ns
-        cache_key = (
-            seat_model_id or "__default__",
-            camera.camera_id,
-            "__full__",
-            pipeline_signature,
-            model_mtime_ns,
+        return self._model_cache.load_camera_bundle(camera, seat_model_id)
+
+    def load_region_model_bundle(
+        self,
+        camera: CameraConfig,
+        region: RegionConfig,
+        seat_model_id: str | None,
+    ) -> LoadedModelBundle:
+        return self._model_cache.load_region_bundle(camera, region, seat_model_id)
+
+    def prepare_patchcore_for_predict(self, patchcore: Any) -> None:
+        """Attach shared runtime resources just before PatchCore prediction."""
+        self._patchcore_predictor.prepare(patchcore)
+
+    def predict_patchcore_batch(
+        self,
+        items: list[tuple[PatchCoreService, Any, Any, Any]],
+    ) -> list[TextureAnomalyResult]:
+        """Predict PatchCore results, batching full-backend items with matching features."""
+        return self._patchcore_predictor.predict_batch(items)
+
+
+class ModelBundleCache:
+    """Load and cache PatchCore bundles by model file and pipeline signature."""
+
+    def __init__(self, service: InspectionService) -> None:
+        self._service = service
+        self._cache: dict[tuple[str, str, str, str, int], LoadedModelBundle] = {}
+
+    def load_camera_bundle(
+        self,
+        camera: CameraConfig,
+        seat_model_id: str | None,
+    ) -> LoadedModelBundle:
+        pipeline_signature = self._service.build_patchcore_pipeline_signature(camera)
+        cache_key = self._cache_key(
+            seat_model_id=seat_model_id,
+            camera_id=camera.camera_id,
+            model_id="__full__",
+            model_path=camera.patchcore_model_path,
+            pipeline_signature=pipeline_signature,
         )
-        bundle = self._model_cache.get(cache_key)
+        bundle = self._cache.get(cache_key)
         if bundle is not None:
             return bundle
 
         loaded = PatchCoreService.load_bundle(
             camera.patchcore_model_path,
-            runtime_config=self.resolve_patchcore_config(camera),
+            runtime_config=self._service.resolve_patchcore_config(camera),
             expected_pipeline_signature=pipeline_signature,
         )
         if (
@@ -231,55 +258,77 @@ class InspectionService:
             raise RuntimeError(
                 f"机位 `{camera.camera_id}` 已启用颜色分支，但模型包缺少颜色参考分布。"
                 " 请重新执行 train-patchcore，或关闭颜色分支 / 启用 color_insensitive_mode。"
-        )
-        self._model_cache[cache_key] = loaded
+            )
+        self._cache[cache_key] = loaded
         return loaded
 
-    def load_region_model_bundle(
+    def load_region_bundle(
         self,
         camera: CameraConfig,
         region: RegionConfig,
         seat_model_id: str | None,
     ) -> LoadedModelBundle:
-        pipeline_signature = self.build_region_patchcore_pipeline_signature(camera, region)
-        model_mtime_ns = Path(region.patchcore_model_path).stat().st_mtime_ns
-        cache_key = (
-            seat_model_id or "__default__",
-            camera.camera_id,
-            region.region_id,
-            pipeline_signature,
-            model_mtime_ns,
+        pipeline_signature = self._service.build_region_patchcore_pipeline_signature(camera, region)
+        cache_key = self._cache_key(
+            seat_model_id=seat_model_id,
+            camera_id=camera.camera_id,
+            model_id=region.region_id,
+            model_path=region.patchcore_model_path,
+            pipeline_signature=pipeline_signature,
         )
-        bundle = self._model_cache.get(cache_key)
+        bundle = self._cache.get(cache_key)
         if bundle is not None:
             return bundle
 
         loaded = PatchCoreService.load_bundle(
             region.patchcore_model_path,
-            runtime_config=self.resolve_patchcore_config(camera, region),
+            runtime_config=self._service.resolve_patchcore_config(camera, region),
             expected_pipeline_signature=pipeline_signature,
         )
-        self._model_cache[cache_key] = loaded
+        self._cache[cache_key] = loaded
         return loaded
 
-    def prepare_patchcore_for_predict(self, patchcore: Any) -> None:
-        """Attach shared runtime resources just before PatchCore prediction."""
+    @staticmethod
+    def _cache_key(
+        *,
+        seat_model_id: str | None,
+        camera_id: str,
+        model_id: str,
+        model_path: str,
+        pipeline_signature: str,
+    ) -> tuple[str, str, str, str, int]:
+        model_mtime_ns = Path(model_path).stat().st_mtime_ns
+        return (
+            seat_model_id or "__default__",
+            camera_id,
+            model_id,
+            pipeline_signature,
+            model_mtime_ns,
+        )
+
+
+class PatchCorePredictorPool:
+    """Share full-backend feature extractors and batch compatible predictions."""
+
+    def __init__(self) -> None:
+        self._feature_extractor_cache: dict[str, _TorchPatchFeatureExtractor] = {}
+
+    def prepare(self, patchcore: Any) -> None:
         if not isinstance(patchcore, PatchCoreService):
             return
         self._attach_shared_feature_extractor(patchcore)
 
-    def predict_patchcore_batch(
+    def predict_batch(
         self,
         items: list[tuple[PatchCoreService, Any, Any, Any]],
     ) -> list[TextureAnomalyResult]:
-        """Predict PatchCore results, batching full-backend items with matching features."""
         results: list[TextureAnomalyResult | None] = [None] * len(items)
         batch_groups: dict[str, list[tuple[int, PatchCoreService, Any, Any, Any]]] = {}
         for index, (patchcore, image, target_mask, ignore_mask) in enumerate(items):
             if not isinstance(patchcore, PatchCoreService):
                 results[index] = patchcore.predict(image, target_mask, ignore_mask)
                 continue
-            self.prepare_patchcore_for_predict(patchcore)
+            self.prepare(patchcore)
             if patchcore.config.backend.strip().lower() != "full":
                 results[index] = patchcore.predict(image, target_mask, ignore_mask)
                 continue

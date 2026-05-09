@@ -1,8 +1,5 @@
 """OpenCV 中间层能力入口。"""
 
-from .debug_artifacts import (
-    save_debug_artifacts,
-)
 from .quality import ImageQualityGuard
 from .regions import (
     RegionRoiSample,
@@ -18,6 +15,5 @@ __all__ = [
     "RoiRefineEngine",
     "build_region_roi_sample",
     "build_region_roi_sample_from_box",
-    "save_debug_artifacts",
     "split_roi_regions",
 ]

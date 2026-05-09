@@ -121,7 +121,6 @@ response = inspector.inspect(
     "fusion": {
       "reject_on_any_reject": true,
       "ng_strategy": "any",
-      "early_stop_on_ng": false,
       "defect_overrides_reject": true
     },
     "seat_models": [
@@ -176,7 +175,6 @@ response = inspector.inspect(
 生产环境建议：
 
 - `debug_artifacts_enabled` 设置为 `false`，避免保存大量调试图片拖慢检测。
-- `early_stop_on_ng` 通常保持 `false`，便于一次返回所有机位结果。
 - `output_json_path` 和 `debug_dir` 放到外部项目可写目录。
 - `backbone_device` 根据现场硬件设为 `cpu`、`cuda:0` 或 `mps`。
 - 若现场不能联网下载 torchvision 权重，配置 `backbone_weights_path` 指向本地预训练权重，或提前准备 `.torch_cache`。
@@ -248,7 +246,6 @@ dict frame 可选字段：
     "total": 120.3
   },
   "report_path": "../outputs/seat_defect_inspection/results.json",
-  "archive_report_path": "../outputs/seat_defect_inspection/results_history/seat_model_a/part_20260509_0001/frame_0001.json",
   "artifact_paths": {},
   "camera_results": [
     {
@@ -323,7 +320,7 @@ dict frame 可选字段：
 单机位检测流程：
 
 1. YOLO 检测目标座椅。
-2. 根据分割 mask 或 fallback box 做 ROI 裁剪和对齐。
+2. 根据分割 mask 做 ROI 裁剪和对齐。
 3. 做图像质量检查。
 4. 如果未配置 regions，执行完整 ROI PatchCore。
 5. 如果配置了 regions，切分标准 ROI 并执行 region PatchCore。
@@ -335,7 +332,7 @@ dict frame 可选字段：
 1. 校验外部传入机位。
 2. 逐机位检测。
 3. 按 fusion 配置汇总整件状态。
-4. 写出 latest report 和历史归档 report。
+4. 写出 latest report。
 
 ## region 模式性能注意事项
 
@@ -355,7 +352,6 @@ PatchCore 模型中保存了训练时的上游 pipeline signature。运行时如
 常见需要重新训练 PatchCore 的改动：
 
 - YOLO 模型路径或目标类别发生变化。
-- fallback box 变化。
 - ROI 裁剪、mask、alignment 配置变化。
 - region box 变化。
 - PatchCore backend、image_size、texture_input、backbone 或 feature_layers 变化。

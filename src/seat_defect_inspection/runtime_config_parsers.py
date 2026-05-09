@@ -21,7 +21,6 @@ from seat_defect_core.config import (
     RegionConfig,
     RoiRefineConfig,
 )
-from seat_defect_core.types import BoundingBox
 
 from .config import (
     CameraConfig,
@@ -46,10 +45,6 @@ _LOCAL_PATH_SUFFIXES = {
 # 主配置与座椅型号配置。
 def _parse_inspection_config(payload: dict[str, Any], config_dir: Path) -> InspectionConfig:
     scope = "InspectionConfig"
-    if "save_debug_artifacts" in payload or "debug_artifact_mode" in payload:
-        payload = dict(payload)
-        payload.pop("save_debug_artifacts", None)
-        payload.pop("debug_artifact_mode", None)
     _reject_unknown_keys(payload, _field_names(InspectionConfig), scope)
 
     cameras_payload = payload.get("cameras") or []
@@ -215,10 +210,6 @@ def _parse_fusion_config(payload: Any, *, scope: str) -> FusionConfig:
             defaults.reject_on_any_reject,
         ),
         ng_strategy=_string_or_default(payload.get("ng_strategy"), defaults.ng_strategy),
-        early_stop_on_ng=_bool_or_default(
-            payload.get("early_stop_on_ng"),
-            defaults.early_stop_on_ng,
-        ),
         defect_overrides_reject=_bool_or_default(
             payload.get("defect_overrides_reject"),
             defaults.defect_overrides_reject,
@@ -316,10 +307,6 @@ def _parse_detection_config(payload: Any, config_dir: Path, *, scope: str) -> De
         confidence=_float_or_default(payload.get("confidence"), defaults.confidence),
         iou=_float_or_default(payload.get("iou"), defaults.iou),
         device=_string_or_default(payload.get("device"), defaults.device),
-        fallback_box=_parse_bounding_box(
-            payload.get("fallback_box"),
-            scope=f"{scope}.fallback_box",
-        ),
     )
 
 
@@ -490,19 +477,6 @@ def _region_box(value: Any, *, scope: str) -> list[float]:
     return items
 
 
-def _parse_bounding_box(payload: Any, *, scope: str) -> BoundingBox | None:
-    if payload is None:
-        return None
-    payload = _expect_dict(payload, scope)
-    _reject_unknown_keys(payload, _field_names(BoundingBox), scope)
-    return BoundingBox(
-        x1=float(_require_key(payload, "x1", scope)),
-        y1=float(_require_key(payload, "y1", scope)),
-        x2=float(_require_key(payload, "x2", scope)),
-        y2=float(_require_key(payload, "y2", scope)),
-    )
-
-
 # YOLO 训练配置。
 def _parse_optional_yolo_training(
     payload: Any,
@@ -663,7 +637,15 @@ def _string_or_default(value: Any, default: str) -> str:
 def _bool_or_default(value: Any, default: bool) -> bool:
     if value is None:
         return default
-    return bool(value)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized == "true":
+            return True
+        if normalized == "false":
+            return False
+    raise TypeError(f"布尔配置必须是 true/false，当前值: {value!r}")
 
 
 def _int_or_default(value: Any, default: int) -> int:

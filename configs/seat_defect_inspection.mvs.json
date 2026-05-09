@@ -7,7 +7,6 @@
     "fusion": {
       "reject_on_any_reject": true,
       "ng_strategy": "any",
-      "early_stop_on_ng": false,
       "defect_overrides_reject": true
     },
     "cameras": [
@@ -28,13 +27,7 @@
           "target_class": "seat",
           "confidence": 0.35,
           "iou": 0.45,
-          "device": "cpu",
-          "fallback_box": {
-            "x1": 1116,
-            "y1": 332,
-            "x2": 2722,
-            "y2": 2911
-          }
+          "device": "cpu"
         },
         "roi": {
           "crop_expand_ratio": 0.04,
@@ -126,13 +119,7 @@
           "target_class": "seat",
           "confidence": 0.35,
           "iou": 0.45,
-          "device": "cpu",
-          "fallback_box": {
-            "x1": 1184,
-            "y1": 292,
-            "x2": 2601,
-            "y2": 2165
-          }
+          "device": "cpu"
         },
         "roi": {
           "crop_expand_ratio": 0.04,
@@ -224,13 +211,7 @@
           "target_class": "seat",
           "confidence": 0.35,
           "iou": 0.45,
-          "device": "cpu",
-          "fallback_box": {
-            "x1": 1158,
-            "y1": 289,
-            "x2": 2912,
-            "y2": 2484
-          }
+          "device": "cpu"
         },
         "roi": {
           "crop_expand_ratio": 0.04,
@@ -322,13 +303,7 @@
           "target_class": "seat",
           "confidence": 0.35,
           "iou": 0.45,
-          "device": "cpu",
-          "fallback_box": {
-            "x1": 1148,
-            "y1": 1151,
-            "x2": 2863,
-            "y2": 2597
-          }
+          "device": "cpu"
         },
         "roi": {
           "crop_expand_ratio": 0.04,
@@ -420,13 +395,7 @@
           "target_class": "seat",
           "confidence": 0.35,
           "iou": 0.45,
-          "device": "cpu",
-          "fallback_box": {
-            "x1": 1274,
-            "y1": 478,
-            "x2": 2622,
-            "y2": 2347
-          }
+          "device": "cpu"
         },
         "roi": {
           "crop_expand_ratio": 0.04,

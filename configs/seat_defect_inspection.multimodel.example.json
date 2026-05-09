@@ -8,7 +8,6 @@
     "fusion": {
       "reject_on_any_reject": true,
       "ng_strategy": "any",
-      "early_stop_on_ng": false,
       "defect_overrides_reject": true
     },
     "seat_models": [
@@ -29,13 +28,7 @@
             "color_insensitive_mode": true,
             "detection": {
               "model_path": "../models/seat_defect_inspection/yolo/seat_model_a_best.pt",
-              "target_class": "seat",
-              "fallback_box": {
-                "x1": 900,
-                "y1": 280,
-                "x2": 2600,
-                "y2": 2400
-              }
+              "target_class": "seat"
             },
             "roi": {
               "crop_expand_ratio": 0.02,
@@ -115,13 +108,7 @@
             "color_insensitive_mode": true,
             "detection": {
               "model_path": "../models/seat_defect_inspection/yolo/seat_model_b_best.pt",
-              "target_class": "seat",
-              "fallback_box": {
-                "x1": 860,
-                "y1": 260,
-                "x2": 2540,
-                "y2": 2360
-              }
+              "target_class": "seat"
             },
             "roi": {
               "crop_expand_ratio": 0.02,

@@ -45,7 +45,6 @@ response = inspector.inspect(
 
 print(response.status, response.decision_reason)
 print(response.report_path)
-print(response.archive_report_path)
 ```
 
 ## Engineering Tool Reference Workflow

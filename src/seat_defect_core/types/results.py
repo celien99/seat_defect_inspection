@@ -226,9 +226,6 @@ class InspectionResponse:
     report_path: str
     """最新检测报告 JSON 路径。"""
 
-    archive_report_path: str
-    """历史归档报告 JSON 路径。"""
-
     artifact_paths: dict[str, dict[str, str]]
     """按机位聚合的调试产物路径。"""
 
@@ -254,55 +251,16 @@ class InspectionResponse:
 
     def to_dict(self) -> dict[str, Any]:
         """转换为适合外部系统序列化的字典。"""
-        return {
-            "part_id": self.result.part_id,
-            "frame_id": self.result.frame_id,
-            "timestamp": self.result.timestamp,
-            "status": self.result.status,
-            "decision_reason": self.result.decision_reason,
-            "seat_model_id": self.result.seat_model_id,
-            "timings_ms": dict(self.result.timings_ms),
-            "report_path": self.report_path,
-            "archive_report_path": self.archive_report_path,
-            "artifact_paths": self.artifact_paths,
-            "camera_results": [
-                {
-                    "camera_id": camera_result.camera_id,
-                    "frame_id": camera_result.frame_id,
-                    "source": camera_result.source,
-                    "source_kind": camera_result.source_kind,
-                    "status": camera_result.status,
-                    "reason": camera_result.reason,
-                    "seat_model_id": camera_result.seat_model_id,
-                    "timings_ms": dict(camera_result.timings_ms),
-                    "error": _error_to_dict(camera_result.error),
-                    "artifact_paths": dict(camera_result.artifact_paths),
-                    "region_results": [
-                        {
-                            "region_id": region_result.region_id,
-                            "status": region_result.status,
-                            "reason": region_result.reason,
-                            "patchcore_model_path": region_result.patchcore_model_path,
-                            "timings_ms": dict(region_result.timings_ms),
-                            "error": _error_to_dict(region_result.error),
-                            "artifact_paths": dict(region_result.artifact_paths),
-                        }
-                        for region_result in camera_result.region_results
-                    ],
-                }
-                for camera_result in self.result.camera_results
-            ],
-        }
+        from ..serialization import inspection_result_to_dict
 
-
-def _error_to_dict(error: InspectionError | None) -> dict[str, str] | None:
-    if error is None:
-        return None
-    return {
-        "code": error.code,
-        "message": error.message,
-        "stage": error.stage,
-    }
+        payload = inspection_result_to_dict(self.result)
+        payload.update(
+            {
+                "report_path": self.report_path,
+                "artifact_paths": self.artifact_paths,
+            }
+        )
+        return payload
 
 
 __all__ = [

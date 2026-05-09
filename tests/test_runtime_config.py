@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from seat_defect_inspection.runtime_config import load_config, load_yolo_training_config
 
 
@@ -27,12 +29,6 @@ def test_load_config_normalizes_nested_paths_and_default_seat_model(tmp_path: Pa
                                     "train_good_dir": "train/good",
                                     "detection": {
                                         "model_path": "models/yolo.pt",
-                                        "fallback_box": {
-                                            "x1": 1,
-                                            "y1": 2,
-                                            "x2": 30,
-                                            "y2": 40,
-                                        },
                                     },
                                     "roi": {
                                         "alignment": {
@@ -68,16 +64,11 @@ def test_load_config_normalizes_nested_paths_and_default_seat_model(tmp_path: Pa
     assert config.capture_dir == str(
         (tmp_path / "outputs/seat_defect_inspection/capture").resolve()
     )
-    assert config.fusion.early_stop_on_ng is False
-
     camera = config.seat_models[0].cameras[0]
     assert camera.source == str((tmp_path / "images/frame.png").resolve())
     assert camera.patchcore_model_path == str((tmp_path / "models/patchcore.npz").resolve())
     assert camera.train_good_dir == str((tmp_path / "train/good").resolve())
     assert camera.detection.model_path == str((tmp_path / "models/yolo.pt").resolve())
-    assert camera.detection.fallback_box is not None
-    assert camera.detection.fallback_box.x1 == 1
-    assert camera.detection.fallback_box.y2 == 40
     assert camera.roi.alignment.output_width == 320
     assert camera.roi.alignment.output_height == 320
     assert camera.patchcore.backbone_weights_path == str(
@@ -170,7 +161,7 @@ def test_load_yolo_training_default_data_path_is_resolved(tmp_path: Path) -> Non
     )
 
 
-def test_load_config_ignores_legacy_debug_artifact_fields(tmp_path: Path) -> None:
+def test_load_config_rejects_legacy_debug_artifact_fields(tmp_path: Path) -> None:
     config_path = tmp_path / "config.json"
     config_path.write_text(
         json.dumps(
@@ -194,9 +185,8 @@ def test_load_config_ignores_legacy_debug_artifact_fields(tmp_path: Path) -> Non
         encoding="utf-8",
     )
 
-    config = load_config(str(config_path))
-
-    assert config.cameras[0].camera_id == "cam_0"
+    with pytest.raises(ValueError, match="未知字段"):
+        load_config(str(config_path))
 
 
 def test_load_config_parses_debug_artifacts_enabled(tmp_path: Path) -> None:
@@ -225,6 +215,65 @@ def test_load_config_parses_debug_artifacts_enabled(tmp_path: Path) -> None:
     config = load_config(str(config_path))
 
     assert config.debug_artifacts_enabled is False
+
+
+def test_load_config_parses_string_false_bool_without_truthiness_trap(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "seat_defect_inspection": {
+                    "debug_artifacts_enabled": "false",
+                    "cameras": [
+                        {
+                            "camera_id": "cam_0",
+                            "source": "0",
+                            "patchcore_model_path": "model.npz",
+                            "patchcore": {
+                                "backbone_pretrained": True
+                            },
+                        }
+                    ],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_config(str(config_path))
+
+    assert config.debug_artifacts_enabled is False
+
+
+def test_load_config_rejects_non_bool_config_values(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "seat_defect_inspection": {
+                    "debug_artifacts_enabled": 1,
+                    "cameras": [
+                        {
+                            "camera_id": "cam_0",
+                            "source": "0",
+                            "patchcore_model_path": "model.npz",
+                            "patchcore": {
+                                "backbone_pretrained": True
+                            },
+                        }
+                    ],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        load_config(str(config_path))
+    except TypeError as exc:
+        assert "布尔配置必须是 true/false" in str(exc)
+        return
+    raise AssertionError("expected TypeError for non-bool config value")
 
 
 def test_load_config_ignores_legacy_ignore_classes_field(tmp_path: Path) -> None:

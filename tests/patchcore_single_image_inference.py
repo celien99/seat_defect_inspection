@@ -17,7 +17,6 @@ from seat_defect_core.config import (
 from seat_defect_core.cvops.debug_artifacts import _overlay_heatmap, _render_detections
 from seat_defect_core.patchcore import PatchCoreService
 from seat_defect_core.service.core import CameraPipeline
-from seat_defect_core.types import BoundingBox
 from seat_defect_inspection.config import CameraConfig
 from seat_defect_inspection.patchcore import PatchCoreTrainer
 
@@ -54,12 +53,6 @@ DETECTION = {
     "confidence": 0.5,
     "iou": 0.45,
     "device": DEVICE,
-    "fallback_box": {
-        "x1": 1116.0,
-        "y1": 332.0,
-        "x2": 2722.0,
-        "y2": 2911.0,
-    },
 }
 
 ROI = {
@@ -92,12 +85,7 @@ PATCHCORE = {
 
 
 def _build_camera() -> CameraConfig:
-    detection = DetectionConfig(
-        **{
-            **DETECTION,
-            "fallback_box": BoundingBox(**DETECTION["fallback_box"]),
-        }
-    )
+    detection = DetectionConfig(**DETECTION)
     roi = RoiRefineConfig(
         **{
             **ROI,

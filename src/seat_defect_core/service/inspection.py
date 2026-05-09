@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from time import perf_counter
 
-from ..fusion import fuse_camera_results, should_early_stop_on_ng
+from ..fusion import fuse_camera_results
 from ..types import CameraInspectionResult, InspectionError, InspectionFrame, InspectionResult
 from .core import InspectionService
 from .frames import (
@@ -16,7 +16,6 @@ from .frames import (
 )
 from .inspection_camera import inspect_one_camera
 from .response import (
-    build_early_stop_reason,
     build_missing_frame_result,
     build_reject_result,
     export_result,
@@ -59,7 +58,6 @@ def inspect_frames(
     run_timestamp = resolve_run_timestamp(frames)
     frames_ms = _elapsed_ms(frame_started_at)
     camera_results: list[CameraInspectionResult] = []
-    total_camera_count = len(context.cameras)
 
     camera_loop_started_at = perf_counter()
     for camera in context.cameras:
@@ -122,28 +120,6 @@ def inspect_frames(
                         ),
                     )
                 )
-
-        if should_early_stop_on_ng(
-            camera_results=camera_results,
-            total_camera_count=total_camera_count,
-            fusion_config=service.config.fusion,
-        ):
-            result = InspectionResult(
-                part_id=resolved_part_id,
-                frame_id=run_frame_id,
-                timestamp=run_timestamp,
-                status="NG",
-                decision_reason=build_early_stop_reason(camera_results),
-                seat_model_id=context.seat_model_id,
-                camera_results=camera_results,
-                timings_ms={
-                    "context": context_ms,
-                    "frames": frames_ms,
-                    "cameras": _elapsed_ms(camera_loop_started_at),
-                },
-            )
-            _finish_result_timing(result, started_at)
-            return export_result(service.config, result)
 
     camera_loop_ms = _elapsed_ms(camera_loop_started_at)
     fusion_started_at = perf_counter()

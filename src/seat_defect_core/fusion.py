@@ -95,22 +95,6 @@ def _apply_ng_strategy(ng_count: int, total_count: int, strategy: str) -> bool:
     return ng_count > 0
 
 
-def should_early_stop_on_ng(
-    *,
-    camera_results: list[CameraInspectionResult],
-    total_camera_count: int,
-    fusion_config: FusionConfig,
-) -> bool:
-    """Return True when the current partial results are enough to finalize NG."""
-    if not fusion_config.early_stop_on_ng or total_camera_count <= 0:
-        return False
-    if fusion_config.reject_on_any_reject and not fusion_config.defect_overrides_reject:
-        return False
-
-    ng_count = sum(1 for result in camera_results if result.status == "NG")
-    return _apply_ng_strategy(ng_count, total_camera_count, fusion_config.ng_strategy)
-
-
 def _build_ng_decision_reason(
     ng_results: list[CameraInspectionResult],
     rejects: list[CameraInspectionResult],

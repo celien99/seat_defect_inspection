@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from ..config import CameraConfig, InspectionConfig
-from ..reporting import export_inspection_report, resolve_inspection_archive_path
+from ..reporting import export_inspection_report
 from ..types import CameraInspectionResult, InspectionError, InspectionResponse, InspectionResult
 
 
@@ -54,16 +52,8 @@ def build_reject_result(
     )
 
 
-def build_early_stop_reason(camera_results: list[CameraInspectionResult]) -> str:
-    """Build the fused reason used when early-stop ends the run."""
-    ng_cameras = [result.camera_id for result in camera_results if result.status == "NG"]
-    if not ng_cameras:
-        return "early_stop_without_ng"
-    return f"early_stop_ng_from_{','.join(ng_cameras)}"
-
-
 def export_result(config: InspectionConfig, result: InspectionResult) -> InspectionResult:
-    """Write latest and archived reports, then return the original result."""
+    """Write the latest report, then return the original result."""
     export_inspection_report(result, config.output_json_path)
     return result
 
@@ -73,12 +63,9 @@ def build_inspection_response(
     result: InspectionResult,
 ) -> InspectionResponse:
     """Build the public response wrapper returned by the core API."""
-    report_path = Path(config.output_json_path)
-    archive_report_path = resolve_inspection_archive_path(report_path, result)
     return InspectionResponse(
         result=result,
-        report_path=str(report_path),
-        archive_report_path=str(archive_report_path),
+        report_path=config.output_json_path,
         artifact_paths=collect_artifact_paths(result),
     )
 
@@ -93,7 +80,6 @@ def collect_artifact_paths(result: InspectionResult) -> dict[str, dict[str, str]
 
 
 __all__ = [
-    "build_early_stop_reason",
     "build_inspection_response",
     "build_missing_frame_result",
     "build_reject_result",

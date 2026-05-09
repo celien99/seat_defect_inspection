@@ -85,10 +85,7 @@ class RoiRefineEngine:
             if int(cropped.sum()) <= 0:
                 raise ValueError("target_mask_empty")
             return cropped
-        if not detection_result.used_fallback:
-            raise ValueError("target_mask_missing")
-        # 只有显式 fallback_box 路径才允许退回矩形 ROI，避免静默污染 PatchCore 输入。
-        return np.ones(roi_image.shape[:2], dtype=np.uint8)
+        raise ValueError("target_mask_missing")
 
     def _erode_target_mask(self, target_mask: np.ndarray) -> np.ndarray:
         """按配置把 YOLO 前景 mask 向内收缩，避免边缘噪声进入 PatchCore。"""

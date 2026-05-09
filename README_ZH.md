@@ -60,7 +60,6 @@ response = inspector.inspect(
 
 print(response.status, response.decision_reason)
 print(response.report_path)
-print(response.archive_report_path)
 ```
 
 离线图片文件夹批测仍从工程包调用：
@@ -99,7 +98,7 @@ print(summary["sample_count"], summary["ok_count"], summary["ng_count"])
 
 PatchCore 参数排查见 [PATCHCORE_TUNING_GUIDE_ZH.md](./PATCHCORE_TUNING_GUIDE_ZH.md)。
 
-如果现场还没有 YOLO 权重，可以先把 `detection.model_path` 设为 `null`，继续使用 `fallback_box` 跑完整流程。
+现场运行必须配置可用的 YOLO segmentation 权重；未检测到目标或缺少分割 mask 时，本次检测会返回 `REJECT`。
 
 ## 离线批测目录
 
@@ -142,7 +141,6 @@ offline_samples/
 - `models/seat_defect_inspection/<camera_id>_patchcore.summary.json`: PatchCore 训练摘要
 - `outputs/seat_defect_inspection/capture`: 采图输出
 - `outputs/seat_defect_inspection/debug`: 检测调试图输出
-- `<output_json_path 同目录>/<output_json_path.stem>_history`: 检测历史报告归档目录
 - `outputs/seat_defect_inspection/yolo_training`: YOLO 训练输出
 
 ## 当前代码结构

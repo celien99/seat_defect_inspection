@@ -20,12 +20,11 @@ class DetectionService:
         self._model = None
 
     def detect(self, image: Any) -> DetectionResult:
-        """有 YOLO 权重时执行检测，否则退回到静态框。"""
+        """Run YOLO detection when a model is configured."""
         if self.config.model_path is None:
             return DetectionResult(
-                target=self._build_fallback_target(),
+                target=None,
                 all_objects=[],
-                used_fallback=True,
             )
 
         if self._model is None:
@@ -51,17 +50,6 @@ class DetectionService:
         return DetectionResult(
             target=target,
             all_objects=detections,
-            used_fallback=False,
-        )
-
-    def _build_fallback_target(self) -> DetectionObject | None:
-        if self.config.fallback_box is None:
-            return None
-        return DetectionObject(
-            label=self.config.target_class,
-            confidence=1.0,
-            bounding_box=self.config.fallback_box,
-            segmentation_mask=None,
         )
 
     def _extract_detections(
