@@ -16,7 +16,7 @@ def load_config(path: str) -> InspectionConfig:
     """加载缺陷检测主配置。"""
     config_dir, inspection_payload = _load_inspection_payload(path)
     config = _parse_inspection_config(inspection_payload, config_dir)
-    _validate_inspection_config(config)
+    validate_inspection_config(config)
     return config
 
 
@@ -32,7 +32,7 @@ def _load_inspection_payload(path: str) -> tuple[Path, dict[str, Any]]:
     return config_path.parent, inspection_payload
 
 
-def _validate_inspection_config(config: InspectionConfig) -> None:
+def validate_inspection_config(config: InspectionConfig) -> None:
     """做整体验证，确保配置在进入主流程前就失败得足够早。"""
     if config.default_seat_model_id and config.seat_models:
         available_ids = {item.seat_model_id for item in config.seat_models}
@@ -49,6 +49,9 @@ def _validate_inspection_config(config: InspectionConfig) -> None:
             seat_model.cameras,
             scope=f"seat_model `{seat_model.seat_model_id}`",
         )
+
+
+_validate_inspection_config = validate_inspection_config
 
 
 def _validate_camera_configs(cameras: list[CameraConfig], *, scope: str) -> None:

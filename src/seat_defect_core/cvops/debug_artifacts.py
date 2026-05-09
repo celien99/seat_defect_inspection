@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 import re
 from typing import Any
@@ -10,18 +9,17 @@ from typing import Any
 import cv2
 import numpy as np
 
-from ..debug_artifacts import get_debug_artifact_names
 from ..util import build_model_scoped_root, select_patchcore_input, write_image
-from .regions import build_region_roi_sample
+from .regions import build_region_roi_sample_from_box
 
-
-@dataclass(slots=True)
-class _RegionArtifactConfig:
-    region_id: str
-    box: list[float]
-    patchcore_model_path: str
-    enabled: bool = True
-    patchcore: Any | None = None
+DEFAULT_DEBUG_ARTIFACT_NAMES: frozenset[str] = frozenset(
+    {
+        "raw",
+        "detections",
+        "heatmap",
+        "overlay",
+    }
+)
 
 
 def save_debug_artifacts(
@@ -34,7 +32,7 @@ def save_debug_artifacts(
     region_results: Any | None = None,
 ) -> dict[str, str]:
     """Persist the selected debug artifacts for one camera result."""
-    selected_artifacts = get_debug_artifact_names()
+    selected_artifacts = DEFAULT_DEBUG_ARTIFACT_NAMES
 
     camera_dir = (
         build_model_scoped_root(Path(debug_dir), seat_model_id)
@@ -155,7 +153,7 @@ def save_debug_artifacts(
 
 def _save_region_artifacts(
     artifact_paths: dict[str, str],
-    selected_artifacts: set[str],
+    selected_artifacts: frozenset[str],
     camera_dir: Path,
     roi,
     region_result,
@@ -163,7 +161,8 @@ def _save_region_artifacts(
     """Save region-level heatmap and overlay artifacts."""
     if region_result.texture_result is None:
         return
-    region_proxy = _RegionArtifactConfig(
+    sample = build_region_roi_sample_from_box(
+        roi,
         region_id=region_result.region_id,
         box=[
             region_result.box.x1 / max(1.0, float(roi.aligned_roi_image.shape[1])),
@@ -171,11 +170,7 @@ def _save_region_artifacts(
             region_result.box.x2 / max(1.0, float(roi.aligned_roi_image.shape[1])),
             region_result.box.y2 / max(1.0, float(roi.aligned_roi_image.shape[0])),
         ],
-        enabled=True,
-        patchcore_model_path=region_result.patchcore_model_path or "",
-        patchcore=None,
     )
-    sample = build_region_roi_sample(roi, region_proxy)
     if sample is None:
         return
     region_dir = camera_dir / "regions" / _sanitize_region_id(region_result.region_id)
@@ -203,7 +198,7 @@ def _sanitize_region_id(value: str) -> str:
 
 def _save_selected_image(
     artifact_paths: dict[str, str],
-    selected_artifacts: set[str],
+    selected_artifacts: frozenset[str],
     key: str,
     path: Path,
     image: Any | None,
@@ -219,7 +214,7 @@ def _save_selected_image(
 
 def _save_selected_mask(
     artifact_paths: dict[str, str],
-    selected_artifacts: set[str],
+    selected_artifacts: frozenset[str],
     key: str,
     path: Path,
     mask: np.ndarray | None,

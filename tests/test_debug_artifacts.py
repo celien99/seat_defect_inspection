@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import numpy as np
 
-from seat_defect_core.debug_artifacts import get_debug_artifact_names
-from seat_defect_core.cvops.debug_artifacts import _overlay_heatmap, _render_heatmap
+from seat_defect_core.cvops.debug_artifacts import (
+    DEFAULT_DEBUG_ARTIFACT_NAMES,
+    _overlay_heatmap,
+    _render_heatmap,
+)
 
 
 def test_unified_artifact_set_contains_expected_outputs() -> None:
-    assert get_debug_artifact_names() == {
+    assert DEFAULT_DEBUG_ARTIFACT_NAMES == {
         "raw",
         "detections",
         "heatmap",

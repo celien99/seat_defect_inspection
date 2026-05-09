@@ -44,9 +44,23 @@ def build_region_roi_sample(
     region: RegionConfig,
 ) -> RegionRoiSample | None:
     """从一个标准 ROI 中切出一个局部 PatchCore 样本。"""
+    return build_region_roi_sample_from_box(
+        roi,
+        region_id=region.region_id,
+        box=region.box,
+    )
+
+
+def build_region_roi_sample_from_box(
+    roi: RoiRefineResult,
+    *,
+    region_id: str,
+    box: list[float],
+) -> RegionRoiSample | None:
+    """按区域 ID 和归一化框从标准 ROI 中切出一个 PatchCore 样本。"""
     patchcore_input = select_patchcore_input(roi)
     height, width = patchcore_input.shape[:2]
-    x1, y1, x2, y2 = _normalized_box_to_pixels(region.box, width, height)
+    x1, y1, x2, y2 = _normalized_box_to_pixels(box, width, height)
     if x2 <= x1 or y2 <= y1:
         return None
 
@@ -59,7 +73,7 @@ def build_region_roi_sample(
         return None
 
     return RegionRoiSample(
-        region_id=region.region_id,
+        region_id=region_id,
         box=BoundingBox(
             x1=float(x1),
             y1=float(y1),
