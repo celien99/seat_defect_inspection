@@ -163,6 +163,7 @@ class InspectionConfig:
     default_seat_model_id: str | None = None
     output_json_path: str = "outputs/seat_defect_inspection/results.json"
     debug_dir: str = "outputs/seat_defect_inspection/debug"
+    debug_artifacts_enabled: bool = True
     part_id: str = "seat_demo"
     fusion: FusionConfig = field(default_factory=FusionConfig)
 

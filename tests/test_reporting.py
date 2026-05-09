@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from seat_defect_core.reporting import export_inspection_report
-from seat_defect_core.types import BoundingBox, CameraInspectionResult, DetectionObject, DetectionResult, InspectionResult
+from seat_defect_core.types import BoundingBox, CameraInspectionResult, DetectionObject, DetectionResult, InspectionError, InspectionResult
 
 
 def test_export_inspection_report_keeps_latest_and_history(tmp_path: Path) -> None:
@@ -47,6 +47,12 @@ def test_export_inspection_report_writes_target_box_and_crop_box(tmp_path: Path)
                 source_kind="image",
                 status="NG",
                 reason="texture_anomaly",
+                timings_ms={"total": 12.5},
+                error=InspectionError(
+                    code="pipeline_failed",
+                    message="failed",
+                    stage="camera_pipeline",
+                ),
                 detection=DetectionResult(
                     target=DetectionObject(
                         label="seat",
@@ -65,3 +71,5 @@ def test_export_inspection_report_writes_target_box_and_crop_box(tmp_path: Path)
     camera_payload = payload["camera_results"][0]
     assert camera_payload["target_box"] == {"x1": 10.0, "y1": 20.0, "x2": 30.0, "y2": 40.0}
     assert camera_payload["crop_box"] == {"x1": 8.0, "y1": 18.0, "x2": 32.0, "y2": 42.0}
+    assert camera_payload["timings_ms"]["total"] == 12.5
+    assert camera_payload["error"]["code"] == "pipeline_failed"

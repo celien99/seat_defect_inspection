@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from time import perf_counter
+
 from ..fusion import fuse_camera_results, should_early_stop_on_ng
-from ..types import CameraInspectionResult, InspectionFrame, InspectionResult
+from ..types import CameraInspectionResult, InspectionError, InspectionFrame, InspectionResult
 from .core import InspectionService
 from .frames import (
     build_frame_map,
@@ -29,29 +31,37 @@ def inspect_frames(
     seat_model_id: str | None = None,
 ) -> InspectionResult:
     """Run the clean inspect pipeline against a prepared core service."""
+    started_at = perf_counter()
     context = service.resolve_context(seat_model_id)
+    context_ms = _elapsed_ms(started_at)
     resolved_part_id = part_id or service.config.part_id
     if not context.cameras:
+        result = InspectionResult(
+            part_id=resolved_part_id,
+            frame_id="",
+            timestamp="",
+            status="REJECT",
+            decision_reason="no_enabled_cameras",
+            seat_model_id=context.seat_model_id,
+            camera_results=[],
+            timings_ms={"context": context_ms},
+        )
+        _finish_result_timing(result, started_at)
         return export_result(
             service.config,
-            InspectionResult(
-                part_id=resolved_part_id,
-                frame_id="",
-                timestamp="",
-                status="REJECT",
-                decision_reason="no_enabled_cameras",
-                seat_model_id=context.seat_model_id,
-                camera_results=[],
-            ),
+            result,
         )
 
+    frame_started_at = perf_counter()
     frame_map = build_frame_map(frames)
     validate_frame_camera_ids(frame_map, [camera.camera_id for camera in context.cameras])
     run_frame_id = resolve_run_frame_id(frames)
     run_timestamp = resolve_run_timestamp(frames)
+    frames_ms = _elapsed_ms(frame_started_at)
     camera_results: list[CameraInspectionResult] = []
     total_camera_count = len(context.cameras)
 
+    camera_loop_started_at = perf_counter()
     for camera in context.cameras:
         external_frame = frame_map.get(camera.camera_id)
         if external_frame is None:
@@ -71,6 +81,11 @@ def inspect_frames(
                     source_kind=external_frame.source_kind,
                     reason=external_frame.error_reason,
                     seat_model_id=context.seat_model_id,
+                    error=InspectionError(
+                        code=_error_code_from_reason(external_frame.error_reason),
+                        message=external_frame.error_reason,
+                        stage="input",
+                    ),
                 )
             )
         else:
@@ -98,8 +113,13 @@ def inspect_frames(
                         frame_id=frame_packet.frame_id,
                         source=frame_packet.source,
                         source_kind=frame_packet.source_kind,
-                        reason=f"pipeline_failed:{exc}",
+                        reason="pipeline_failed",
                         seat_model_id=context.seat_model_id,
+                        error=InspectionError(
+                            code="pipeline_failed",
+                            message=str(exc),
+                            stage="camera_pipeline",
+                        ),
                     )
                 )
 
@@ -108,19 +128,25 @@ def inspect_frames(
             total_camera_count=total_camera_count,
             fusion_config=service.config.fusion,
         ):
-            return export_result(
-                service.config,
-                InspectionResult(
-                    part_id=resolved_part_id,
-                    frame_id=run_frame_id,
-                    timestamp=run_timestamp,
-                    status="NG",
-                    decision_reason=build_early_stop_reason(camera_results),
-                    seat_model_id=context.seat_model_id,
-                    camera_results=camera_results,
-                ),
+            result = InspectionResult(
+                part_id=resolved_part_id,
+                frame_id=run_frame_id,
+                timestamp=run_timestamp,
+                status="NG",
+                decision_reason=build_early_stop_reason(camera_results),
+                seat_model_id=context.seat_model_id,
+                camera_results=camera_results,
+                timings_ms={
+                    "context": context_ms,
+                    "frames": frames_ms,
+                    "cameras": _elapsed_ms(camera_loop_started_at),
+                },
             )
+            _finish_result_timing(result, started_at)
+            return export_result(service.config, result)
 
+    camera_loop_ms = _elapsed_ms(camera_loop_started_at)
+    fusion_started_at = perf_counter()
     fused = fuse_camera_results(
         part_id=resolved_part_id,
         frame_id=run_frame_id,
@@ -128,8 +154,30 @@ def inspect_frames(
         camera_results=camera_results,
         fusion_config=service.config.fusion,
     )
+    fusion_ms = _elapsed_ms(fusion_started_at)
     fused.seat_model_id = context.seat_model_id
+    fused.timings_ms = {
+        "context": context_ms,
+        "frames": frames_ms,
+        "cameras": camera_loop_ms,
+        "fusion": fusion_ms,
+    }
+    _finish_result_timing(fused, started_at)
     return export_result(service.config, fused)
+
+
+def _elapsed_ms(started_at: float) -> float:
+    return (perf_counter() - started_at) * 1000.0
+
+
+def _finish_result_timing(result: InspectionResult, started_at: float) -> None:
+    result.timings_ms["total"] = _elapsed_ms(started_at)
+
+
+def _error_code_from_reason(reason: str) -> str:
+    normalized = reason.split(":", 1)[0].strip().lower()
+    normalized = normalized.replace("-", "_").replace(" ", "_")
+    return normalized or "input_error"
 
 
 __all__ = [

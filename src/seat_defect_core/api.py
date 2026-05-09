@@ -5,6 +5,8 @@ from __future__ import annotations
 from os import PathLike
 from typing import Any
 
+import cv2
+
 from .config import InspectionConfig
 from .runtime_config import load_config
 from .types import InspectionFrame, InspectionResponse
@@ -41,6 +43,26 @@ class SeatDefectInspector:
         )
         return build_inspection_response(self.config, result)
 
+    def inspect_paths(
+        self,
+        image_paths: dict[str, str | PathLike[str]],
+        *,
+        part_id: str | None = None,
+        seat_model_id: str | None = None,
+        frame_id: str | None = None,
+        timestamp: str | None = None,
+    ) -> InspectionResponse:
+        """Run one inspection from externally supplied image paths."""
+        return self.inspect(
+            frames_from_paths(
+                image_paths,
+                frame_id=frame_id,
+                timestamp=timestamp,
+            ),
+            part_id=part_id,
+            seat_model_id=seat_model_id,
+        )
+
 
 def inspect_once(
     config: ConfigSource,
@@ -57,6 +79,51 @@ def inspect_once(
     )
 
 
+def inspect_paths_once(
+    config: ConfigSource,
+    image_paths: dict[str, str | PathLike[str]],
+    *,
+    part_id: str | None = None,
+    seat_model_id: str | None = None,
+    frame_id: str | None = None,
+    timestamp: str | None = None,
+) -> InspectionResponse:
+    """Load config and run one inspection from image paths."""
+    return SeatDefectInspector(config).inspect_paths(
+        image_paths,
+        part_id=part_id,
+        seat_model_id=seat_model_id,
+        frame_id=frame_id,
+        timestamp=timestamp,
+    )
+
+
+def frames_from_paths(
+    image_paths: dict[str, str | PathLike[str]],
+    *,
+    frame_id: str | None = None,
+    timestamp: str | None = None,
+) -> list[InspectionFrame]:
+    """Build InspectionFrame objects from a camera_id to image_path mapping."""
+    frames: list[InspectionFrame] = []
+    for camera_id, image_path in image_paths.items():
+        path = str(image_path)
+        image = cv2.imread(path, cv2.IMREAD_COLOR)
+        error_reason = None if image is not None else "image_read_failed"
+        frames.append(
+            InspectionFrame(
+                camera_id=str(camera_id),
+                image=image,
+                source=path,
+                frame_id=frame_id,
+                timestamp=timestamp,
+                source_kind="image_path",
+                error_reason=error_reason,
+            )
+        )
+    return frames
+
+
 def resolve_config(config: ConfigSource) -> InspectionConfig:
     """Resolve a config object or JSON path into runtime config."""
     if isinstance(config, InspectionConfig):
@@ -67,6 +134,8 @@ def resolve_config(config: ConfigSource) -> InspectionConfig:
 __all__ = [
     "ConfigSource",
     "SeatDefectInspector",
+    "frames_from_paths",
+    "inspect_paths_once",
     "inspect_once",
     "resolve_config",
 ]

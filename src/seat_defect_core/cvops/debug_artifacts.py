@@ -161,16 +161,18 @@ def _save_region_artifacts(
     """Save region-level heatmap and overlay artifacts."""
     if region_result.texture_result is None:
         return
-    sample = build_region_roi_sample_from_box(
-        roi,
-        region_id=region_result.region_id,
-        box=[
-            region_result.box.x1 / max(1.0, float(roi.aligned_roi_image.shape[1])),
-            region_result.box.y1 / max(1.0, float(roi.aligned_roi_image.shape[0])),
-            region_result.box.x2 / max(1.0, float(roi.aligned_roi_image.shape[1])),
-            region_result.box.y2 / max(1.0, float(roi.aligned_roi_image.shape[0])),
-        ],
-    )
+    sample = getattr(region_result, "sample", None)
+    if sample is None:
+        sample = build_region_roi_sample_from_box(
+            roi,
+            region_id=region_result.region_id,
+            box=[
+                region_result.box.x1 / max(1.0, float(roi.aligned_roi_image.shape[1])),
+                region_result.box.y1 / max(1.0, float(roi.aligned_roi_image.shape[0])),
+                region_result.box.x2 / max(1.0, float(roi.aligned_roi_image.shape[1])),
+                region_result.box.y2 / max(1.0, float(roi.aligned_roi_image.shape[0])),
+            ],
+        )
     if sample is None:
         return
     region_dir = camera_dir / "regions" / _sanitize_region_id(region_result.region_id)

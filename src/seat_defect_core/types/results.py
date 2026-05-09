@@ -86,6 +86,20 @@ class ColorAnomalyResult:
 
 
 @dataclass(slots=True)
+class InspectionError:
+    """结构化错误，供外部系统稳定识别。"""
+
+    code: str
+    """稳定错误码。"""
+
+    message: str
+    """面向日志/调试的错误信息。"""
+
+    stage: str
+    """错误发生阶段。"""
+
+
+@dataclass(slots=True)
 class RegionPatchCoreResult:
     """单个局部区域的 PatchCore 输出。"""
 
@@ -109,6 +123,15 @@ class RegionPatchCoreResult:
 
     artifact_paths: dict[str, str] = field(default_factory=dict)
     """该区域关联的调试产物路径。"""
+
+    timings_ms: dict[str, float] = field(default_factory=dict)
+    """该区域各阶段耗时，单位毫秒。"""
+
+    error: InspectionError | None = None
+    """该区域结构化错误。"""
+
+    sample: Any | None = field(default=None, repr=False, compare=False)
+    """运行时复用的区域 ROI 样本，不参与公开序列化。"""
 
 
 @dataclass(slots=True)
@@ -157,6 +180,12 @@ class CameraInspectionResult:
     artifact_paths: dict[str, str] = field(default_factory=dict)
     """该机位关联的调试产物路径。"""
 
+    timings_ms: dict[str, float] = field(default_factory=dict)
+    """该机位各阶段耗时，单位毫秒。"""
+
+    error: InspectionError | None = None
+    """该机位结构化错误。"""
+
 
 @dataclass(slots=True)
 class InspectionResult:
@@ -182,6 +211,9 @@ class InspectionResult:
 
     camera_results: list[CameraInspectionResult] = field(default_factory=list)
     """所有机位检测结果。"""
+
+    timings_ms: dict[str, float] = field(default_factory=dict)
+    """整件检测各阶段耗时，单位毫秒。"""
 
 
 @dataclass(slots=True)
@@ -229,6 +261,7 @@ class InspectionResponse:
             "status": self.result.status,
             "decision_reason": self.result.decision_reason,
             "seat_model_id": self.result.seat_model_id,
+            "timings_ms": dict(self.result.timings_ms),
             "report_path": self.report_path,
             "archive_report_path": self.archive_report_path,
             "artifact_paths": self.artifact_paths,
@@ -241,6 +274,8 @@ class InspectionResponse:
                     "status": camera_result.status,
                     "reason": camera_result.reason,
                     "seat_model_id": camera_result.seat_model_id,
+                    "timings_ms": dict(camera_result.timings_ms),
+                    "error": _error_to_dict(camera_result.error),
                     "artifact_paths": dict(camera_result.artifact_paths),
                     "region_results": [
                         {
@@ -248,6 +283,8 @@ class InspectionResponse:
                             "status": region_result.status,
                             "reason": region_result.reason,
                             "patchcore_model_path": region_result.patchcore_model_path,
+                            "timings_ms": dict(region_result.timings_ms),
+                            "error": _error_to_dict(region_result.error),
                             "artifact_paths": dict(region_result.artifact_paths),
                         }
                         for region_result in camera_result.region_results
@@ -258,9 +295,20 @@ class InspectionResponse:
         }
 
 
+def _error_to_dict(error: InspectionError | None) -> dict[str, str] | None:
+    if error is None:
+        return None
+    return {
+        "code": error.code,
+        "message": error.message,
+        "stage": error.stage,
+    }
+
+
 __all__ = [
     "CameraInspectionResult",
     "ColorAnomalyResult",
+    "InspectionError",
     "InspectionResponse",
     "InspectionResult",
     "RegionPatchCoreResult",

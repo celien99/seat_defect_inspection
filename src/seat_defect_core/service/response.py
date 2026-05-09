@@ -6,7 +6,7 @@ from pathlib import Path
 
 from ..config import CameraConfig, InspectionConfig
 from ..reporting import export_inspection_report, resolve_inspection_archive_path
-from ..types import CameraInspectionResult, InspectionResponse, InspectionResult
+from ..types import CameraInspectionResult, InspectionError, InspectionResponse, InspectionResult
 
 
 def build_missing_frame_result(
@@ -23,6 +23,11 @@ def build_missing_frame_result(
         source_kind="external_image",
         reason="missing_external_frame",
         seat_model_id=seat_model_id,
+        error=InspectionError(
+            code="missing_external_frame",
+            message="missing_external_frame",
+            stage="input",
+        ),
     )
 
 
@@ -34,6 +39,7 @@ def build_reject_result(
     source_kind: str,
     reason: str,
     seat_model_id: str | None,
+    error: InspectionError | None = None,
 ) -> CameraInspectionResult:
     """Build a normalized single-camera reject result."""
     return CameraInspectionResult(
@@ -44,6 +50,7 @@ def build_reject_result(
         status="REJECT",
         reason=reason,
         seat_model_id=seat_model_id,
+        error=error,
     )
 
 

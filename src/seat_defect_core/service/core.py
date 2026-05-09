@@ -10,8 +10,9 @@ from typing import Any
 
 from ..config import CameraConfig, InspectionConfig, PatchCoreConfig, RegionConfig
 from ..cvops import ImageQualityGuard, RoiRefineEngine
+from ..patchcore.features import _TorchPatchFeatureExtractor
 from ..patchcore import LoadedModelBundle, PatchCoreService
-from ..types import DetectionResult, ImageQualityDecision, RoiRefineResult
+from ..types import DetectionResult, ImageQualityDecision, RoiRefineResult, TextureAnomalyResult
 from ..yolo import DetectionService
 
 
@@ -93,6 +94,7 @@ class InspectionService:
         self.config = config
         self._pipeline_cache: dict[str, dict[str, CameraPipeline]] = {}
         self._model_cache: dict[tuple[str, str, str, str, int], LoadedModelBundle] = {}
+        self._feature_extractor_cache: dict[str, _TorchPatchFeatureExtractor] = {}
 
     def resolve_context(self, seat_model_id: str | None) -> ResolvedInspectionContext:
         resolved_seat_model_id, cameras = self._resolve_active_cameras(seat_model_id)
@@ -259,3 +261,94 @@ class InspectionService:
         )
         self._model_cache[cache_key] = loaded
         return loaded
+
+    def prepare_patchcore_for_predict(self, patchcore: Any) -> None:
+        """Attach shared runtime resources just before PatchCore prediction."""
+        if not isinstance(patchcore, PatchCoreService):
+            return
+        self._attach_shared_feature_extractor(patchcore)
+
+    def predict_patchcore_batch(
+        self,
+        items: list[tuple[PatchCoreService, Any, Any, Any]],
+    ) -> list[TextureAnomalyResult]:
+        """Predict PatchCore results, batching full-backend items with matching features."""
+        results: list[TextureAnomalyResult | None] = [None] * len(items)
+        batch_groups: dict[str, list[tuple[int, PatchCoreService, Any, Any, Any]]] = {}
+        for index, (patchcore, image, target_mask, ignore_mask) in enumerate(items):
+            if not isinstance(patchcore, PatchCoreService):
+                results[index] = patchcore.predict(image, target_mask, ignore_mask)
+                continue
+            self.prepare_patchcore_for_predict(patchcore)
+            if patchcore.config.backend.strip().lower() != "full":
+                results[index] = patchcore.predict(image, target_mask, ignore_mask)
+                continue
+            cache_key = _feature_extractor_cache_key(patchcore.config)
+            batch_groups.setdefault(cache_key, []).append(
+                (index, patchcore, image, target_mask, ignore_mask),
+            )
+
+        for group in batch_groups.values():
+            if len(group) == 1:
+                index, patchcore, image, target_mask, ignore_mask = group[0]
+                results[index] = patchcore.predict(image, target_mask, ignore_mask)
+                continue
+            feature_extractor = group[0][1]._get_torch_feature_extractor()
+            if feature_extractor is None:
+                for index, patchcore, image, target_mask, ignore_mask in group:
+                    results[index] = patchcore.predict(image, target_mask, ignore_mask)
+                continue
+            extracted = feature_extractor.extract_many(
+                [
+                    (image, target_mask, ignore_mask)
+                    for _index, _patchcore, image, target_mask, ignore_mask in group
+                ]
+            )
+            for (index, patchcore, image, target_mask, _ignore_mask), (embeddings, batch) in zip(group, extracted):
+                results[index] = patchcore.predict_from_embeddings(
+                    image_shape=image.shape[:2],
+                    target_mask=target_mask,
+                    embeddings=embeddings,
+                    batch=batch,
+                )
+
+        missing_results = [index for index, result in enumerate(results) if result is None]
+        if missing_results:
+            raise RuntimeError(f"PatchCore batch prediction missed results: {missing_results}")
+        return [result for result in results if result is not None]
+
+    def _attach_shared_feature_extractor(self, patchcore: PatchCoreService) -> None:
+        """Share identical full-backend backbones across camera and region models."""
+        if patchcore.config.backend.strip().lower() != "full":
+            return
+        cache_key = _feature_extractor_cache_key(patchcore.config)
+        feature_extractor = self._feature_extractor_cache.get(cache_key)
+        if feature_extractor is None:
+            feature_extractor = _TorchPatchFeatureExtractor(patchcore.config)
+            self._feature_extractor_cache[cache_key] = feature_extractor
+        patchcore.set_feature_extractor(feature_extractor)
+
+
+def _feature_extractor_cache_key(config: PatchCoreConfig) -> str:
+    """Key only the settings that affect full-backend feature extraction."""
+    payload = {
+        "backend": config.backend.strip().lower(),
+        "image_size": int(config.image_size),
+        "texture_input": config.texture_input.strip().lower(),
+        "backbone_name": config.backbone_name.strip().lower(),
+        "feature_layers": [layer.strip() for layer in config.feature_layers if layer.strip()],
+        "backbone_pretrained": bool(config.backbone_pretrained),
+        "backbone_weights_path": str(Path(config.backbone_weights_path).resolve())
+        if config.backbone_weights_path
+        else None,
+        "backbone_device": config.backbone_device.strip().lower(),
+        "feature_pool_kernel_size": int(config.feature_pool_kernel_size),
+        "min_target_coverage": float(config.min_target_coverage),
+        "max_ignore_overlap": float(config.max_ignore_overlap),
+    }
+    return json.dumps(
+        payload,
+        sort_keys=True,
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )

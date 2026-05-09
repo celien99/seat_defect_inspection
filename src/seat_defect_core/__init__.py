@@ -5,6 +5,7 @@ from .runtime_config import load_config
 from .types import (
     CameraInspectionResult,
     FramePacket,
+    InspectionError,
     InspectionFrame,
     InspectionResponse,
     InspectionResult,
@@ -16,9 +17,12 @@ __all__ = [
     "FramePacket",
     "InspectionFrame",
     "InspectionConfig",
+    "InspectionError",
     "InspectionResponse",
     "InspectionResult",
     "SeatDefectInspector",
+    "frames_from_paths",
+    "inspect_paths_once",
     "inspect_once",
     "load_config",
     "resolve_config",
@@ -27,6 +31,8 @@ __all__ = [
 _LAZY_EXPORTS = {
     "ConfigSource": (".api", "ConfigSource"),
     "SeatDefectInspector": (".api", "SeatDefectInspector"),
+    "frames_from_paths": (".api", "frames_from_paths"),
+    "inspect_paths_once": (".api", "inspect_paths_once"),
     "inspect_once": (".api", "inspect_once"),
     "resolve_config": (".api", "resolve_config"),
 }

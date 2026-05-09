@@ -199,6 +199,34 @@ def test_load_config_ignores_legacy_debug_artifact_fields(tmp_path: Path) -> Non
     assert config.cameras[0].camera_id == "cam_0"
 
 
+def test_load_config_parses_debug_artifacts_enabled(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "seat_defect_inspection": {
+                    "debug_artifacts_enabled": False,
+                    "cameras": [
+                        {
+                            "camera_id": "cam_0",
+                            "source": "0",
+                            "patchcore_model_path": "model.npz",
+                            "patchcore": {
+                                "backbone_pretrained": True
+                            },
+                        }
+                    ],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_config(str(config_path))
+
+    assert config.debug_artifacts_enabled is False
+
+
 def test_load_config_ignores_legacy_ignore_classes_field(tmp_path: Path) -> None:
     config_path = tmp_path / "config.json"
     config_path.write_text(

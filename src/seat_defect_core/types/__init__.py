@@ -14,6 +14,7 @@ from .pipeline import (
 from .results import (
     CameraInspectionResult,
     ColorAnomalyResult,
+    InspectionError,
     InspectionResponse,
     InspectionResult,
     RegionPatchCoreResult,
@@ -29,6 +30,7 @@ __all__ = [
     "FramePacket",
     "ImageQualityDecision",
     "ImageQualityMetrics",
+    "InspectionError",
     "InspectionFrame",
     "InspectionResponse",
     "InspectionResult",

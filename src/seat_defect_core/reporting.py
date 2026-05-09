@@ -24,6 +24,7 @@ def export_inspection_report(result: InspectionResult, output_path: str) -> Path
         "status": result.status,
         "decision_reason": result.decision_reason,
         "seat_model_id": result.seat_model_id,
+        "timings_ms": result.timings_ms,
         "camera_results": [_camera_result_to_dict(item) for item in result.camera_results],
     }
     write_json(path, payload)
@@ -42,6 +43,8 @@ def _camera_result_to_dict(result: CameraInspectionResult) -> dict:
         "status": result.status,
         "reason": result.reason,
         "seat_model_id": result.seat_model_id,
+        "timings_ms": result.timings_ms,
+        "error": _error_to_dict(result.error),
         "quality": (
             {
                 "accepted": result.quality.accepted,
@@ -78,6 +81,8 @@ def _camera_result_to_dict(result: CameraInspectionResult) -> dict:
                     else None
                 ),
                 "artifact_paths": item.artifact_paths,
+                "timings_ms": item.timings_ms,
+                "error": _error_to_dict(item.error),
             }
             for item in result.region_results
         ],
@@ -92,6 +97,16 @@ def _camera_result_to_dict(result: CameraInspectionResult) -> dict:
             else None
         ),
         "artifact_paths": result.artifact_paths,
+    }
+
+
+def _error_to_dict(error) -> dict[str, str] | None:
+    if error is None:
+        return None
+    return {
+        "code": error.code,
+        "message": error.message,
+        "stage": error.stage,
     }
 
 

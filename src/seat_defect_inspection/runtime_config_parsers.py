@@ -92,6 +92,10 @@ def _parse_inspection_config(payload: dict[str, Any], config_dir: Path) -> Inspe
             _string_or_default(payload.get("debug_dir"), defaults.debug_dir),
             force=True,
         ),
+        debug_artifacts_enabled=_bool_or_default(
+            payload.get("debug_artifacts_enabled"),
+            defaults.debug_artifacts_enabled,
+        ),
         capture_dir=_resolve_local_path(
             config_dir,
             _string_or_default(payload.get("capture_dir"), defaults.capture_dir),

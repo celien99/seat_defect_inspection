@@ -4,6 +4,7 @@
     "default_seat_model_id": "seat_model_a",
     "output_json_path": "../outputs/seat_defect_inspection/multimodel_results.json",
     "debug_dir": "../outputs/seat_defect_inspection/multimodel_debug",
+    "debug_artifacts_enabled": false,
     "fusion": {
       "reject_on_any_reject": true,
       "ng_strategy": "any",
@@ -14,6 +15,12 @@
       {
         "seat_model_id": "seat_model_a",
         "display_name": "座椅型号A",
+        "yolo_training": {
+          "model_path": "yolo11m-seg.pt",
+          "data_config_path": "../configs/seat_defect_yolo.dataset.example.yaml",
+          "project": "../outputs/yolo_training",
+          "name": "seat_model_a"
+        },
         "cameras": [
           {
             "camera_id": "cam_front",
@@ -94,6 +101,12 @@
       {
         "seat_model_id": "seat_model_b",
         "display_name": "座椅型号B",
+        "yolo_training": {
+          "model_path": "yolo11m-seg.pt",
+          "data_config_path": "../configs/seat_defect_yolo.dataset.example.yaml",
+          "project": "../outputs/yolo_training",
+          "name": "seat_model_b"
+        },
         "cameras": [
           {
             "camera_id": "cam_front",

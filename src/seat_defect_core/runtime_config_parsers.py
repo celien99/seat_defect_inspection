@@ -74,6 +74,10 @@ def _parse_inspection_config(payload: dict[str, Any], config_dir: Path) -> Inspe
             _string_or_default(payload.get("debug_dir"), defaults.debug_dir),
             force=True,
         ),
+        debug_artifacts_enabled=_bool_or_default(
+            payload.get("debug_artifacts_enabled"),
+            defaults.debug_artifacts_enabled,
+        ),
         part_id=_string_or_default(payload.get("part_id"), defaults.part_id),
         fusion=_parse_fusion_config(
             payload.get("fusion"),

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from time import perf_counter
 from typing import TYPE_CHECKING
 
 from ..config import CameraConfig
 from ..cvops import save_debug_artifacts, split_roi_regions
+from ..cvops.regions import RegionRoiSample
 from ..patchcore import ColorConsistencyService
-from ..types import BoundingBox, CameraInspectionResult, FramePacket, RegionPatchCoreResult
+from ..types import BoundingBox, CameraInspectionResult, FramePacket, InspectionError, RegionPatchCoreResult
 from ..util import select_patchcore_input
 
 if TYPE_CHECKING:
@@ -22,7 +24,9 @@ def inspect_one_camera(
     seat_model_id: str | None,
 ) -> CameraInspectionResult:
     """Run one camera through detection, ROI, PatchCore and artifacts."""
+    camera_timer = _StageTimer()
     prepared = pipeline.prepare_image(frame_packet.image)
+    camera_timer.mark("prepare")
     shared_result_fields = {
         "camera_id": frame_packet.camera_id,
         "frame_id": frame_packet.frame_id,
@@ -42,9 +46,20 @@ def inspect_one_camera(
             status="REJECT",
             reason=prepared.rejection_reason or "camera_prepare_failed",
             crop_box=(prepared.roi.crop_box if prepared.roi is not None else None),
+            error=_error_from_reason(
+                prepared.rejection_reason or "camera_prepare_failed",
+                stage="prepare",
+            ),
             **shared_result_fields,
         )
-        return _attach_debug_artifacts(service, frame_packet, prepared, seat_model_id, result)
+        return _finish_camera_result(
+            service,
+            frame_packet,
+            prepared,
+            seat_model_id,
+            result,
+            camera_timer,
+        )
 
     active_regions = [region for region in camera.regions if region.enabled]
     if active_regions:
@@ -56,29 +71,34 @@ def inspect_one_camera(
             seat_model_id,
             shared_result_fields,
             quality_rejected,
+            camera_timer,
         )
 
     model_bundle = service.load_model_bundle(camera, seat_model_id)
+    service.prepare_patchcore_for_predict(model_bundle.patchcore)
     texture_input = select_patchcore_input(prepared.roi)
     texture_result = model_bundle.patchcore.predict(
         texture_input,
         prepared.roi.target_mask,
         prepared.roi.ignore_mask,
     )
+    camera_timer.mark("patchcore")
     if texture_result.valid_patch_ratio < camera.patchcore.min_valid_patch_ratio:
         result = CameraInspectionResult(
             status="REJECT",
             reason="low_valid_patch_ratio",
             texture_result=texture_result,
             crop_box=prepared.roi.crop_box,
+            error=_error_from_reason("low_valid_patch_ratio", stage="patchcore"),
             **shared_result_fields,
         )
-        return _attach_debug_artifacts(
+        return _finish_camera_result(
             service,
             frame_packet,
             prepared,
             seat_model_id,
             result,
+            camera_timer,
             texture_result,
         )
 
@@ -96,6 +116,7 @@ def inspect_one_camera(
             prepared.roi.aligned_roi_image,
             prepared.roi.valid_mask,
         )
+    camera_timer.mark("color")
 
     if texture_result.is_anomaly and color_result is not None and color_result.is_anomaly:
         status = "NG"
@@ -125,12 +146,13 @@ def inspect_one_camera(
         crop_box=prepared.roi.crop_box,
         **shared_result_fields,
     )
-    return _attach_debug_artifacts(
+    return _finish_camera_result(
         service,
         frame_packet,
         prepared,
         seat_model_id,
         result,
+        camera_timer,
         texture_result,
     )
 
@@ -143,12 +165,16 @@ def _inspect_region_patchcores(
     seat_model_id: str | None,
     shared_result_fields: dict,
     quality_rejected: bool,
+    camera_timer: "_StageTimer",
 ) -> CameraInspectionResult:
-    region_samples = {
+    region_samples: dict[str, RegionRoiSample] = {
         sample.region_id: sample
         for sample in split_roi_regions(prepared.roi, camera.regions)
     }
+    camera_timer.mark("split_regions")
     region_results: list[RegionPatchCoreResult] = []
+    patchcore_items = []
+    runnable_regions = []
     for region in camera.regions:
         if not region.enabled:
             continue
@@ -161,26 +187,44 @@ def _inspect_region_patchcores(
                     reason="region_empty",
                     box=_region_config_box_to_roi_box(region.box, prepared.roi.aligned_roi_image.shape[:2]),
                     patchcore_model_path=region.patchcore_model_path,
+                    timings_ms={},
+                    error=_error_from_reason("region_empty", stage="region_prepare"),
                 )
             )
             continue
 
         model_bundle = service.load_region_model_bundle(camera, region, seat_model_id)
         patchcore_config = service.resolve_patchcore_config(camera, region)
-        texture_result = model_bundle.patchcore.predict(
-            region_sample.image,
-            region_sample.target_mask,
-            region_sample.ignore_mask,
+        patchcore_items.append(
+            (
+                model_bundle.patchcore,
+                region_sample.image,
+                region_sample.target_mask,
+                region_sample.ignore_mask,
+            )
         )
+        runnable_regions.append((region, region_sample, patchcore_config))
+
+    texture_results = service.predict_patchcore_batch(patchcore_items)
+    patchcore_elapsed_ms = camera_timer.mark("region_patchcore_batch")
+    per_region_patchcore_ms = (
+        patchcore_elapsed_ms / len(texture_results)
+        if texture_results
+        else 0.0
+    )
+    for (region, region_sample, patchcore_config), texture_result in zip(runnable_regions, texture_results):
         if texture_result.valid_patch_ratio < patchcore_config.min_valid_patch_ratio:
             status = "REJECT"
             reason = "low_valid_patch_ratio"
+            error = _error_from_reason(reason, stage="patchcore")
         elif texture_result.is_anomaly:
             status = "NG"
             reason = "texture_anomaly_quality_override" if quality_rejected else "texture_anomaly"
+            error = None
         else:
             status = "OK"
             reason = "all_checks_passed"
+            error = None
         region_results.append(
             RegionPatchCoreResult(
                 region_id=region.region_id,
@@ -189,6 +233,9 @@ def _inspect_region_patchcores(
                 box=region_sample.box,
                 texture_result=texture_result,
                 patchcore_model_path=region.patchcore_model_path,
+                timings_ms={"patchcore": per_region_patchcore_ms},
+                error=error,
+                sample=region_sample,
             )
         )
 
@@ -197,9 +244,17 @@ def _inspect_region_patchcores(
             status="REJECT",
             reason="no_enabled_regions",
             crop_box=prepared.roi.crop_box,
+            error=_error_from_reason("no_enabled_regions", stage="region_prepare"),
             **shared_result_fields,
         )
-        return _attach_debug_artifacts(service, frame_packet, prepared, seat_model_id, result)
+        return _finish_camera_result(
+            service,
+            frame_packet,
+            prepared,
+            seat_model_id,
+            result,
+            camera_timer,
+        )
 
     color_result = None
 
@@ -212,16 +267,40 @@ def _inspect_region_patchcores(
         crop_box=prepared.roi.crop_box,
         **shared_result_fields,
     )
-    result = _attach_debug_artifacts(
+    if status == "REJECT":
+        result.error = _error_from_reason(reason, stage="region_merge")
+    result = _finish_camera_result(
         service,
         frame_packet,
         prepared,
         seat_model_id,
         result,
+        camera_timer,
         region_results=region_results,
     )
     _attach_region_artifact_paths(result)
     return result
+
+
+class _StageTimer:
+    """Small monotonic stage timer for one camera."""
+
+    def __init__(self) -> None:
+        self._started_at = perf_counter()
+        self._last_at = self._started_at
+        self.timings_ms: dict[str, float] = {}
+
+    def mark(self, name: str) -> float:
+        now = perf_counter()
+        elapsed_ms = (now - self._last_at) * 1000.0
+        self.timings_ms[name] = elapsed_ms
+        self._last_at = now
+        return elapsed_ms
+
+    def finish(self) -> dict[str, float]:
+        total_ms = (perf_counter() - self._started_at) * 1000.0
+        self.timings_ms["total"] = total_ms
+        return dict(self.timings_ms)
 
 
 def _merge_region_status(
@@ -281,6 +360,9 @@ def _attach_debug_artifacts(
     texture_result=None,
     region_results=None,
 ) -> CameraInspectionResult:
+    if not getattr(service.config, "debug_artifacts_enabled", True):
+        result.artifact_paths = {}
+        return result
     result.artifact_paths = save_debug_artifacts(
         debug_dir=service.config.debug_dir,
         frame_packet=frame_packet,
@@ -290,6 +372,42 @@ def _attach_debug_artifacts(
         seat_model_id=seat_model_id,
     )
     return result
+
+
+def _finish_camera_result(
+    service: "InspectionService",
+    frame_packet: FramePacket,
+    prepared,
+    seat_model_id: str | None,
+    result: CameraInspectionResult,
+    timer: _StageTimer,
+    texture_result=None,
+    region_results=None,
+) -> CameraInspectionResult:
+    before_artifacts = perf_counter()
+    result = _attach_debug_artifacts(
+        service,
+        frame_packet,
+        prepared,
+        seat_model_id,
+        result,
+        texture_result=texture_result,
+        region_results=region_results,
+    )
+    result.timings_ms = timer.finish()
+    result.timings_ms["debug_artifacts"] = (perf_counter() - before_artifacts) * 1000.0
+    return result
+
+
+def _error_from_reason(reason: str, *, stage: str) -> InspectionError:
+    code = _normalize_error_code(reason)
+    return InspectionError(code=code, message=reason, stage=stage)
+
+
+def _normalize_error_code(reason: str) -> str:
+    normalized = reason.split(":", 1)[0].strip().lower()
+    normalized = normalized.replace("-", "_").replace(" ", "_")
+    return normalized or "unknown_error"
 
 
 def _attach_region_artifact_paths(result: CameraInspectionResult) -> None:

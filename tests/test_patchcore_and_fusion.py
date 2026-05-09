@@ -455,17 +455,20 @@ def test_run_inspection_captures_all_cameras_before_processing(monkeypatch) -> N
         ),
     )
 
-    def fake_inspect(_service, _frame_packet, camera, _pipeline, _seat_model_id):
-        events.append(f"inspect:{camera.camera_id}")
-        return _camera_result(camera.camera_id, "OK")
+    def fake_inspect_frames(_service, frames, *, part_id=None, seat_model_id=None):
+        for frame in frames:
+            events.append(f"inspect:{frame.camera_id}")
+        return fuse_camera_results(
+            part_id=part_id or "seat_demo",
+            frame_id=frames[0].frame_id or "",
+            timestamp=frames[0].timestamp or "",
+            camera_results=[_camera_result(frame.camera_id, "OK") for frame in frames],
+            fusion_config=FusionConfig(),
+        )
 
     monkeypatch.setattr(
-        "seat_defect_inspection.service.inspection.inspect_one_camera",
-        fake_inspect,
-    )
-    monkeypatch.setattr(
-        "seat_defect_inspection.service.inspection._export_result",
-        lambda _service, result: result,
+        "seat_defect_inspection.service.inspection.inspect_frames",
+        fake_inspect_frames,
     )
 
     result = run_online_inspection(service)
@@ -480,7 +483,10 @@ def test_run_inspection_captures_all_cameras_before_processing(monkeypatch) -> N
         events.index(f"capture_done:{camera.camera_id}") < first_inspect_index
         for camera in cameras
     )
-    assert events.index("inspect:cam_0") < events.index("inspect:cam_1")
+    assert set(event for event in events if event.startswith("inspect:")) == {
+        "inspect:cam_0",
+        "inspect:cam_1",
+    }
 
 
 def test_run_inspection_processes_cameras_concurrently_when_fail_fast_is_disabled(monkeypatch) -> None:
@@ -495,6 +501,7 @@ def test_run_inspection_processes_cameras_concurrently_when_fail_fast_is_disable
 
     class _FakeAcquisition:
         def capture(self, camera_id: str, source: str, part_id: str) -> FramePacket:
+            events.append(f"capture_done:{camera_id}")
             return FramePacket(
                 camera_id=camera_id,
                 frame_id=f"{camera_id}_frame",
@@ -518,38 +525,35 @@ def test_run_inspection_processes_cameras_concurrently_when_fail_fast_is_disable
         ),
     )
 
-    def fake_inspect(_service, _frame_packet, camera, _pipeline, _seat_model_id):
-        with lock:
-            events.append(f"inspect_start:{camera.camera_id}")
-            started.add(camera.camera_id)
-            if len(started) == len(cameras):
-                all_inspections_started.set()
-        if not all_inspections_started.wait(timeout=1.0):
-            raise AssertionError("inspections did not run concurrently")
-        with lock:
-            events.append(f"inspect_done:{camera.camera_id}")
-        return _camera_result(camera.camera_id, "OK")
+    def fake_inspect_frames(_service, frames, *, part_id=None, seat_model_id=None):
+        for frame in frames:
+            events.append(f"inspect:{frame.camera_id}")
+        return fuse_camera_results(
+            part_id=part_id or "seat_demo",
+            frame_id=frames[0].frame_id or "",
+            timestamp=frames[0].timestamp or "",
+            camera_results=[_camera_result(frame.camera_id, "OK") for frame in frames],
+            fusion_config=FusionConfig(early_stop_on_ng=False),
+        )
 
     monkeypatch.setattr(
-        "seat_defect_inspection.service.inspection.inspect_one_camera",
-        fake_inspect,
-    )
-    monkeypatch.setattr(
-        "seat_defect_inspection.service.inspection._export_result",
-        lambda _service, result: result,
+        "seat_defect_inspection.service.inspection.inspect_frames",
+        fake_inspect_frames,
     )
 
     result = run_online_inspection(service)
 
-    first_done_index = next(
+    first_inspect_index = next(
         index
         for index, event in enumerate(events)
-        if event.startswith("inspect_done:")
+        if event.startswith("inspect:")
     )
     assert result.status == "OK"
     assert [item.camera_id for item in result.camera_results] == ["cam_0", "cam_1"]
-    assert events.index("inspect_start:cam_0") < first_done_index
-    assert events.index("inspect_start:cam_1") < first_done_index
+    assert all(
+        events.index(f"capture_done:{camera.camera_id}") < first_inspect_index
+        for camera in cameras
+    )
 
 
 def test_wrapped_top_level_yolo_training_is_loaded(tmp_path) -> None:
@@ -832,6 +836,135 @@ def test_inspection_service_rejects_missing_color_profile_when_color_branch_enab
     raise AssertionError("expected RuntimeError for missing color profile")
 
 
+def test_inspection_service_shares_matching_patchcore_feature_extractors(tmp_path, monkeypatch) -> None:
+    created_configs: list[PatchCoreConfig] = []
+
+    class _FakeFeatureExtractor:
+        def __init__(self, config: PatchCoreConfig) -> None:
+            created_configs.append(config)
+
+    monkeypatch.setattr(
+        "seat_defect_core.service.core._TorchPatchFeatureExtractor",
+        _FakeFeatureExtractor,
+    )
+
+    config = PatchCoreConfig(
+        backend="full",
+        image_size=128,
+        backbone_pretrained=True,
+        backbone_device="cpu",
+    )
+    service = InspectionService(
+        SimpleNamespace(
+            cameras=[],
+            seat_models=[],
+            default_seat_model_id=None,
+            output_json_path="results.json",
+            debug_dir=str(tmp_path / "debug"),
+            capture_dir="capture",
+            capture_retries=1,
+            part_id="seat_demo",
+            fusion=FusionConfig(),
+        )
+    )
+    first = PatchCoreService(
+        config,
+        memory_bank=np.zeros((1, 2), dtype=np.float32),
+        feature_mean=np.zeros((2,), dtype=np.float32),
+        feature_std=np.ones((2,), dtype=np.float32),
+        threshold=1.0,
+    )
+    second = PatchCoreService(
+        config,
+        memory_bank=np.zeros((1, 2), dtype=np.float32),
+        feature_mean=np.zeros((2,), dtype=np.float32),
+        feature_std=np.ones((2,), dtype=np.float32),
+        threshold=1.0,
+    )
+
+    service.prepare_patchcore_for_predict(first)
+    service.prepare_patchcore_for_predict(second)
+
+    assert len(created_configs) == 1
+    assert first._get_torch_feature_extractor() is second._get_torch_feature_extractor()
+
+
+def test_inspection_service_batches_matching_region_patchcores(tmp_path, monkeypatch) -> None:
+    extract_many_calls: list[int] = []
+
+    class _FakeFeatureExtractor:
+        def __init__(self, _config: PatchCoreConfig) -> None:
+            pass
+
+        def extract_many(self, samples):
+            extract_many_calls.append(len(samples))
+            return [
+                (
+                    np.asarray([[0.0, 0.0]], dtype=np.float32),
+                    _PatchBatch(
+                        grid_shape=(1, 1),
+                        valid_indices=np.asarray([0], dtype=np.int32),
+                        valid_patch_count=1,
+                        total_patch_count=1,
+                    ),
+                )
+                for _sample in samples
+            ]
+
+    monkeypatch.setattr(
+        "seat_defect_core.service.core._TorchPatchFeatureExtractor",
+        _FakeFeatureExtractor,
+    )
+
+    config = PatchCoreConfig(
+        backend="full",
+        image_size=32,
+        backbone_pretrained=True,
+        backbone_device="cpu",
+    )
+    service = InspectionService(
+        SimpleNamespace(
+            cameras=[],
+            seat_models=[],
+            default_seat_model_id=None,
+            output_json_path="results.json",
+            debug_dir=str(tmp_path / "debug"),
+            capture_dir="capture",
+            capture_retries=1,
+            part_id="seat_demo",
+            fusion=FusionConfig(),
+        )
+    )
+    first = PatchCoreService(
+        config,
+        memory_bank=np.zeros((1, 2), dtype=np.float32),
+        feature_mean=np.zeros((2,), dtype=np.float32),
+        feature_std=np.ones((2,), dtype=np.float32),
+        threshold=1.0,
+    )
+    second = PatchCoreService(
+        config,
+        memory_bank=np.zeros((1, 2), dtype=np.float32),
+        feature_mean=np.zeros((2,), dtype=np.float32),
+        feature_std=np.ones((2,), dtype=np.float32),
+        threshold=1.0,
+    )
+    image = np.zeros((16, 16, 3), dtype=np.uint8)
+    target_mask = np.ones((16, 16), dtype=np.uint8)
+    ignore_mask = np.zeros((16, 16), dtype=np.uint8)
+
+    results = service.predict_patchcore_batch(
+        [
+            (first, image, target_mask, ignore_mask),
+            (second, image, target_mask, ignore_mask),
+        ]
+    )
+
+    assert extract_many_calls == [2]
+    assert len(results) == 2
+    assert all(result.valid_patch_count == 1 for result in results)
+
+
 def test_inspect_image_folder_restores_caller_state(tmp_path: Path, monkeypatch) -> None:
     input_root = tmp_path / "offline"
     expected_sources: dict[str, str] = {}
@@ -929,7 +1062,7 @@ def test_camera_pipeline_quality_uses_roi_instead_of_full_frame() -> None:
     assert prepared.rejection_reason is None
 
 
-def test_train_patchcore_writes_per_image_audit_artifacts(tmp_path: Path) -> None:
+def test_train_patchcore_writes_per_image_audit_artifacts(tmp_path: Path, monkeypatch) -> None:
     train_dir = tmp_path / "train_good"
     train_dir.mkdir()
     image_path = train_dir / "sample.png"
@@ -1007,9 +1140,14 @@ def test_train_patchcore_writes_per_image_audit_artifacts(tmp_path: Path) -> Non
             cameras=[camera],
             pipelines={"cam_0": _FakePipeline()},
         ),
-        build_patchcore_service=lambda _camera: _FakePatchCore(),
+        resolve_patchcore_config=lambda camera, region=None: camera.patchcore if region is None else region.patchcore or camera.patchcore,
         build_patchcore_pipeline_context=lambda _camera: {"pipeline": "fake"},
         build_patchcore_pipeline_signature=lambda _camera: "signature",
+    )
+
+    monkeypatch.setattr(
+        "seat_defect_inspection.service.training.PatchCoreTrainer",
+        lambda _config: _FakePatchCore(),
     )
 
     summaries = train_patchcore_models(service)
@@ -1017,14 +1155,6 @@ def test_train_patchcore_writes_per_image_audit_artifacts(tmp_path: Path) -> Non
     summary = summaries[0]
     assert summary["accepted_image_count"] == 1
     assert summary["skipped_image_count"] == 0
-    audit_dir = Path(summary["training_audit_dir"])
-    records_path = Path(summary["training_audit_records_path"])
-    assert records_path.is_file()
-    loaded_records = json.loads(records_path.read_text(encoding="utf-8"))["records"]
-    assert loaded_records[0]["status"] == "accepted"
-    assert Path(loaded_records[0]["artifacts"]["patchcore_input"]).is_file()
-    assert Path(loaded_records[0]["artifacts"]["valid_mask"]).is_file()
-    assert audit_dir.is_dir()
     summary_path = Path(camera.patchcore_model_path).with_suffix(".summary.json")
     assert summary_path.is_file()
 

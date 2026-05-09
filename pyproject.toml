@@ -20,6 +20,9 @@ dependencies = [
 package-dir = {"" = "src"}
 include-package-data = false
 
+[tool.setuptools.package-data]
+seat_defect_core = ["USAGE.md"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = [

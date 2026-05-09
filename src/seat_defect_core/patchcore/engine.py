@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 
 from .color_branch import ColorReferenceProfile
-from .features import _TorchPatchFeatureExtractor, extract_patch_embeddings
+from .features import _PatchBatch, _TorchPatchFeatureExtractor, extract_patch_embeddings
 from .scoring import (
     _analyze_patch_evidence,
     _decide_patchcore_anomaly,
@@ -53,13 +53,14 @@ class PatchCoreService:
         feature_mean: np.ndarray | None = None,
         feature_std: np.ndarray | None = None,
         threshold: float | None = None,
+        feature_extractor: _TorchPatchFeatureExtractor | None = None,
     ) -> None:
         self.config = config
         self.memory_bank = memory_bank
         self.feature_mean = feature_mean
         self.feature_std = feature_std
         self.threshold = threshold
-        self._torch_feature_extractor: _TorchPatchFeatureExtractor | None = None
+        self._torch_feature_extractor = feature_extractor
 
     def predict(
         self,
@@ -78,7 +79,26 @@ class PatchCoreService:
             ignore_mask=ignore_mask,
             feature_extractor=self._get_torch_feature_extractor(),
         )
-        heatmap = np.zeros(image.shape[:2], dtype=np.float32)
+        return self.predict_from_embeddings(
+            image_shape=image.shape[:2],
+            target_mask=target_mask,
+            embeddings=embeddings,
+            batch=batch,
+        )
+
+    def predict_from_embeddings(
+        self,
+        *,
+        image_shape: tuple[int, int],
+        target_mask: np.ndarray,
+        embeddings: np.ndarray,
+        batch: _PatchBatch,
+    ) -> TextureAnomalyResult:
+        """Score pre-extracted PatchCore embeddings."""
+        if self.memory_bank is None or self.feature_mean is None or self.feature_std is None or self.threshold is None:
+            raise RuntimeError("PatchCore model is not ready")
+
+        heatmap = np.zeros(image_shape, dtype=np.float32)
         valid_patch_ratio = (
             float(batch.valid_patch_count) / float(batch.total_patch_count)
             if batch.total_patch_count > 0
@@ -111,16 +131,16 @@ class PatchCoreService:
 
         heatmap = cv2.resize(
             patch_map,
-            (image.shape[1], image.shape[0]),
+            (image_shape[1], image_shape[0]),
             interpolation=cv2.INTER_LINEAR,
         )
         resized_patch_mask = cv2.resize(
             valid_patch_map,
-            (image.shape[1], image.shape[0]),
+            (image_shape[1], image_shape[0]),
             interpolation=cv2.INTER_NEAREST,
         )
         active_mask = np.logical_and(
-            _as_binary_mask(target_mask, image.shape[:2]) > 0,
+            _as_binary_mask(target_mask, image_shape) > 0,
             resized_patch_mask > 0.5,
         )
         decision_threshold = float(self.threshold) * _threshold_margin(self.config.decision_score_margin)
@@ -258,6 +278,16 @@ class PatchCoreService:
         if self._torch_feature_extractor is None:
             self._torch_feature_extractor = _TorchPatchFeatureExtractor(self.config)
         return self._torch_feature_extractor
+
+    def set_feature_extractor(
+        self,
+        feature_extractor: "_TorchPatchFeatureExtractor | None",
+    ) -> None:
+        """Inject a shared full-backend feature extractor."""
+        if feature_extractor is None:
+            return
+        if self.config.backend.strip().lower() == "full":
+            self._torch_feature_extractor = feature_extractor
 
 
 def _apply_runtime_patchcore_overrides(
