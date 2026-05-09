@@ -32,6 +32,21 @@ seat-defect-inspection inspect --config configs/seat_defect_inspection.mvs.json 
 seat-defect-inspection inspect-folder --config configs/seat_defect_inspection.mvs.json --input-dir offline_samples
 ```
 
+也可以给 LabVIEW 或现场工具使用 INI 配置，JSON 主格式不变：
+
+```bash
+seat-defect-inspection inspect --config configs/seat_defect_inspection.labview.example.ini --part-id seat_000001
+```
+
+INI section 约定：
+
+- `[seat_defect_inspection]`：顶层路径、开关、默认工件等字段
+- `[fusion]`：整件融合策略
+- `[camera.<camera_id>]`：顶层单机位
+- `[camera.<camera_id>.detection]`、`roi`、`roi.alignment`、`patchcore`、`color_branch`
+- `[camera.<camera_id>.region.<region_id>]`：单机位局部区域
+- 多型号时使用 `[seat_model.<seat_model_id>]` 和 `[seat_model.<seat_model_id>.camera.<camera_id>]`
+
 采图结果也可以直接写入各机位 `train_good_dir`：
 
 ```bash

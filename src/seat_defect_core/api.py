@@ -125,7 +125,7 @@ def frames_from_paths(
 
 
 def resolve_config(config: ConfigSource) -> InspectionConfig:
-    """Resolve a config object or JSON path into runtime config."""
+    """Resolve a config object or JSON/INI path into runtime config."""
     if isinstance(config, InspectionConfig):
         return config
     return load_config(str(config))

@@ -106,7 +106,16 @@ response = inspector.inspect(
 
 ## 配置文件
 
-配置文件可以直接是检测配置对象，也可以包在 `seat_defect_inspection` 顶层字段下。路径类字段会按配置文件所在目录解析相对路径。
+配置文件支持 JSON 和 INI。JSON 可以直接是检测配置对象，也可以包在 `seat_defect_inspection` 顶层字段下。路径类字段会按配置文件所在目录解析相对路径。
+
+INI 用于兼容 LabVIEW 和现场工具，核心流程仍会先把 INI 转成同一份配置 payload，再走统一校验。常用 section 约定如下：
+
+- `[seat_defect_inspection]`：顶层路径、开关、默认工件等字段
+- `[fusion]`：整件融合策略
+- `[camera.<camera_id>]`：顶层单机位
+- `[camera.<camera_id>.detection]`、`roi`、`roi.alignment`、`patchcore`、`color_branch`
+- `[camera.<camera_id>.region.<region_id>]`：单机位局部区域
+- `[seat_model.<seat_model_id>]` 和 `[seat_model.<seat_model_id>.camera.<camera_id>]`：多型号配置
 
 示例：
 

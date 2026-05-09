@@ -15,7 +15,7 @@ def register_train_patchcore_command(subparsers) -> None:
         help="按配置为每个机位训练 PatchCore 模型",
     )
     parser.set_defaults(run=run_train_patchcore_command)
-    add_config_argument(parser, help_text="缺陷检测配置 JSON 路径")
+    add_config_argument(parser, help_text="缺陷检测配置 JSON/INI 路径")
     add_seat_model_argument(
         parser,
         help_text="指定要训练的座椅型号；多型号配置下不传时默认训练全部型号",

@@ -15,7 +15,7 @@ def register_train_yolo_command(subparsers) -> None:
         help="训练用于座椅定位的 YOLO 分割模型",
     )
     parser.set_defaults(run=run_train_yolo_command)
-    add_config_argument(parser, help_text="包含 yolo_training 配置块的 JSON 路径")
+    add_config_argument(parser, help_text="包含 yolo_training 配置块的 JSON/INI 路径")
     add_seat_model_argument(
         parser,
         help_text="指定要使用的座椅型号训练配置；未传时优先使用顶层 yolo_training",

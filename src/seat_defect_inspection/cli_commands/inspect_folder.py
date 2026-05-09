@@ -15,7 +15,7 @@ def register_inspect_folder_command(subparsers) -> None:
         help="从本地图片文件夹批量执行离线检测，不调用真机",
     )
     parser.set_defaults(run=run_inspect_folder_command)
-    add_config_argument(parser, help_text="缺陷检测配置 JSON 路径")
+    add_config_argument(parser, help_text="缺陷检测配置 JSON/INI 路径")
     parser.add_argument(
         "--input-dir",
         required=True,
