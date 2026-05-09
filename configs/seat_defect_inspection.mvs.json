@@ -3,17 +3,32 @@
     "part_id": "seat_production",
     "output_json_path": "../outputs/seat_defect_inspection/mvs_results.json",
     "debug_dir": "../outputs/seat_defect_inspection/mvs_debug",
-    "debug_artifacts_enabled": false,
+    "debug_artifacts_enabled": true,
     "fusion": {
       "reject_on_any_reject": true,
       "ng_strategy": "any",
       "defect_overrides_reject": true
+    },
+    "yolo_training": {
+      "model_path": "../yolo11m-seg.pt",
+      "data_config_path": "../datasets/seat_defect/seat_defect.yaml",
+      "epochs": 100,
+      "imgsz": 1280,
+      "batch": 8,
+      "device": "0",
+      "project": "../outputs/seat_defect_inspection/yolo_training",
+      "name": "seat_defect",
+      "workers": 4,
+      "patience": 20,
+      "cache": false,
+      "pretrained": true
     },
     "cameras": [
       {
         "camera_id": "cam_0",
         "source": "mvs://sn/DA9184658?timeout_ms=1000&exposure_auto=off&exposure_time=8000",
         "patchcore_model_path": "../models/seat_defect_inspection/cam_0_patchcore.npz",
+        "train_good_dir": "../data/seat_defect_inspection/cam_0/train/good",
         "color_insensitive_mode": false,
         "quality": {
           "min_laplacian_variance": 80,
@@ -65,7 +80,7 @@
           "critical_min_component_patch_count": 2
         },
         "color_branch": {
-          "enabled": true,
+          "enabled": false,
           "threshold_quantile": 0.97,
           "min_valid_pixel_ratio": 0.3
         },
@@ -106,6 +121,7 @@
         "camera_id": "cam_1",
         "source": "mvs://sn/DA9184675?timeout_ms=1000&exposure_auto=off&exposure_time=8000",
         "patchcore_model_path": "../models/seat_defect_inspection/cam_1_patchcore.npz",
+        "train_good_dir": "../data/seat_defect_inspection/cam_1/train/good",
         "color_insensitive_mode": false,
         "quality": {
           "min_laplacian_variance": 80,
@@ -157,7 +173,7 @@
           "critical_min_component_patch_count": 2
         },
         "color_branch": {
-          "enabled": true,
+          "enabled": false,
           "threshold_quantile": 0.97,
           "min_valid_pixel_ratio": 0.3
         },
@@ -198,6 +214,7 @@
         "camera_id": "cam_2",
         "source": "mvs://sn/DA9184671?timeout_ms=1000&exposure_auto=off&exposure_time=8000",
         "patchcore_model_path": "../models/seat_defect_inspection/cam_2_patchcore.npz",
+        "train_good_dir": "../data/seat_defect_inspection/cam_2/train/good",
         "color_insensitive_mode": false,
         "quality": {
           "min_laplacian_variance": 80,
@@ -249,7 +266,7 @@
           "critical_min_component_patch_count": 2
         },
         "color_branch": {
-          "enabled": true,
+          "enabled": false,
           "threshold_quantile": 0.97,
           "min_valid_pixel_ratio": 0.3
         },
@@ -290,6 +307,7 @@
         "camera_id": "cam_3",
         "source": "mvs://sn/DA9184680?timeout_ms=1000&exposure_auto=off&exposure_time=8000",
         "patchcore_model_path": "../models/seat_defect_inspection/cam_3_patchcore.npz",
+        "train_good_dir": "../data/seat_defect_inspection/cam_3/train/good",
         "color_insensitive_mode": false,
         "quality": {
           "min_laplacian_variance": 80,
@@ -341,7 +359,7 @@
           "critical_min_component_patch_count": 2
         },
         "color_branch": {
-          "enabled": true,
+          "enabled": false,
           "threshold_quantile": 0.97,
           "min_valid_pixel_ratio": 0.3
         },
@@ -382,6 +400,7 @@
         "camera_id": "cam_4",
         "source": "mvs://sn/DA9184674?timeout_ms=1000&exposure_auto=off&exposure_time=8000",
         "patchcore_model_path": "../models/seat_defect_inspection/cam_4_patchcore.npz",
+        "train_good_dir": "../data/seat_defect_inspection/cam_4/train/good",
         "color_insensitive_mode": false,
         "quality": {
           "min_laplacian_variance": 80,
@@ -433,7 +452,7 @@
           "critical_min_component_patch_count": 2
         },
         "color_branch": {
-          "enabled": true,
+          "enabled": false,
           "threshold_quantile": 0.97,
           "min_valid_pixel_ratio": 0.3
         },
