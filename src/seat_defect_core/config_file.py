@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 _INI_SUFFIXES = {".ini", ".cfg"}
-_LIST_KEYS = {"box", "feature_layers"}
+_LIST_KEYS = {"box", "debug_artifact_names", "feature_layers"}
 _BOOL_KEYS = {
     "backbone_pretrained",
     "cache",

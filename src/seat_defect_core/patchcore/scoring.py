@@ -5,6 +5,11 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
+try:
+    import torch
+except ImportError:  # pragma: no cover - optional runtime acceleration
+    torch = None
+
 from ..config import PatchCoreConfig
 
 
@@ -61,6 +66,35 @@ def min_distance_to_bank(
         distances = np.linalg.norm(chunk[:, None, :] - memory_bank[None, :, :], axis=2)
         scores.append(distances.min(axis=1))
     return np.concatenate(scores).astype(np.float32)
+
+
+def min_distance_to_bank_torch(
+    embeddings: np.ndarray,
+    memory_bank,
+    *,
+    device,
+    chunk_size: int = 1024,
+) -> np.ndarray:
+    """Compute nearest memory-bank distance on a torch device."""
+    if torch is None:
+        return min_distance_to_bank(embeddings, np.asarray(memory_bank), chunk_size=128)
+    if len(embeddings) == 0:
+        return np.zeros((0,), dtype=np.float32)
+
+    bank_tensor = memory_bank
+    if not torch.is_tensor(bank_tensor):
+        bank_tensor = torch.as_tensor(memory_bank, dtype=torch.float32, device=device)
+    else:
+        bank_tensor = bank_tensor.to(device=device, dtype=torch.float32)
+
+    embedding_tensor = torch.as_tensor(embeddings, dtype=torch.float32, device=device)
+    scores = []
+    with torch.inference_mode():
+        for start in range(0, int(embedding_tensor.shape[0]), chunk_size):
+            chunk = embedding_tensor[start : start + chunk_size]
+            distances = torch.cdist(chunk, bank_tensor)
+            scores.append(distances.min(dim=1).values.detach().cpu())
+    return torch.cat(scores).numpy().astype(np.float32)
 
 
 def _score_embeddings_leave_one_out(embeddings: np.ndarray) -> tuple[float, np.ndarray]:

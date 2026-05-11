@@ -25,6 +25,7 @@ DEFAULT_DEBUG_ARTIFACT_NAMES: frozenset[str] = frozenset(
 def save_debug_artifacts(
     *,
     debug_dir: str,
+    artifact_names: list[str] | tuple[str, ...] | frozenset[str] | None = None,
     frame_packet: Any,
     prepared: Any,
     texture_result: Any | None,
@@ -32,7 +33,7 @@ def save_debug_artifacts(
     region_results: Any | None = None,
 ) -> dict[str, str]:
     """Persist the selected debug artifacts for one camera result."""
-    selected_artifacts = DEFAULT_DEBUG_ARTIFACT_NAMES
+    selected_artifacts = _normalize_artifact_names(artifact_names)
 
     camera_dir = (
         build_model_scoped_root(Path(debug_dir), seat_model_id)
@@ -149,6 +150,18 @@ def save_debug_artifacts(
             )
 
     return artifact_paths
+
+
+def _normalize_artifact_names(
+    artifact_names: list[str] | tuple[str, ...] | frozenset[str] | None,
+) -> frozenset[str]:
+    if artifact_names is None:
+        return DEFAULT_DEBUG_ARTIFACT_NAMES
+    return frozenset(
+        item
+        for item in (str(name).strip() for name in artifact_names)
+        if item in DEFAULT_DEBUG_ARTIFACT_NAMES
+    )
 
 
 def _save_region_artifacts(

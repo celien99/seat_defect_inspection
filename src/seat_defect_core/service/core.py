@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from ..config import CameraConfig, InspectionConfig, PatchCoreConfig, RegionConfig
 from ..cvops import ImageQualityGuard, RoiRefineEngine
 from ..patchcore.features import _TorchPatchFeatureExtractor
@@ -46,6 +48,14 @@ class CameraPipeline:
 
     def prepare_image(self, image: Any) -> PreparedCameraSample:
         detection = self.detection_service.detect(image)
+        return self.prepare_from_detection(image, detection)
+
+    def prepare_from_detection(
+        self,
+        image: Any,
+        detection: DetectionResult,
+    ) -> PreparedCameraSample:
+        """Run ROI refinement and quality checks from a precomputed detection."""
         if detection.target is None:
             return PreparedCameraSample(
                 quality=None,
@@ -219,6 +229,44 @@ class InspectionService:
     ) -> list[TextureAnomalyResult]:
         """Predict PatchCore results, batching full-backend items with matching features."""
         return self._patchcore_predictor.predict_batch(items)
+
+    def warmup(self, seat_model_id: str | None = None) -> None:
+        """Preload active YOLO, PatchCore bundles, and full-backend backbones."""
+        context = self.resolve_context(seat_model_id)
+        patchcore_items: list[tuple[PatchCoreService, Any, Any, Any]] = []
+        for camera in context.cameras:
+            pipeline = context.pipelines[camera.camera_id]
+            pipeline.detection_service.warmup()
+            active_regions = [region for region in camera.regions if region.enabled]
+            if active_regions:
+                for region in active_regions:
+                    model_bundle = self.load_region_model_bundle(
+                        camera,
+                        region,
+                        context.seat_model_id,
+                    )
+                    patchcore_config = self.resolve_patchcore_config(camera, region)
+                    patchcore_items.append(
+                        (
+                            model_bundle.patchcore,
+                            *_dummy_patchcore_sample(patchcore_config),
+                        )
+                    )
+                if camera.color_branch.enabled and not camera.color_insensitive_mode:
+                    self.load_model_bundle(camera, context.seat_model_id)
+                continue
+
+            model_bundle = self.load_model_bundle(camera, context.seat_model_id)
+            patchcore_config = self.resolve_patchcore_config(camera)
+            patchcore_items.append(
+                (
+                    model_bundle.patchcore,
+                    *_dummy_patchcore_sample(patchcore_config),
+                )
+            )
+
+        if patchcore_items:
+            self.predict_patchcore_batch(patchcore_items)
 
 
 class ModelBundleCache:
@@ -401,3 +449,12 @@ def _feature_extractor_cache_key(config: PatchCoreConfig) -> str:
         ensure_ascii=True,
         separators=(",", ":"),
     )
+
+
+def _dummy_patchcore_sample(config: PatchCoreConfig) -> tuple[Any, Any, Any]:
+    image_size = max(1, int(config.image_size))
+    image = np.zeros((image_size, image_size, 4), dtype=np.uint8)
+    image[:, :, 3] = 255
+    target_mask = np.ones((image_size, image_size), dtype=np.uint8)
+    ignore_mask = np.zeros((image_size, image_size), dtype=np.uint8)
+    return image, target_mask, ignore_mask

@@ -18,8 +18,9 @@ from seat_defect_core.patchcore import PatchCoreService
 from seat_defect_core.patchcore.features import _PatchBatch, _prepare_feature_image
 from seat_defect_core.patchcore.scoring import _analyze_patch_evidence, _decide_patchcore_anomaly, normalize_map_against_threshold
 from seat_defect_core.service.core import InspectionService as CoreInspectionService
+from seat_defect_core.service.inspection import inspect_frames as core_inspect_frames
 from seat_defect_core.service.inspection_camera import inspect_one_camera
-from seat_defect_core.types import BoundingBox, CameraInspectionResult, DetectionResult, DetectionObject, FramePacket, ImageQualityDecision, ImageQualityMetrics, RoiRefineResult, TextureAnomalyResult
+from seat_defect_core.types import BoundingBox, CameraInspectionResult, DetectionResult, DetectionObject, FramePacket, ImageQualityDecision, ImageQualityMetrics, InspectionFrame, RoiRefineResult, TextureAnomalyResult
 from seat_defect_core.yolo import DetectionService
 from seat_defect_inspection.config import CameraConfig
 from seat_defect_inspection.patchcore import PatchCoreTrainer
@@ -590,6 +591,61 @@ def test_detection_returns_no_target_when_yolo_misses() -> None:
     assert result.all_objects == []
 
 
+def test_detection_service_batches_images_with_shared_model() -> None:
+    class _EmptyBoxes:
+        xyxy = None
+
+    class _EmptyResult:
+        boxes = _EmptyBoxes()
+        names = {}
+
+    class _FakeModel:
+        def __init__(self) -> None:
+            self.calls: list[int] = []
+
+        def predict(self, images, **_kwargs):
+            self.calls.append(len(images))
+            return [_EmptyResult() for _image in images]
+
+    service = DetectionService(DetectionConfig(model_path="dummy.pt"))
+    fake_model = _FakeModel()
+    service._model = fake_model
+
+    results = service.detect_many(
+        [
+            np.zeros((32, 32, 3), dtype=np.uint8),
+            np.zeros((32, 32, 3), dtype=np.uint8),
+        ]
+    )
+
+    assert fake_model.calls == [2]
+    assert [result.target for result in results] == [None, None]
+
+
+def test_detection_service_warmup_runs_dummy_forward() -> None:
+    class _EmptyBoxes:
+        xyxy = None
+
+    class _EmptyResult:
+        boxes = _EmptyBoxes()
+        names = {}
+
+    class _FakeModel:
+        def __init__(self) -> None:
+            self.input_shapes: list[tuple[int, int, int]] = []
+
+        def predict(self, images, **_kwargs):
+            self.input_shapes.append(images[0].shape)
+            return [_EmptyResult()]
+
+    service = DetectionService(DetectionConfig(model_path="dummy.pt"))
+    service._model = _FakeModel()
+
+    service.warmup()
+
+    assert service._model.input_shapes == [(640, 640, 3)]
+
+
 def test_legacy_patchcore_bundle_without_color_profile_loads(tmp_path) -> None:
     model_path = tmp_path / "legacy_patchcore.npz"
     np.savez_compressed(
@@ -928,6 +984,215 @@ def test_inspection_service_batches_matching_region_patchcores(tmp_path, monkeyp
     assert extract_many_calls == [2]
     assert len(results) == 2
     assert all(result.valid_patch_count == 1 for result in results)
+
+
+def test_inspection_service_warmup_loads_region_models(tmp_path: Path) -> None:
+    camera = CoreCameraConfig(
+        camera_id="cam_0",
+        source="0",
+        patchcore_model_path="full.npz",
+        detection=DetectionConfig(model_path=None),
+        patchcore=PatchCoreConfig(backend="fake"),
+        regions=[
+            RegionConfig(
+                region_id="upper",
+                box=[0.0, 0.0, 1.0, 1.0],
+                patchcore_model_path="region.npz",
+            )
+        ],
+    )
+    service = CoreInspectionService(
+        SimpleNamespace(
+            cameras=[camera],
+            seat_models=[],
+            default_seat_model_id=None,
+            output_json_path=str(tmp_path / "result.json"),
+            debug_dir=str(tmp_path / "debug"),
+            debug_artifacts_enabled=False,
+            debug_artifact_names=["heatmap"],
+            part_id="seat_demo",
+            fusion=FusionConfig(),
+        )
+    )
+    loaded_regions: list[str] = []
+    service.load_region_model_bundle = lambda _camera, region, _seat_model_id: (  # type: ignore[method-assign]
+        loaded_regions.append(region.region_id)
+        or SimpleNamespace(patchcore=SimpleNamespace(config=PatchCoreConfig(backend="fake")), color_profile=None)
+    )
+    service.predict_patchcore_batch = lambda items: []  # type: ignore[method-assign]
+
+    service.warmup()
+
+    assert loaded_regions == ["upper"]
+
+
+def test_patchcore_gpu_scoring_matches_numpy_when_device_is_available(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_min_distance_to_bank_torch(embeddings, memory_bank, *, device, chunk_size=1024):
+        calls.append(str(device))
+        return patchcore_engine.min_distance_to_bank(embeddings, np.asarray(memory_bank))
+
+    monkeypatch.setattr(
+        patchcore_engine,
+        "min_distance_to_bank_torch",
+        fake_min_distance_to_bank_torch,
+    )
+
+    config = PatchCoreConfig(backend="full", backbone_pretrained=True, backbone_device="cuda")
+    service = PatchCoreService(
+        config,
+        memory_bank=np.asarray([[0.0, 0.0], [2.0, 2.0]], dtype=np.float32),
+        feature_mean=np.zeros((2,), dtype=np.float32),
+        feature_std=np.ones((2,), dtype=np.float32),
+        threshold=1.0,
+    )
+    service.set_feature_extractor(SimpleNamespace(device="cuda:0"))
+    service._get_torch_memory_bank = lambda memory_bank, _device: memory_bank  # type: ignore[method-assign]
+
+    score, patch_scores = service.score_embeddings(
+        np.asarray([[0.0, 1.0], [2.0, 1.0]], dtype=np.float32)
+    )
+
+    assert calls == ["cuda:0"]
+    assert np.allclose(patch_scores, np.asarray([1.0, 1.0], dtype=np.float32))
+    assert np.isclose(score, 1.0)
+
+
+def test_core_inspect_frames_batches_region_patchcore_across_cameras(tmp_path: Path) -> None:
+    class _BatchPatchCore:
+        config = PatchCoreConfig(backend="fake")
+
+        def predict(self, _image, target_mask, _ignore_mask):
+            return TextureAnomalyResult(
+                score=0.1,
+                threshold=1.0,
+                is_anomaly=False,
+                heatmap=np.zeros(target_mask.shape, dtype=np.float32),
+                valid_patch_ratio=1.0,
+                valid_patch_count=1,
+                total_patch_count=1,
+            )
+
+    class _FakePipeline:
+        def __init__(self, camera_id: str) -> None:
+            self.camera_id = camera_id
+            self.detection_service = SimpleNamespace(
+                detect_many=lambda images: [
+                    DetectionResult(
+                        target=DetectionObject(
+                            label="seat",
+                            confidence=1.0,
+                            bounding_box=BoundingBox(0.0, 0.0, 16.0, 16.0),
+                            segmentation_mask=np.ones((16, 16), dtype=np.uint8),
+                        )
+                    )
+                    for _image in images
+                ]
+            )
+
+        def prepare_from_detection(self, _image, detection):
+            roi = RoiRefineResult(
+                crop_box=BoundingBox(0.0, 0.0, 16.0, 16.0),
+                roi_image=np.zeros((16, 16, 3), dtype=np.uint8),
+                aligned_roi_image=np.zeros((16, 16, 3), dtype=np.uint8),
+                texture_ready_image=np.zeros((16, 16, 3), dtype=np.uint8),
+                target_mask=np.ones((16, 16), dtype=np.uint8),
+                valid_mask=np.ones((16, 16), dtype=np.uint8),
+                ignore_mask=np.zeros((16, 16), dtype=np.uint8),
+                foreground_weight=None,
+            )
+            return PreparedCameraSample(
+                quality=None,
+                detection=detection,
+                roi=roi,
+            )
+
+        def prepare_image(self, image):
+            return self.prepare_from_detection(
+                image,
+                DetectionResult(
+                    target=DetectionObject(
+                        label="seat",
+                        confidence=1.0,
+                        bounding_box=BoundingBox(0.0, 0.0, 16.0, 16.0),
+                    )
+                ),
+            )
+
+    cameras = [
+        CoreCameraConfig(
+            camera_id="cam_0",
+            source="0",
+            patchcore_model_path="full_0.npz",
+            regions=[
+                RegionConfig("upper", [0.0, 0.0, 1.0, 0.5], "upper_0.npz"),
+                RegionConfig("lower", [0.0, 0.5, 1.0, 1.0], "lower_0.npz"),
+            ],
+        ),
+        CoreCameraConfig(
+            camera_id="cam_1",
+            source="1",
+            patchcore_model_path="full_1.npz",
+            regions=[
+                RegionConfig("upper", [0.0, 0.0, 1.0, 0.5], "upper_1.npz"),
+                RegionConfig("lower", [0.0, 0.5, 1.0, 1.0], "lower_1.npz"),
+            ],
+        ),
+    ]
+    service = CoreInspectionService(
+        SimpleNamespace(
+            cameras=cameras,
+            seat_models=[],
+            default_seat_model_id=None,
+            output_json_path=str(tmp_path / "result.json"),
+            debug_dir=str(tmp_path / "debug"),
+            debug_artifacts_enabled=False,
+            debug_artifact_names=["heatmap"],
+            part_id="seat_demo",
+            fusion=FusionConfig(),
+        )
+    )
+    service._pipeline_cache["__default__"] = {
+        camera.camera_id: _FakePipeline(camera.camera_id)
+        for camera in cameras
+    }
+    service.load_region_model_bundle = lambda *_args, **_kwargs: SimpleNamespace(  # type: ignore[method-assign]
+        patchcore=_BatchPatchCore(),
+        color_profile=None,
+    )
+    service.resolve_patchcore_config = lambda camera, region=None: camera.patchcore  # type: ignore[method-assign]
+    batch_sizes: list[int] = []
+
+    def _predict_batch(items):
+        batch_sizes.append(len(items))
+        return [
+            TextureAnomalyResult(
+                score=0.1,
+                threshold=1.0,
+                is_anomaly=False,
+                heatmap=np.zeros(item[2].shape, dtype=np.float32),
+                valid_patch_ratio=1.0,
+                valid_patch_count=1,
+                total_patch_count=1,
+            )
+            for item in items
+        ]
+
+    service.predict_patchcore_batch = _predict_batch  # type: ignore[method-assign]
+
+    result = core_inspect_frames(
+        service,
+        [
+            InspectionFrame("cam_0", np.zeros((16, 16, 3), dtype=np.uint8)),
+            InspectionFrame("cam_1", np.zeros((16, 16, 3), dtype=np.uint8)),
+        ],
+    )
+
+    assert batch_sizes == [4]
+    assert result.status == "OK"
+    assert [camera_result.camera_id for camera_result in result.camera_results] == ["cam_0", "cam_1"]
+    assert all(len(camera_result.region_results) == 2 for camera_result in result.camera_results)
 
 
 def test_region_inspection_keeps_color_branch_decision(tmp_path: Path) -> None:

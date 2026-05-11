@@ -15,6 +15,8 @@ from ..types import BoundingBox, DetectionObject, DetectionResult
 class DetectionService:
     """检测主座椅区域以及需要忽略的干扰区域。"""
 
+    _model_cache: dict[tuple[str, str], Any] = {}
+
     def __init__(self, config: DetectionConfig) -> None:
         self.config = config
         self._model = None
@@ -27,19 +29,7 @@ class DetectionService:
                 all_objects=[],
             )
 
-        if self._model is None:
-            from ultralytics import YOLO
-
-            self._model = YOLO(self.config.model_path)
-
-        result = self._model.predict(
-            image,
-            conf=float(self.config.confidence),
-            iou=float(self.config.iou),
-            device=self.config.device,
-            verbose=False,
-        )[0]
-
+        result = self.predict_raw([image])[0]
         detections = self._extract_detections(result, image.shape[:2])
         target_candidates = [
             detection
@@ -51,6 +41,90 @@ class DetectionService:
             target=target,
             all_objects=detections,
         )
+
+    def detect_many(self, images: list[Any]) -> list[DetectionResult]:
+        """Run one shared YOLO model on a batch of camera images."""
+        if self.config.model_path is None:
+            return [
+                DetectionResult(target=None, all_objects=[])
+                for _image in images
+            ]
+        raw_results = self.predict_raw(images)
+        results: list[DetectionResult] = []
+        for image, raw_result in zip(images, raw_results):
+            detections = self._extract_detections(raw_result, image.shape[:2])
+            target_candidates = [
+                detection
+                for detection in detections
+                if detection.label == self.config.target_class
+            ]
+            target = max(target_candidates, key=lambda item: item.confidence, default=None)
+            results.append(
+                DetectionResult(
+                    target=target,
+                    all_objects=detections,
+                )
+            )
+        return results
+
+    def predict_raw(self, images: list[Any]) -> list[Results]:
+        """Run YOLO and return raw Ultralytics result objects."""
+        if not images:
+            return []
+        model = self._load_model()
+        return list(
+            model.predict(
+                images,
+                conf=float(self.config.confidence),
+                iou=float(self.config.iou),
+                device=self.config.device,
+                verbose=False,
+            )
+        )
+
+    def warmup(self) -> None:
+        """Load the shared YOLO model and run a lightweight dummy forward."""
+        if self.config.model_path is not None:
+            dummy_image = np.zeros((640, 640, 3), dtype=np.uint8)
+            self.predict_raw([dummy_image])
+
+    def _load_model(self) -> Any:
+        if self.config.model_path is None:
+            raise RuntimeError("YOLO model_path is not configured")
+        if self._model is not None:
+            return self._model
+        cache_key = (str(self.config.model_path), str(self.config.device))
+        model = self._model_cache.get(cache_key)
+        if model is None:
+            from ultralytics import YOLO
+
+            model = YOLO(self.config.model_path)
+            self._model_cache[cache_key] = model
+        self._model = model
+        return model
+
+    def _detect_from_raw(self, image: Any, result: Results) -> DetectionResult:
+        detections = self._extract_detections(result, image.shape[:2])
+        target_candidates = [
+            detection
+            for detection in detections
+            if detection.label == self.config.target_class
+        ]
+        target = max(target_candidates, key=lambda item: item.confidence, default=None)
+        return DetectionResult(
+            target=target,
+            all_objects=detections,
+        )
+
+    def _legacy_predict_single(self, image: Any) -> Results:
+        model = self._load_model()
+        return model.predict(
+            image,
+            conf=float(self.config.confidence),
+            iou=float(self.config.iou),
+            device=self.config.device,
+            verbose=False,
+        )[0]
 
     def _extract_detections(
         self,

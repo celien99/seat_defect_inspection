@@ -63,6 +63,10 @@ class SeatDefectInspector:
             seat_model_id=seat_model_id,
         )
 
+    def warmup(self, *, seat_model_id: str | None = None) -> None:
+        """Preload active runtime models and run a lightweight PatchCore warmup."""
+        self._service.warmup(seat_model_id=seat_model_id)
+
 
 def inspect_once(
     config: ConfigSource,

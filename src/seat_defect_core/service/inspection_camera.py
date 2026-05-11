@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from time import perf_counter
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ..artifacts import save_debug_artifacts
 from ..config import CameraConfig
@@ -17,6 +18,22 @@ if TYPE_CHECKING:
     from .core import CameraPipeline, InspectionService
 
 
+@dataclass(slots=True)
+class RegionPatchCorePlan:
+    """Deferred region PatchCore work for cross-camera batching."""
+
+    frame_packet: FramePacket
+    camera: CameraConfig
+    prepared: Any
+    seat_model_id: str | None
+    shared_result_fields: dict
+    quality_rejected: bool
+    camera_timer: "_StageTimer"
+    region_results: list[RegionPatchCoreResult]
+    patchcore_items: list[tuple[Any, Any, Any, Any]]
+    runnable_regions: list[tuple[Any, RegionRoiSample, Any]]
+
+
 def inspect_one_camera(
     service: "InspectionService",
     frame_packet: FramePacket,
@@ -28,6 +45,35 @@ def inspect_one_camera(
     camera_timer = _StageTimer()
     prepared = pipeline.prepare_image(frame_packet.image)
     camera_timer.mark("prepare")
+    outcome = inspect_prepared_camera(
+        service,
+        frame_packet,
+        camera,
+        prepared,
+        seat_model_id,
+        camera_timer,
+    )
+    if isinstance(outcome, RegionPatchCorePlan):
+        texture_results = service.predict_patchcore_batch(outcome.patchcore_items)
+        patchcore_elapsed_ms = camera_timer.mark("region_patchcore_batch")
+        return finish_region_patchcore_plan(
+            service,
+            outcome,
+            texture_results,
+            patchcore_elapsed_ms=patchcore_elapsed_ms,
+        )
+    return outcome
+
+
+def inspect_prepared_camera(
+    service: "InspectionService",
+    frame_packet: FramePacket,
+    camera: CameraConfig,
+    prepared,
+    seat_model_id: str | None,
+    camera_timer: "_StageTimer",
+) -> CameraInspectionResult | RegionPatchCorePlan:
+    """Finish one camera after prepare, optionally deferring region PatchCore."""
     shared_result_fields = {
         "camera_id": frame_packet.camera_id,
         "frame_id": frame_packet.frame_id,
@@ -64,7 +110,7 @@ def inspect_one_camera(
 
     active_regions = [region for region in camera.regions if region.enabled]
     if active_regions:
-        return _inspect_region_patchcores(
+        return build_region_patchcore_plan(
             service,
             frame_packet,
             camera,
@@ -145,7 +191,7 @@ def inspect_one_camera(
     )
 
 
-def _inspect_region_patchcores(
+def build_region_patchcore_plan(
     service: "InspectionService",
     frame_packet: FramePacket,
     camera: CameraConfig,
@@ -154,7 +200,7 @@ def _inspect_region_patchcores(
     shared_result_fields: dict,
     quality_rejected: bool,
     camera_timer: "_StageTimer",
-) -> CameraInspectionResult:
+) -> RegionPatchCorePlan:
     region_samples: dict[str, RegionRoiSample] = {
         sample.region_id: sample
         for sample in split_roi_regions(prepared.roi, camera.regions)
@@ -193,14 +239,34 @@ def _inspect_region_patchcores(
         )
         runnable_regions.append((region, region_sample, patchcore_config))
 
-    texture_results = service.predict_patchcore_batch(patchcore_items)
-    patchcore_elapsed_ms = camera_timer.mark("region_patchcore_batch")
+    return RegionPatchCorePlan(
+        frame_packet=frame_packet,
+        camera=camera,
+        prepared=prepared,
+        seat_model_id=seat_model_id,
+        shared_result_fields=shared_result_fields,
+        quality_rejected=quality_rejected,
+        camera_timer=camera_timer,
+        region_results=region_results,
+        patchcore_items=patchcore_items,
+        runnable_regions=runnable_regions,
+    )
+
+
+def finish_region_patchcore_plan(
+    service: "InspectionService",
+    plan: RegionPatchCorePlan,
+    texture_results,
+    *,
+    patchcore_elapsed_ms: float,
+) -> CameraInspectionResult:
+    region_results = list(plan.region_results)
     per_region_patchcore_ms = (
         patchcore_elapsed_ms / len(texture_results)
         if texture_results
         else 0.0
     )
-    for (region, region_sample, patchcore_config), texture_result in zip(runnable_regions, texture_results):
+    for (region, region_sample, patchcore_config), texture_result in zip(plan.runnable_regions, texture_results):
         if texture_result.valid_patch_ratio < patchcore_config.min_valid_patch_ratio:
             status = "REJECT"
             reason = "low_valid_patch_ratio"
@@ -231,43 +297,48 @@ def _inspect_region_patchcores(
         result = CameraInspectionResult(
             status="REJECT",
             reason="no_enabled_regions",
-            crop_box=prepared.roi.crop_box,
+            crop_box=plan.prepared.roi.crop_box,
             error=_error_from_reason("no_enabled_regions", stage="region_prepare"),
-            **shared_result_fields,
+            **plan.shared_result_fields,
         )
         return _finish_camera_result(
             service,
-            frame_packet,
-            prepared,
-            seat_model_id,
+            plan.frame_packet,
+            plan.prepared,
+            plan.seat_model_id,
             result,
-            camera_timer,
+            plan.camera_timer,
         )
 
     color_model_bundle = None
-    if camera.color_branch.enabled and not camera.color_insensitive_mode:
-        color_model_bundle = service.load_model_bundle(camera, seat_model_id)
-    color_result = _predict_color_branch(camera, color_model_bundle, prepared)
-    camera_timer.mark("color")
+    if plan.camera.color_branch.enabled and not plan.camera.color_insensitive_mode:
+        color_model_bundle = service.load_model_bundle(plan.camera, plan.seat_model_id)
+    color_result = _predict_color_branch(plan.camera, color_model_bundle, plan.prepared)
+    plan.camera_timer.mark("color")
 
-    status, reason = _merge_region_status(region_results, color_result, quality_rejected, prepared)
+    status, reason = _merge_region_status(
+        region_results,
+        color_result,
+        plan.quality_rejected,
+        plan.prepared,
+    )
     result = CameraInspectionResult(
         status=status,
         reason=reason,
         region_results=region_results,
         color_result=color_result,
-        crop_box=prepared.roi.crop_box,
-        **shared_result_fields,
+        crop_box=plan.prepared.roi.crop_box,
+        **plan.shared_result_fields,
     )
     if status == "REJECT":
         result.error = _error_from_reason(reason, stage="region_merge")
     result = _finish_camera_result(
         service,
-        frame_packet,
-        prepared,
-        seat_model_id,
+        plan.frame_packet,
+        plan.prepared,
+        plan.seat_model_id,
         result,
-        camera_timer,
+        plan.camera_timer,
         region_results=region_results,
     )
     _attach_region_artifact_paths(result)
@@ -288,6 +359,10 @@ class _StageTimer:
         self.timings_ms[name] = elapsed_ms
         self._last_at = now
         return elapsed_ms
+
+    def record(self, name: str, elapsed_ms: float) -> None:
+        self.timings_ms[name] = elapsed_ms
+        self._last_at = perf_counter()
 
     def finish(self) -> dict[str, float]:
         total_ms = (perf_counter() - self._started_at) * 1000.0
@@ -379,6 +454,7 @@ def _attach_debug_artifacts(
         return result
     result.artifact_paths = save_debug_artifacts(
         debug_dir=service.config.debug_dir,
+        artifact_names=getattr(service.config, "debug_artifact_names", None),
         frame_packet=frame_packet,
         prepared=prepared,
         texture_result=texture_result,

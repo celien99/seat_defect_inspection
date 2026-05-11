@@ -98,6 +98,28 @@ backbone_pretrained = true
     assert config.cameras[0].camera_id == "cam_0"
 
 
+def test_core_load_config_parses_debug_artifact_names(tmp_path: Path) -> None:
+    config_path = tmp_path / "core.ini"
+    config_path.write_text(
+        """
+[seat_defect_inspection]
+debug_artifact_names = heatmap
+
+[camera.cam_0]
+source = 0
+patchcore_model_path = models/cam_0_patchcore.npz
+
+[camera.cam_0.patchcore]
+backbone_pretrained = true
+""",
+        encoding="utf-8",
+    )
+
+    config = load_core_config(str(config_path))
+
+    assert config.debug_artifact_names == ["heatmap"]
+
+
 def test_load_config_parses_ini_seat_models_and_yolo_training(tmp_path: Path) -> None:
     config_path = tmp_path / "config.ini"
     config_path.write_text(

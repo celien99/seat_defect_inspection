@@ -16,6 +16,7 @@ from .scoring import (
     _decide_patchcore_anomaly,
     _threshold_margin,
     min_distance_to_bank,
+    min_distance_to_bank_torch,
     normalize_map_against_threshold,
 )
 from ..config import PatchCoreConfig
@@ -61,6 +62,8 @@ class PatchCoreService:
         self.feature_std = feature_std
         self.threshold = threshold
         self._torch_feature_extractor = feature_extractor
+        self._torch_memory_bank = None
+        self._torch_memory_bank_device = None
 
     def predict(
         self,
@@ -197,9 +200,25 @@ class PatchCoreService:
         active_bank = self.memory_bank if memory_bank is None else memory_bank
         if active_bank is None or len(active_bank) == 0:
             raise RuntimeError("PatchCore memory bank is empty")
-        patch_scores = min_distance_to_bank(embeddings, active_bank)
+        patch_scores = self._score_distances(embeddings, active_bank)
         image_score = float(np.percentile(patch_scores, 99))
         return image_score, patch_scores
+
+    def _score_distances(self, embeddings: np.ndarray, memory_bank: np.ndarray) -> np.ndarray:
+        extractor = self._torch_feature_extractor
+        device = getattr(extractor, "device", None)
+        if device is None or self.config.backend.strip().lower() != "full":
+            return min_distance_to_bank(embeddings, memory_bank)
+        if str(device).startswith("cpu"):
+            return min_distance_to_bank(embeddings, memory_bank)
+        try:
+            return min_distance_to_bank_torch(
+                embeddings,
+                self._get_torch_memory_bank(memory_bank, device),
+                device=device,
+            )
+        except Exception:
+            return min_distance_to_bank(embeddings, memory_bank)
 
     @classmethod
     def load_bundle(
@@ -288,6 +307,26 @@ class PatchCoreService:
             return
         if self.config.backend.strip().lower() == "full":
             self._torch_feature_extractor = feature_extractor
+            self._torch_memory_bank = None
+            self._torch_memory_bank_device = None
+
+    def _get_torch_memory_bank(self, memory_bank: np.ndarray, device):
+        from .scoring import torch
+
+        if torch is None:
+            return memory_bank
+        device_key = str(device)
+        if (
+            memory_bank is self.memory_bank
+            and self._torch_memory_bank is not None
+            and self._torch_memory_bank_device == device_key
+        ):
+            return self._torch_memory_bank
+        tensor = torch.as_tensor(memory_bank, dtype=torch.float32, device=device)
+        if memory_bank is self.memory_bank:
+            self._torch_memory_bank = tensor
+            self._torch_memory_bank_device = device_key
+        return tensor
 
 
 def _apply_runtime_patchcore_overrides(

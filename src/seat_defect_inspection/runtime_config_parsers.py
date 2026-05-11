@@ -91,6 +91,10 @@ def _parse_inspection_config(payload: dict[str, Any], config_dir: Path) -> Inspe
             payload.get("debug_artifacts_enabled"),
             defaults.debug_artifacts_enabled,
         ),
+        debug_artifact_names=_debug_artifact_names_or_default(
+            payload.get("debug_artifact_names"),
+            defaults.debug_artifact_names,
+        ),
         capture_dir=_resolve_local_path(
             config_dir,
             _string_or_default(payload.get("capture_dir"), defaults.capture_dir),
@@ -674,6 +678,22 @@ def _string_list(value: Any, *, scope: str, default: list[str]) -> list[str]:
     if value is None:
         return list(default)
     return [str(item) for item in _ensure_list(value, scope)]
+
+
+def _debug_artifact_names_or_default(value: Any, default: list[str]) -> list[str]:
+    if value is None:
+        return list(default)
+    if isinstance(value, str):
+        items = [item.strip() for item in value.split(",")]
+    else:
+        items = [str(item).strip() for item in _ensure_list(value, "debug_artifact_names")]
+    selected = [item for item in items if item]
+    allowed = {"raw", "detections", "heatmap", "overlay"}
+    unexpected = sorted(set(selected) - allowed)
+    if unexpected:
+        formatted = ", ".join(f"`{item}`" for item in unexpected)
+        raise ValueError(f"debug_artifact_names 包含不支持的调试产物: {formatted}")
+    return selected
 
 
 def _resolve_source_path(config_dir: Path, value: str) -> str:
