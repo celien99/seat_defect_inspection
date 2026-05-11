@@ -273,7 +273,11 @@ def finish_region_patchcore_plan(
             error = _error_from_reason(reason, stage="patchcore")
         elif texture_result.is_anomaly:
             status = "NG"
-            reason = "texture_anomaly_quality_override" if quality_rejected else "texture_anomaly"
+            reason = (
+                "texture_anomaly_quality_override"
+                if plan.quality_rejected
+                else "texture_anomaly"
+            )
             error = None
         else:
             status = "OK"

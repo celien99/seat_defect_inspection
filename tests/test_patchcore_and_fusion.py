@@ -1166,18 +1166,21 @@ def test_core_inspect_frames_batches_region_patchcore_across_cameras(tmp_path: P
 
     def _predict_batch(items):
         batch_sizes.append(len(items))
-        return [
-            TextureAnomalyResult(
-                score=0.1,
-                threshold=1.0,
-                is_anomaly=False,
-                heatmap=np.zeros(item[2].shape, dtype=np.float32),
-                valid_patch_ratio=1.0,
-                valid_patch_count=1,
-                total_patch_count=1,
+        results = []
+        for index, item in enumerate(items):
+            is_anomaly = index == 0
+            results.append(
+                TextureAnomalyResult(
+                    score=1.5 if is_anomaly else 0.1,
+                    threshold=1.0,
+                    is_anomaly=is_anomaly,
+                    heatmap=np.zeros(item[2].shape, dtype=np.float32),
+                    valid_patch_ratio=1.0,
+                    valid_patch_count=1,
+                    total_patch_count=1,
+                )
             )
-            for item in items
-        ]
+        return results
 
     service.predict_patchcore_batch = _predict_batch  # type: ignore[method-assign]
 
@@ -1190,9 +1193,11 @@ def test_core_inspect_frames_batches_region_patchcore_across_cameras(tmp_path: P
     )
 
     assert batch_sizes == [4]
-    assert result.status == "OK"
+    assert result.status == "NG"
     assert [camera_result.camera_id for camera_result in result.camera_results] == ["cam_0", "cam_1"]
     assert all(len(camera_result.region_results) == 2 for camera_result in result.camera_results)
+    assert result.camera_results[0].status == "NG"
+    assert result.camera_results[0].region_results[0].reason == "texture_anomaly"
 
 
 def test_region_inspection_keeps_color_branch_decision(tmp_path: Path) -> None:
