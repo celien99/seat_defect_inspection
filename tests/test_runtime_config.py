@@ -37,6 +37,8 @@ model_path = models/yolo.pt
 target_class = seat
 confidence = 0.4
 imgsz = 960
+fill_segmentation_holes = false
+segmentation_hole_fill_max_area_ratio = 0.03
 
 [camera.cam_0.roi.alignment]
 output_width = 320
@@ -69,6 +71,8 @@ enabled = true
     assert camera.detection.model_path == str((tmp_path / "models/yolo.pt").resolve())
     assert camera.detection.confidence == 0.4
     assert camera.detection.imgsz == 960
+    assert camera.detection.fill_segmentation_holes is False
+    assert camera.detection.segmentation_hole_fill_max_area_ratio == 0.03
     assert camera.roi.alignment.output_width == 320
     assert camera.patchcore.feature_layers == ["layer2", "layer3"]
     assert camera.regions[0].region_id == "upper"

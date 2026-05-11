@@ -189,7 +189,13 @@ class DetectionService:
         scaled_masks = _scale_yolo_masks_to_image(mask_data, (height, width))
         masks: list[np.ndarray] = []
         for item in scaled_masks:
-            masks.append((item > 0.5).astype(np.uint8))
+            mask = (item > 0.5).astype(np.uint8)
+            if self.config.fill_segmentation_holes:
+                mask = _fill_segmentation_holes(
+                    mask,
+                    max_area_ratio=float(self.config.segmentation_hole_fill_max_area_ratio),
+                )
+            masks.append(mask)
         return masks
 
 
@@ -235,3 +241,41 @@ def _mask_data_to_numpy(mask_data: Any) -> np.ndarray:
     if hasattr(mask_data, "cpu") and hasattr(mask_data.cpu(), "numpy"):
         return np.asarray(mask_data.cpu().numpy())
     return np.asarray(mask_data)
+
+
+def _fill_segmentation_holes(mask: np.ndarray, *, max_area_ratio: float) -> np.ndarray:
+    """Fill only background components fully enclosed by the foreground mask."""
+    binary = (mask > 0).astype(np.uint8)
+    if binary.size == 0 or int(binary.sum()) == 0:
+        return binary
+
+    background = (binary == 0).astype(np.uint8)
+    component_count, labels, stats, _centroids = cv2.connectedComponentsWithStats(
+        background,
+        connectivity=8,
+    )
+    if component_count <= 1:
+        return binary
+
+    height, width = binary.shape[:2]
+    max_area = max(0, int(round(float(max_area_ratio) * float(height * width))))
+    filled = binary.copy()
+    for label in range(1, component_count):
+        left = int(stats[label, cv2.CC_STAT_LEFT])
+        top = int(stats[label, cv2.CC_STAT_TOP])
+        component_width = int(stats[label, cv2.CC_STAT_WIDTH])
+        component_height = int(stats[label, cv2.CC_STAT_HEIGHT])
+        area = int(stats[label, cv2.CC_STAT_AREA])
+
+        touches_border = (
+            left <= 0
+            or top <= 0
+            or left + component_width >= width
+            or top + component_height >= height
+        )
+        if touches_border:
+            continue
+        if max_area > 0 and area > max_area:
+            continue
+        filled[labels == label] = 1
+    return filled

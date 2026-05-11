@@ -312,6 +312,14 @@ def _parse_detection_config(payload: Any, config_dir: Path, *, scope: str) -> De
         iou=_float_or_default(payload.get("iou"), defaults.iou),
         device=_string_or_default(payload.get("device"), defaults.device),
         imgsz=_int_or_default(payload.get("imgsz"), defaults.imgsz),
+        fill_segmentation_holes=_bool_or_default(
+            payload.get("fill_segmentation_holes"),
+            defaults.fill_segmentation_holes,
+        ),
+        segmentation_hole_fill_max_area_ratio=_float_or_default(
+            payload.get("segmentation_hole_fill_max_area_ratio"),
+            defaults.segmentation_hole_fill_max_area_ratio,
+        ),
     )
 
 

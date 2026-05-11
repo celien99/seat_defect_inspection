@@ -667,6 +667,121 @@ def test_detection_masks_remove_yolo_letterbox_padding_before_resize() -> None:
     assert int(ys.max()) == 3071
 
 
+def test_detection_masks_fill_enclosed_holes_without_expanding_outline() -> None:
+    class _ArrayProxy:
+        def __init__(self, value):
+            self._value = value
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            return self._value
+
+    class _FakeBoxes:
+        xyxy = _ArrayProxy(np.array([[0.0, 0.0, 12.0, 12.0]], dtype=np.float32))
+        conf = _ArrayProxy(np.array([0.99], dtype=np.float32))
+        cls = _ArrayProxy(np.array([0], dtype=np.float32))
+
+    raw_mask = np.zeros((1, 12, 12), dtype=np.float32)
+    raw_mask[0, 2:10, 2:10] = 1.0
+    raw_mask[0, 5:7, 5:7] = 0.0
+
+    class _FakeMasks:
+        data = _ArrayProxy(raw_mask)
+
+    class _FakeResult:
+        boxes = _FakeBoxes()
+        masks = _FakeMasks()
+        names = {0: "seat"}
+
+    service = DetectionService(DetectionConfig(model_path="dummy.pt"))
+    detections = service._extract_detections(_FakeResult(), (12, 12))
+
+    mask = detections[0].segmentation_mask
+    assert mask is not None
+    assert mask[5:7, 5:7].sum() == 4
+    assert mask[:2, :].sum() == 0
+    assert mask[:, :2].sum() == 0
+
+
+def test_detection_masks_do_not_fill_background_connected_to_border() -> None:
+    class _ArrayProxy:
+        def __init__(self, value):
+            self._value = value
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            return self._value
+
+    class _FakeBoxes:
+        xyxy = _ArrayProxy(np.array([[0.0, 0.0, 12.0, 12.0]], dtype=np.float32))
+        conf = _ArrayProxy(np.array([0.99], dtype=np.float32))
+        cls = _ArrayProxy(np.array([0], dtype=np.float32))
+
+    raw_mask = np.zeros((1, 12, 12), dtype=np.float32)
+    raw_mask[0, 2:10, 2:10] = 1.0
+    raw_mask[0, 5, 0:7] = 0.0
+
+    class _FakeMasks:
+        data = _ArrayProxy(raw_mask)
+
+    class _FakeResult:
+        boxes = _FakeBoxes()
+        masks = _FakeMasks()
+        names = {0: "seat"}
+
+    service = DetectionService(DetectionConfig(model_path="dummy.pt"))
+    detections = service._extract_detections(_FakeResult(), (12, 12))
+
+    mask = detections[0].segmentation_mask
+    assert mask is not None
+    assert mask[5, 2:7].sum() == 0
+
+
+def test_detection_masks_respect_hole_fill_area_limit() -> None:
+    class _ArrayProxy:
+        def __init__(self, value):
+            self._value = value
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            return self._value
+
+    class _FakeBoxes:
+        xyxy = _ArrayProxy(np.array([[0.0, 0.0, 20.0, 20.0]], dtype=np.float32))
+        conf = _ArrayProxy(np.array([0.99], dtype=np.float32))
+        cls = _ArrayProxy(np.array([0], dtype=np.float32))
+
+    raw_mask = np.zeros((1, 20, 20), dtype=np.float32)
+    raw_mask[0, 2:18, 2:18] = 1.0
+    raw_mask[0, 7:13, 7:13] = 0.0
+
+    class _FakeMasks:
+        data = _ArrayProxy(raw_mask)
+
+    class _FakeResult:
+        boxes = _FakeBoxes()
+        masks = _FakeMasks()
+        names = {0: "seat"}
+
+    service = DetectionService(
+        DetectionConfig(
+            model_path="dummy.pt",
+            segmentation_hole_fill_max_area_ratio=0.01,
+        )
+    )
+    detections = service._extract_detections(_FakeResult(), (20, 20))
+
+    mask = detections[0].segmentation_mask
+    assert mask is not None
+    assert mask[7:13, 7:13].sum() == 0
+
+
 def test_detection_service_warmup_runs_dummy_forward() -> None:
     class _EmptyBoxes:
         xyxy = None

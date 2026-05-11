@@ -51,6 +51,9 @@ class DetectionConfig:
     iou: float = 0.45
     device: str = "cpu"
     imgsz: int = 960
+    # YOLO 实例 mask 可能在目标内部留下低置信空洞；PatchCore 需要完整前景区域。
+    fill_segmentation_holes: bool = True
+    segmentation_hole_fill_max_area_ratio: float = 0.08
 
 
 @dataclass(slots=True)
