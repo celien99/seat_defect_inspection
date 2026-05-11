@@ -42,7 +42,7 @@
           "target_class": "seat",
           "confidence": 0.35,
           "iou": 0.45,
-          "device": "cpu"
+          "device": "cuda:0"
         },
         "roi": {
           "crop_expand_ratio": 0.04,
@@ -87,32 +87,17 @@
         "regions": [
           {
             "region_id": "upper",
-            "box": [
-              0.03,
-              0.03,
-              0.97,
-              0.42
-            ],
+            "box": [0.03, 0.03, 0.97, 0.42],
             "patchcore_model_path": "../models/seat_defect_inspection/cam_0_upper_patchcore.npz"
           },
           {
             "region_id": "middle",
-            "box": [
-              0.03,
-              0.33,
-              0.97,
-              0.74
-            ],
+            "box": [0.03, 0.33, 0.97, 0.74],
             "patchcore_model_path": "../models/seat_defect_inspection/cam_0_middle_patchcore.npz"
           },
           {
             "region_id": "lower",
-            "box": [
-              0.03,
-              0.66,
-              0.97,
-              0.97
-            ],
+            "box": [0.03, 0.66, 0.97, 0.97],
             "patchcore_model_path": "../models/seat_defect_inspection/cam_0_lower_patchcore.npz"
           }
         ]
@@ -135,7 +120,7 @@
           "target_class": "seat",
           "confidence": 0.35,
           "iou": 0.45,
-          "device": "cpu"
+          "device": "cuda:0"
         },
         "roi": {
           "crop_expand_ratio": 0.04,
@@ -180,32 +165,17 @@
         "regions": [
           {
             "region_id": "upper",
-            "box": [
-              0.03,
-              0.03,
-              0.97,
-              0.42
-            ],
+            "box": [0.03, 0.03, 0.97, 0.42],
             "patchcore_model_path": "../models/seat_defect_inspection/cam_1_upper_patchcore.npz"
           },
           {
             "region_id": "middle",
-            "box": [
-              0.03,
-              0.33,
-              0.97,
-              0.74
-            ],
+            "box": [0.03, 0.33, 0.97, 0.74],
             "patchcore_model_path": "../models/seat_defect_inspection/cam_1_middle_patchcore.npz"
           },
           {
             "region_id": "lower",
-            "box": [
-              0.03,
-              0.66,
-              0.97,
-              0.97
-            ],
+            "box": [0.03, 0.66, 0.97, 0.97],
             "patchcore_model_path": "../models/seat_defect_inspection/cam_1_lower_patchcore.npz"
           }
         ]
@@ -228,7 +198,7 @@
           "target_class": "seat",
           "confidence": 0.35,
           "iou": 0.45,
-          "device": "cpu"
+          "device": "cuda:0"
         },
         "roi": {
           "crop_expand_ratio": 0.04,
@@ -273,32 +243,17 @@
         "regions": [
           {
             "region_id": "upper",
-            "box": [
-              0.03,
-              0.03,
-              0.97,
-              0.42
-            ],
+            "box": [0.03, 0.03, 0.97, 0.42],
             "patchcore_model_path": "../models/seat_defect_inspection/cam_2_upper_patchcore.npz"
           },
           {
             "region_id": "middle",
-            "box": [
-              0.03,
-              0.33,
-              0.97,
-              0.74
-            ],
+            "box": [0.03, 0.33, 0.97, 0.74],
             "patchcore_model_path": "../models/seat_defect_inspection/cam_2_middle_patchcore.npz"
           },
           {
             "region_id": "lower",
-            "box": [
-              0.03,
-              0.66,
-              0.97,
-              0.97
-            ],
+            "box": [0.03, 0.66, 0.97, 0.97],
             "patchcore_model_path": "../models/seat_defect_inspection/cam_2_lower_patchcore.npz"
           }
         ]
@@ -321,7 +276,7 @@
           "target_class": "seat",
           "confidence": 0.35,
           "iou": 0.45,
-          "device": "cpu"
+          "device": "cuda:0"
         },
         "roi": {
           "crop_expand_ratio": 0.04,
@@ -366,32 +321,17 @@
         "regions": [
           {
             "region_id": "upper",
-            "box": [
-              0.03,
-              0.03,
-              0.97,
-              0.42
-            ],
+            "box": [0.03, 0.03, 0.97, 0.42],
             "patchcore_model_path": "../models/seat_defect_inspection/cam_3_upper_patchcore.npz"
           },
           {
             "region_id": "middle",
-            "box": [
-              0.03,
-              0.33,
-              0.97,
-              0.74
-            ],
+            "box": [0.03, 0.33, 0.97, 0.74],
             "patchcore_model_path": "../models/seat_defect_inspection/cam_3_middle_patchcore.npz"
           },
           {
             "region_id": "lower",
-            "box": [
-              0.03,
-              0.66,
-              0.97,
-              0.97
-            ],
+            "box": [0.03, 0.66, 0.97, 0.97],
             "patchcore_model_path": "../models/seat_defect_inspection/cam_3_lower_patchcore.npz"
           }
         ]
@@ -414,7 +354,7 @@
           "target_class": "seat",
           "confidence": 0.35,
           "iou": 0.45,
-          "device": "cpu"
+          "device": "cuda:0"
         },
         "roi": {
           "crop_expand_ratio": 0.04,
@@ -459,32 +399,17 @@
         "regions": [
           {
             "region_id": "upper",
-            "box": [
-              0.03,
-              0.03,
-              0.97,
-              0.42
-            ],
+            "box": [0.03, 0.03, 0.97, 0.42],
             "patchcore_model_path": "../models/seat_defect_inspection/cam_4_upper_patchcore.npz"
           },
           {
             "region_id": "middle",
-            "box": [
-              0.03,
-              0.33,
-              0.97,
-              0.74
-            ],
+            "box": [0.03, 0.33, 0.97, 0.74],
             "patchcore_model_path": "../models/seat_defect_inspection/cam_4_middle_patchcore.npz"
           },
           {
             "region_id": "lower",
-            "box": [
-              0.03,
-              0.66,
-              0.97,
-              0.97
-            ],
+            "box": [0.03, 0.66, 0.97, 0.97],
             "patchcore_model_path": "../models/seat_defect_inspection/cam_4_lower_patchcore.npz"
           }
         ]
