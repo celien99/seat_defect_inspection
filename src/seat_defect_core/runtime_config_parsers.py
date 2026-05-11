@@ -279,6 +279,7 @@ def _parse_detection_config(payload: Any, config_dir: Path, *, scope: str) -> De
         confidence=_float_or_default(payload.get("confidence"), defaults.confidence),
         iou=_float_or_default(payload.get("iou"), defaults.iou),
         device=_string_or_default(payload.get("device"), defaults.device),
+        imgsz=_int_or_default(payload.get("imgsz"), defaults.imgsz),
     )
 
 

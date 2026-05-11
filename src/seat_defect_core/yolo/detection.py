@@ -77,6 +77,7 @@ class DetectionService:
                 images,
                 conf=float(self.config.confidence),
                 iou=float(self.config.iou),
+                imgsz=int(self.config.imgsz),
                 device=self.config.device,
                 verbose=False,
             )
@@ -122,6 +123,7 @@ class DetectionService:
             image,
             conf=float(self.config.confidence),
             iou=float(self.config.iou),
+            imgsz=int(self.config.imgsz),
             device=self.config.device,
             verbose=False,
         )[0]

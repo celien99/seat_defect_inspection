@@ -145,7 +145,8 @@ INI 用于兼容 LabVIEW 和现场工具，核心流程仍会先把 INI 转成�
               "model_path": "../models/yolo/seat_model_a_best.pt",
               "target_class": "seat",
               "confidence": 0.25,
-              "iou": 0.45
+              "iou": 0.45,
+              "imgsz": 960
             },
             "roi": {
               "crop_expand_ratio": 0.02,

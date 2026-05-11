@@ -28,7 +28,8 @@
             "color_insensitive_mode": true,
             "detection": {
               "model_path": "../models/seat_defect_inspection/yolo/seat_model_a_best.pt",
-              "target_class": "seat"
+              "target_class": "seat",
+              "imgsz": 960
             },
             "roi": {
               "crop_expand_ratio": 0.02,
@@ -108,7 +109,8 @@
             "color_insensitive_mode": true,
             "detection": {
               "model_path": "../models/seat_defect_inspection/yolo/seat_model_b_best.pt",
-              "target_class": "seat"
+              "target_class": "seat",
+              "imgsz": 960
             },
             "roi": {
               "crop_expand_ratio": 0.02,

@@ -36,6 +36,7 @@ color_insensitive_mode = true
 model_path = models/yolo.pt
 target_class = seat
 confidence = 0.4
+imgsz = 960
 
 [camera.cam_0.roi.alignment]
 output_width = 320
@@ -67,6 +68,7 @@ enabled = true
     assert camera.train_good_dir == str((tmp_path / "train/cam_0/good").resolve())
     assert camera.detection.model_path == str((tmp_path / "models/yolo.pt").resolve())
     assert camera.detection.confidence == 0.4
+    assert camera.detection.imgsz == 960
     assert camera.roi.alignment.output_width == 320
     assert camera.patchcore.feature_layers == ["layer2", "layer3"]
     assert camera.regions[0].region_id == "upper"
@@ -195,6 +197,7 @@ def test_load_config_normalizes_nested_paths_and_default_seat_model(tmp_path: Pa
                                     "train_good_dir": "train/good",
                                     "detection": {
                                         "model_path": "models/yolo.pt",
+                                        "imgsz": 960,
                                     },
                                     "roi": {
                                         "alignment": {
@@ -235,6 +238,7 @@ def test_load_config_normalizes_nested_paths_and_default_seat_model(tmp_path: Pa
     assert camera.patchcore_model_path == str((tmp_path / "models/patchcore.npz").resolve())
     assert camera.train_good_dir == str((tmp_path / "train/good").resolve())
     assert camera.detection.model_path == str((tmp_path / "models/yolo.pt").resolve())
+    assert camera.detection.imgsz == 960
     assert camera.roi.alignment.output_width == 320
     assert camera.roi.alignment.output_height == 320
     assert camera.patchcore.backbone_weights_path == str(

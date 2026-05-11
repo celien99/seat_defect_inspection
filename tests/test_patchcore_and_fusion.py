@@ -602,12 +602,14 @@ def test_detection_service_batches_images_with_shared_model() -> None:
     class _FakeModel:
         def __init__(self) -> None:
             self.calls: list[int] = []
+            self.kwargs: list[dict] = []
 
-        def predict(self, images, **_kwargs):
+        def predict(self, images, **kwargs):
             self.calls.append(len(images))
+            self.kwargs.append(kwargs)
             return [_EmptyResult() for _image in images]
 
-    service = DetectionService(DetectionConfig(model_path="dummy.pt"))
+    service = DetectionService(DetectionConfig(model_path="dummy.pt", imgsz=960))
     fake_model = _FakeModel()
     service._model = fake_model
 
@@ -619,6 +621,7 @@ def test_detection_service_batches_images_with_shared_model() -> None:
     )
 
     assert fake_model.calls == [2]
+    assert fake_model.kwargs[0]["imgsz"] == 960
     assert [result.target for result in results] == [None, None]
 
 

@@ -236,6 +236,7 @@ def _group_pending_by_detection(pending_cameras, pipelines) -> dict[tuple, list[
             detection_config.confidence,
             detection_config.iou,
             detection_config.target_class,
+            detection_config.imgsz,
         )
         groups[key].append((index, camera, frame_packet, pipeline))
     return groups

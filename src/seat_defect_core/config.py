@@ -50,6 +50,7 @@ class DetectionConfig:
     confidence: float = 0.25
     iou: float = 0.45
     device: str = "cpu"
+    imgsz: int = 960
 
 
 @dataclass(slots=True)
