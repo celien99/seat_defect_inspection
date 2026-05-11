@@ -625,6 +625,48 @@ def test_detection_service_batches_images_with_shared_model() -> None:
     assert [result.target for result in results] == [None, None]
 
 
+def test_detection_masks_remove_yolo_letterbox_padding_before_resize() -> None:
+    class _ArrayProxy:
+        def __init__(self, value):
+            self._value = value
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            return self._value
+
+    class _FakeBoxes:
+        xyxy = _ArrayProxy(np.array([[100.0, 200.0, 900.0, 2600.0]], dtype=np.float32))
+        conf = _ArrayProxy(np.array([0.99], dtype=np.float32))
+        cls = _ArrayProxy(np.array([0], dtype=np.float32))
+
+    # Simulate a 4096x3072 image letterboxed to 960x960. The actual image
+    # content occupies y=120..840, so the active mask area starts at y=120.
+    raw_mask = np.zeros((1, 960, 960), dtype=np.float32)
+    raw_mask[0, 120:840, 240:720] = 1.0
+
+    class _FakeMasks:
+        data = _ArrayProxy(raw_mask)
+
+    class _FakeResult:
+        boxes = _FakeBoxes()
+        masks = _FakeMasks()
+        names = {0: "seat"}
+
+    service = DetectionService(DetectionConfig(model_path="dummy.pt"))
+    detections = service._extract_detections(_FakeResult(), (3072, 4096))
+
+    assert len(detections) == 1
+    mask = detections[0].segmentation_mask
+    assert mask is not None
+    ys, xs = np.nonzero(mask)
+    assert int(xs.min()) == 1024
+    assert int(xs.max()) == 3071
+    assert int(ys.min()) == 0
+    assert int(ys.max()) == 3071
+
+
 def test_detection_service_warmup_runs_dummy_forward() -> None:
     class _EmptyBoxes:
         xyxy = None

@@ -7,6 +7,7 @@ from typing import Any
 import cv2
 import numpy as np
 from ultralytics.engine.results import Results
+from ultralytics.utils import ops
 
 from ..config import DetectionConfig
 from ..types import BoundingBox, DetectionObject, DetectionResult
@@ -185,12 +186,52 @@ class DetectionService:
             return []
 
         height, width = image_shape
+        scaled_masks = _scale_yolo_masks_to_image(mask_data, (height, width))
         masks: list[np.ndarray] = []
-        for item in mask_data.cpu().numpy():
-            resized = cv2.resize(
+        for item in scaled_masks:
+            masks.append((item > 0.5).astype(np.uint8))
+        return masks
+
+
+def _scale_yolo_masks_to_image(mask_data: Any, image_shape: tuple[int, int]) -> np.ndarray:
+    """Map Ultralytics letterboxed segmentation masks back to original image space."""
+    height, width = image_shape
+    try:
+        import torch
+
+        if torch.is_tensor(mask_data):
+            scaled = ops.scale_masks(mask_data[None].float(), (height, width))[0]
+            return scaled.detach().cpu().numpy().astype(np.float32)
+    except Exception:
+        pass
+
+    masks = _mask_data_to_numpy(mask_data)
+    if masks.ndim == 2:
+        masks = masks[None, :, :]
+    if masks.shape[-2:] == (height, width):
+        return masks.astype(np.float32)
+
+    try:
+        import torch
+
+        scaled = ops.scale_masks(
+            torch.as_tensor(masks, dtype=torch.float32)[None],
+            (height, width),
+        )[0]
+        return scaled.detach().cpu().numpy().astype(np.float32)
+    except Exception:
+        resized_masks = [
+            cv2.resize(
                 item.astype(np.float32),
                 (width, height),
                 interpolation=cv2.INTER_NEAREST,
             )
-            masks.append((resized > 0.5).astype(np.uint8))
-        return masks
+            for item in masks
+        ]
+        return np.asarray(resized_masks, dtype=np.float32)
+
+
+def _mask_data_to_numpy(mask_data: Any) -> np.ndarray:
+    if hasattr(mask_data, "cpu") and hasattr(mask_data.cpu(), "numpy"):
+        return np.asarray(mask_data.cpu().numpy())
+    return np.asarray(mask_data)
