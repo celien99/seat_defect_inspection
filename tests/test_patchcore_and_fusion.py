@@ -1169,7 +1169,7 @@ def test_inspection_service_warmup_loads_region_models(tmp_path: Path) -> None:
             output_json_path=str(tmp_path / "result.json"),
             debug_dir=str(tmp_path / "debug"),
             debug_artifacts_enabled=False,
-            debug_artifact_names=["heatmap"],
+            debug_artifact_names=["overlay"],
             part_id="seat_demo",
             fusion=FusionConfig(),
         )
@@ -1308,7 +1308,7 @@ def test_core_inspect_frames_batches_region_patchcore_across_cameras(tmp_path: P
             output_json_path=str(tmp_path / "result.json"),
             debug_dir=str(tmp_path / "debug"),
             debug_artifacts_enabled=False,
-            debug_artifact_names=["heatmap"],
+            debug_artifact_names=["overlay"],
             part_id="seat_demo",
             fusion=FusionConfig(),
         )
@@ -2005,8 +2005,7 @@ def test_inspection_service_passes_target_and_ignore_masks_to_patchcore(tmp_path
     assert fake_patchcore.image.shape == (32, 32, 4)
     assert np.array_equal(fake_patchcore.target_mask, roi.target_mask)
     assert np.array_equal(fake_patchcore.ignore_mask, roi.ignore_mask)
-    assert set(result.artifact_paths) >= {"heatmap", "overlay"}
-    assert Path(result.artifact_paths["heatmap"]).is_file()
+    assert set(result.artifact_paths) == {"overlay"}
     assert Path(result.artifact_paths["overlay"]).is_file()
 
 
@@ -2106,4 +2105,4 @@ def test_quality_reject_can_still_return_ng_when_patchcore_finds_obvious_defect(
 
     assert result.status == "NG"
     assert result.reason == "texture_anomaly_quality_override"
-    assert set(result.artifact_paths) >= {"heatmap", "overlay"}
+    assert set(result.artifact_paths) == {"overlay"}

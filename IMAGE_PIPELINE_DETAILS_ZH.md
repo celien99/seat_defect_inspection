@@ -589,7 +589,6 @@ PatchCore 最终不是只看一个 `score > threshold`，而是综合多组证�
 实现位置：
 
 - `src/seat_defect_core/cvops/debug_artifacts.py`
-- `src/seat_defect_inspection/debug_artifacts.py`
 
 只要 `debug_artifacts_enabled = true`，每个机位都会按：
 
@@ -601,14 +600,11 @@ debug_dir / seat_model_id / part_id / camera_id / frame_id /
 
 ### 3.1 默认调试图集合
 
-当前调试图集合是固定的，会输出：
+当前调试图集合只输出一张机位级图片：
 
-- `raw.png`
-- `detections.png`
-- `heatmap.png`
 - `overlay.png`
 
-这些文件对于向用户解释“每一步到底对图做了什么”非常有帮助。
+`overlay.png` 会把最终 PatchCore 热力图叠加回原始输入图尺寸。region 模式下会先把多个 region 的热力图拼回该机位的完整 ROI，再还原到原图坐标系后输出同一张 `overlay.png`。报告和 API 返回里的 `artifact_paths` 也只暴露这张图。
 
 ---
 

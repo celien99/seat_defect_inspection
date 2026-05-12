@@ -14,7 +14,7 @@ from seat_defect_core.config import (
     QualityGuardConfig,
     RoiRefineConfig,
 )
-from seat_defect_core.cvops.debug_artifacts import _overlay_heatmap, _render_detections
+from seat_defect_core.cvops.debug_artifacts import _overlay_heatmap
 from seat_defect_core.patchcore import PatchCoreService
 from seat_defect_core.service.core import CameraPipeline
 from seat_defect_inspection.config import CameraConfig
@@ -208,16 +208,9 @@ def main() -> None:
     sample_dir.mkdir(parents=True, exist_ok=True)
 
     write_image(sample_dir / "raw.png", image)
-    write_image(
-        sample_dir / "detections.png",
-        _render_detections(image, prepared.detection),
-    )
     write_image(sample_dir / "roi.png", prepared.roi.aligned_roi_image)
     write_image(sample_dir / "patchcore_input.png", patchcore_input)
     write_mask(sample_dir / "valid_mask.png", prepared.roi.valid_mask)
-
-    heatmap = np.uint8(np.clip(result.heatmap, 0.0, 1.0) * 255)
-    write_image(sample_dir / "heatmap.png", cv2.applyColorMap(heatmap, cv2.COLORMAP_JET))
     write_image(
         sample_dir / "overlay.png",
         _overlay_heatmap(patchcore_input, result.heatmap),

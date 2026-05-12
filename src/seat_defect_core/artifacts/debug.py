@@ -3,20 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-import re
 from typing import Any
 
 import cv2
 import numpy as np
 
 from ..util import build_model_scoped_root, select_patchcore_input, write_image
-from ..cvops.regions import build_region_roi_sample_from_box
 
 DEFAULT_DEBUG_ARTIFACT_NAMES: frozenset[str] = frozenset(
     {
-        "raw",
-        "detections",
-        "heatmap",
         "overlay",
     }
 )
@@ -34,6 +29,8 @@ def save_debug_artifacts(
 ) -> dict[str, str]:
     """Persist the selected debug artifacts for one camera result."""
     selected_artifacts = _normalize_artifact_names(artifact_names)
+    if not selected_artifacts:
+        return {}
 
     camera_dir = (
         build_model_scoped_root(Path(debug_dir), seat_model_id)
@@ -44,109 +41,20 @@ def save_debug_artifacts(
     camera_dir.mkdir(parents=True, exist_ok=True)
     artifact_paths: dict[str, str] = {}
 
-    _save_selected_image(
-        artifact_paths,
-        selected_artifacts,
-        "raw",
-        camera_dir / "raw.png",
-        frame_packet.image,
-    )
-
-    if "detections" in selected_artifacts:
-        _save_selected_image(
-            artifact_paths,
-            selected_artifacts,
-            "detections",
-            camera_dir / "detections.png",
-            _render_detections(frame_packet.image, prepared.detection),
-        )
-
-    if prepared.roi is not None:
-        _save_selected_image(
-            artifact_paths,
-            selected_artifacts,
-            "roi",
-            camera_dir / "roi.png",
-            prepared.roi.aligned_roi_image,
-        )
-        if prepared.roi.texture_ready_image is not None:
-            _save_selected_image(
-                artifact_paths,
-                selected_artifacts,
-                "roi_texture",
-                camera_dir / "roi_texture.png",
-                prepared.roi.texture_ready_image,
-            )
-        patchcore_input = select_patchcore_input(prepared.roi)
-        _save_selected_image(
-            artifact_paths,
-            selected_artifacts,
-            "patchcore_input",
-            camera_dir / "patchcore_input.png",
-            patchcore_input,
-        )
-        if prepared.roi.foreground_weight is not None:
-            _save_selected_mask(
-                artifact_paths,
-                selected_artifacts,
-                "foreground_weight",
-                camera_dir / "foreground_weight.png",
-                prepared.roi.foreground_weight,
-            )
-        _save_selected_mask(
-            artifact_paths,
-            selected_artifacts,
-            "target_mask",
-            camera_dir / "target_mask.png",
-            prepared.roi.target_mask,
-        )
-        _save_selected_mask(
-            artifact_paths,
-            selected_artifacts,
-            "valid_mask",
-            camera_dir / "valid_mask.png",
-            prepared.roi.valid_mask,
-        )
-        _save_selected_mask(
-            artifact_paths,
-            selected_artifacts,
-            "ignore_mask",
-            camera_dir / "ignore_mask.png",
-            prepared.roi.ignore_mask,
-        )
-
-    if texture_result is not None and prepared.roi is not None:
-        heatmap_base = select_patchcore_input(prepared.roi)
-        _save_selected_image(
-            artifact_paths,
-            selected_artifacts,
-            "heatmap",
-            camera_dir / "heatmap.png",
-            _render_heatmap(
-                heatmap_base,
-                texture_result.heatmap,
-            ),
+    if prepared.roi is not None and (
+        texture_result is not None or region_results
+    ):
+        heatmap = (
+            texture_result.heatmap
+            if texture_result is not None
+            else _stitch_region_heatmap(prepared.roi, region_results)
         )
         if "overlay" in selected_artifacts:
-            _save_selected_image(
+            _save_artifact_image(
                 artifact_paths,
-                selected_artifacts,
                 "overlay",
                 camera_dir / "overlay.png",
-                _overlay_heatmap(
-                    heatmap_base,
-                    texture_result.heatmap,
-                ),
-            )
-
-    if region_results and prepared.roi is not None:
-        for region_result in region_results:
-            _save_region_artifacts(
-                artifact_paths,
-                selected_artifacts,
-                camera_dir,
-                prepared.roi,
-                region_result,
+                _overlay_heatmap_on_frame(frame_packet.image, prepared.roi, heatmap),
             )
 
     return artifact_paths
@@ -157,175 +65,147 @@ def _normalize_artifact_names(
 ) -> frozenset[str]:
     if artifact_names is None:
         return DEFAULT_DEBUG_ARTIFACT_NAMES
-    return frozenset(
-        item
-        for item in (str(name).strip() for name in artifact_names)
-        if item in DEFAULT_DEBUG_ARTIFACT_NAMES
+    requested = [str(name).strip() for name in artifact_names if str(name).strip()]
+    unexpected = sorted(set(requested) - DEFAULT_DEBUG_ARTIFACT_NAMES)
+    if unexpected:
+        formatted = ", ".join(f"`{item}`" for item in unexpected)
+        raise ValueError(f"debug_artifact_names 包含不支持的调试产物: {formatted}")
+    return frozenset(requested)
+
+
+def _stitch_region_heatmap(roi, region_results) -> np.ndarray:
+    """Merge region-level PatchCore heatmaps back into full ROI coordinates."""
+    height, width = select_patchcore_input(roi).shape[:2]
+    stitched = np.zeros((height, width), dtype=np.float32)
+    for region_result in region_results or []:
+        texture_result = getattr(region_result, "texture_result", None)
+        if texture_result is None:
+            continue
+        x1, y1, x2, y2 = _region_box_to_pixels(region_result.box, width, height)
+        if x2 <= x1 or y2 <= y1:
+            continue
+        region_heatmap = np.clip(
+            np.asarray(texture_result.heatmap, dtype=np.float32),
+            0.0,
+            1.0,
+        )
+        if region_heatmap.shape != (y2 - y1, x2 - x1):
+            region_heatmap = cv2.resize(
+                region_heatmap,
+                (x2 - x1, y2 - y1),
+                interpolation=cv2.INTER_LINEAR,
+            )
+        stitched[y1:y2, x1:x2] = np.maximum(
+            stitched[y1:y2, x1:x2],
+            region_heatmap,
+        )
+    return stitched
+
+
+def _region_box_to_pixels(box, width: int, height: int) -> tuple[int, int, int, int]:
+    x1 = int(round(float(box.x1)))
+    y1 = int(round(float(box.y1)))
+    x2 = int(round(float(box.x2)))
+    y2 = int(round(float(box.y2)))
+    return (
+        min(max(x1, 0), width),
+        min(max(y1, 0), height),
+        min(max(x2, 0), width),
+        min(max(y2, 0), height),
     )
 
 
-def _save_region_artifacts(
+def _save_artifact_image(
     artifact_paths: dict[str, str],
-    selected_artifacts: frozenset[str],
-    camera_dir: Path,
-    roi,
-    region_result,
-) -> None:
-    """Save region-level heatmap and overlay artifacts."""
-    if region_result.texture_result is None:
-        return
-    sample = getattr(region_result, "sample", None)
-    if sample is None:
-        sample = build_region_roi_sample_from_box(
-            roi,
-            region_id=region_result.region_id,
-            box=[
-                region_result.box.x1 / max(1.0, float(roi.aligned_roi_image.shape[1])),
-                region_result.box.y1 / max(1.0, float(roi.aligned_roi_image.shape[0])),
-                region_result.box.x2 / max(1.0, float(roi.aligned_roi_image.shape[1])),
-                region_result.box.y2 / max(1.0, float(roi.aligned_roi_image.shape[0])),
-            ],
-        )
-    if sample is None:
-        return
-    region_dir = camera_dir / "regions" / _sanitize_region_id(region_result.region_id)
-    heatmap_base = sample.image
-    _save_selected_image(
-        artifact_paths,
-        selected_artifacts,
-        f"regions.{region_result.region_id}.heatmap",
-        region_dir / "heatmap.png",
-        _render_heatmap(heatmap_base, region_result.texture_result.heatmap),
-    )
-    if "overlay" in selected_artifacts:
-        _save_selected_image(
-            artifact_paths,
-            selected_artifacts,
-            f"regions.{region_result.region_id}.overlay",
-            region_dir / "overlay.png",
-            _overlay_heatmap(heatmap_base, region_result.texture_result.heatmap),
-        )
-
-
-def _sanitize_region_id(value: str) -> str:
-    return re.sub(r"[\\\\/:*?\"<>|\\s]+", "_", value).strip("_") or "region"
-
-
-def _save_selected_image(
-    artifact_paths: dict[str, str],
-    selected_artifacts: frozenset[str],
     key: str,
     path: Path,
     image: Any | None,
 ) -> None:
-    """Write an image artifact when the current mode enables it."""
-    artifact_name = key.rsplit(".", 1)[-1]
-    if image is None or artifact_name not in selected_artifacts:
+    """Write one final per-camera artifact."""
+    if image is None:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     write_image(path, image)
     artifact_paths[key] = str(path)
 
 
-def _save_selected_mask(
-    artifact_paths: dict[str, str],
-    selected_artifacts: frozenset[str],
-    key: str,
-    path: Path,
-    mask: np.ndarray | None,
-) -> None:
-    """Write a mask artifact when the current mode enables it."""
-    artifact_name = key.rsplit(".", 1)[-1]
-    if mask is None or artifact_name not in selected_artifacts:
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    _write_mask(path, mask)
-    artifact_paths[key] = str(path)
+def _overlay_heatmap_on_frame(
+    frame_image: Any,
+    roi,
+    heatmap: np.ndarray,
+) -> np.ndarray:
+    """Overlay a canonical ROI heatmap back onto the original frame size."""
+    frame_base = _ensure_color_image(frame_image)
+    x1, y1, x2, y2 = _box_to_frame_pixels(roi.crop_box, frame_base.shape[:2])
+    if x2 <= x1 or y2 <= y1:
+        return frame_base
+
+    crop_base = frame_base[y1:y2, x1:x2]
+    crop_heatmap = _restore_heatmap_to_crop(roi, heatmap, crop_base.shape[:2])
+    frame_base[y1:y2, x1:x2] = _overlay_heatmap(crop_base, crop_heatmap)
+    return frame_base
 
 
-def _write_mask(path: Path, mask: np.ndarray) -> None:
-    """Normalize a mask-like array to uint8 before saving."""
-    if mask.dtype != np.uint8:
-        normalized = np.clip(mask * 255.0, 0, 255).astype(np.uint8)
-    else:
-        normalized = np.where(mask > 0, 255, 0).astype(np.uint8)
-    if not cv2.imwrite(str(path), normalized):
-        raise OSError(f"Failed to write mask: {path}")
+def _restore_heatmap_to_crop(
+    roi,
+    heatmap: np.ndarray,
+    crop_shape: tuple[int, int],
+) -> np.ndarray:
+    canonical_shape = select_patchcore_input(roi).shape[:2]
+    clipped = np.clip(np.asarray(heatmap, dtype=np.float32), 0.0, 1.0)
+    if clipped.shape != canonical_shape:
+        clipped = cv2.resize(
+            clipped,
+            (canonical_shape[1], canonical_shape[0]),
+            interpolation=cv2.INTER_LINEAR,
+        )
 
+    crop_height, crop_width = crop_shape
+    if crop_height <= 0 or crop_width <= 0:
+        return np.zeros((0, 0), dtype=np.float32)
 
-def _render_detections(image: Any, detection) -> Any:
-    """Render YOLO detections for quick inspection."""
-    if detection is None:
-        return image.copy()
-    canvas = image.copy()
-    drawn_ids: set[int] = set()
-    if detection.target is not None:
-        _draw_detection(canvas, detection.target, (0, 255, 0))
-        drawn_ids.add(id(detection.target))
-    for item in detection.all_objects:
-        if id(item) in drawn_ids:
-            continue
-        _draw_detection(canvas, item, (0, 165, 255))
-    return canvas
+    canonical_height, canonical_width = canonical_shape
+    scale = min(
+        float(canonical_width) / float(crop_width),
+        float(canonical_height) / float(crop_height),
+    )
+    content_width = max(1, int(round(crop_width * scale)))
+    content_height = max(1, int(round(crop_height * scale)))
+    offset_x = max(0, (canonical_width - content_width) // 2)
+    offset_y = max(0, (canonical_height - content_height) // 2)
 
-
-def _draw_detection(image: Any, detection, color: tuple[int, int, int]) -> None:
-    """Draw one detection box and optional segmentation mask."""
-    if getattr(detection, "segmentation_mask", None) is not None:
-        _draw_segmentation_mask(image, detection.segmentation_mask, color)
-    _draw_box(image, detection.bounding_box, color, detection.label)
-
-
-def _draw_box(image: Any, box, color: tuple[int, int, int], label: str) -> None:
-    """Draw one bounding box."""
-    x1 = int(round(box.x1))
-    y1 = int(round(box.y1))
-    x2 = int(round(box.x2))
-    y2 = int(round(box.y2))
-    cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
-    cv2.putText(
-        image,
-        label,
-        (x1, max(20, y1 - 8)),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.6,
-        color,
-        2,
-        cv2.LINE_AA,
+    content = clipped[
+        offset_y : min(canonical_height, offset_y + content_height),
+        offset_x : min(canonical_width, offset_x + content_width),
+    ]
+    if content.size == 0:
+        return np.zeros((crop_height, crop_width), dtype=np.float32)
+    return cv2.resize(
+        content,
+        (crop_width, crop_height),
+        interpolation=cv2.INTER_LINEAR,
     )
 
 
-def _draw_segmentation_mask(image: Any, mask: np.ndarray, color: tuple[int, int, int]) -> None:
-    """Draw segmentation fill and contours."""
-    normalized = np.asarray(mask)
-    if normalized.ndim != 2:
-        return
-    if normalized.shape[:2] != image.shape[:2]:
-        normalized = cv2.resize(
-            normalized.astype(np.float32),
-            (image.shape[1], image.shape[0]),
-            interpolation=cv2.INTER_NEAREST,
-        )
-    binary_mask = (normalized > 0).astype(np.uint8)
-    if binary_mask.sum() == 0:
-        return
-
-    overlay = image.copy()
-    overlay[binary_mask > 0] = (
-        0.82 * overlay[binary_mask > 0] + 0.18 * np.asarray(color, dtype=np.float32)
-    ).astype(np.uint8)
-    image[:] = overlay
-
-    contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if contours:
-        cv2.drawContours(image, contours, -1, color, 2, cv2.LINE_AA)
+def _box_to_frame_pixels(box, frame_shape: tuple[int, int]) -> tuple[int, int, int, int]:
+    height, width = frame_shape
+    x1 = int(round(float(box.x1)))
+    y1 = int(round(float(box.y1)))
+    x2 = int(round(float(box.x2)))
+    y2 = int(round(float(box.y2)))
+    return (
+        min(max(x1, 0), width),
+        min(max(y1, 0), height),
+        min(max(x2, 0), width),
+        min(max(y2, 0), height),
+    )
 
 
 def _overlay_heatmap(
     image: Any,
     heatmap: np.ndarray,
-) -> Any:
-    """Overlay the heatmap without tinting the whole ROI background."""
+) -> np.ndarray:
+    """Overlay the heatmap on the ROI while preserving cool areas."""
     base_image, clipped = _prepare_heatmap_layers(image, heatmap)
     if float(clipped.max()) <= 1e-6:
         return base_image
@@ -335,26 +215,6 @@ def _overlay_heatmap(
     alpha = np.power(clipped, 1.35)[..., None] * 0.75
     overlay = base_float * (1.0 - alpha) + color_map * alpha
     return np.clip(overlay, 0.0, 255.0).astype(np.uint8)
-
-
-def _render_heatmap(
-    image: Any,
-    heatmap: np.ndarray,
-) -> np.ndarray:
-    """Render a readable standalone heatmap on top of a grayscale ROI base."""
-    base_image, clipped = _prepare_heatmap_layers(image, heatmap)
-    gray_base = cv2.cvtColor(
-        cv2.cvtColor(base_image, cv2.COLOR_BGR2GRAY),
-        cv2.COLOR_GRAY2BGR,
-    )
-    if float(clipped.max()) <= 1e-6:
-        return gray_base
-
-    color_map = cv2.applyColorMap(np.uint8(clipped * 255), cv2.COLORMAP_JET).astype(np.float32)
-    base_float = gray_base.astype(np.float32)
-    alpha = np.power(clipped, 1.35)[..., None]
-    rendered = base_float * (1.0 - alpha) + color_map * alpha
-    return np.clip(rendered, 0.0, 255.0).astype(np.uint8)
 
 
 def _prepare_heatmap_layers(
@@ -374,7 +234,7 @@ def _prepare_heatmap_layers(
 
 
 def _ensure_color_image(image: Any) -> np.ndarray:
-    """Ensure the heatmap overlay base is a BGR image."""
+    """Ensure the heatmap base is a BGR image."""
     array = np.asarray(image)
     if array.ndim == 2:
         return cv2.cvtColor(array, cv2.COLOR_GRAY2BGR)

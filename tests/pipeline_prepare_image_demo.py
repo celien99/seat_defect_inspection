@@ -11,7 +11,6 @@ from seat_defect_core.config import (
     QualityGuardConfig,
     RoiRefineConfig,
 )
-from seat_defect_core.cvops.debug_artifacts import _render_detections
 from seat_defect_core.service.core import CameraPipeline
 from seat_defect_inspection.config import CameraConfig
 
@@ -82,10 +81,6 @@ def main() -> None:
     sample_dir.mkdir(parents=True, exist_ok=True)
 
     write_image(sample_dir / "raw.png", image)
-    write_image(
-        sample_dir / "detections.png",
-        _render_detections(image, prepared.detection),
-    )
 
     if prepared.roi is not None:
         write_image(sample_dir / "roi.png", prepared.roi.aligned_roi_image)

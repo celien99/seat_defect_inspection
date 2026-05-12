@@ -165,7 +165,7 @@ class InspectionConfig:
     debug_dir: str = "outputs/seat_defect_inspection/debug"
     debug_artifacts_enabled: bool = True
     debug_artifact_names: list[str] = field(
-        default_factory=lambda: ["raw", "detections", "heatmap", "overlay"],
+        default_factory=lambda: ["overlay"],
     )
     part_id: str = "seat_demo"
     fusion: FusionConfig = field(default_factory=FusionConfig)

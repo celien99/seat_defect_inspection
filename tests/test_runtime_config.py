@@ -109,7 +109,7 @@ def test_core_load_config_parses_debug_artifact_names(tmp_path: Path) -> None:
     config_path.write_text(
         """
 [seat_defect_inspection]
-debug_artifact_names = heatmap
+debug_artifact_names = overlay
 
 [camera.cam_0]
 source = 0
@@ -123,7 +123,7 @@ backbone_pretrained = true
 
     config = load_core_config(str(config_path))
 
-    assert config.debug_artifact_names == ["heatmap"]
+    assert config.debug_artifact_names == ["overlay"]
 
 
 def test_load_config_parses_ini_seat_models_and_yolo_training(tmp_path: Path) -> None:

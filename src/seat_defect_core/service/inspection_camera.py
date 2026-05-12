@@ -345,7 +345,6 @@ def finish_region_patchcore_plan(
         plan.camera_timer,
         region_results=region_results,
     )
-    _attach_region_artifact_paths(result)
     return result
 
 
@@ -503,12 +502,3 @@ def _normalize_error_code(reason: str) -> str:
     normalized = normalized.replace("-", "_").replace(" ", "_")
     return normalized or "unknown_error"
 
-
-def _attach_region_artifact_paths(result: CameraInspectionResult) -> None:
-    for region_result in result.region_results:
-        prefix = f"regions.{region_result.region_id}."
-        region_result.artifact_paths = {
-            key.removeprefix(prefix): value
-            for key, value in result.artifact_paths.items()
-            if key.startswith(prefix)
-        }

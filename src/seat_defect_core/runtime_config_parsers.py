@@ -575,7 +575,7 @@ def _debug_artifact_names_or_default(value: Any, default: list[str]) -> list[str
     else:
         items = [str(item).strip() for item in _ensure_list(value, "debug_artifact_names")]
     selected = [item for item in items if item]
-    allowed = {"raw", "detections", "heatmap", "overlay"}
+    allowed = {"overlay"}
     unexpected = sorted(set(selected) - allowed)
     if unexpected:
         formatted = ", ".join(f"`{item}`" for item in unexpected)
