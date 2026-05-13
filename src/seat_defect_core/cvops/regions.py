@@ -11,7 +11,7 @@ from ..types import BoundingBox, RoiRefineResult
 from ..util import select_patchcore_input
 
 
-@dataclass(slots=True)
+@dataclass
 class RegionRoiSample:
     """单个局部区域送入 PatchCore 的图像和掩膜。"""
 

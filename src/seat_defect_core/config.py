@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
-@dataclass(slots=True)
+@dataclass
 class QualityGuardConfig:
     """检测前的图像质量阈值。"""
 
@@ -16,7 +16,7 @@ class QualityGuardConfig:
     max_underexposed_ratio: float = 0.35
 
 
-@dataclass(slots=True)
+@dataclass
 class AlignmentConfig:
     """ROI 裁剪后的输出尺寸。"""
 
@@ -24,7 +24,7 @@ class AlignmentConfig:
     output_height: int = 256
 
 
-@dataclass(slots=True)
+@dataclass
 class RoiRefineConfig:
     """ROI 裁剪与有效区域配置。"""
 
@@ -40,7 +40,7 @@ class RoiRefineConfig:
     alignment: AlignmentConfig = field(default_factory=AlignmentConfig)
 
 
-@dataclass(slots=True)
+@dataclass
 class DetectionConfig:
     """单机位 YOLO 检测配置。"""
 
@@ -56,7 +56,7 @@ class DetectionConfig:
     segmentation_hole_fill_max_area_ratio: float = 0.08
 
 
-@dataclass(slots=True)
+@dataclass
 class PatchCoreConfig:
     """PatchCore model and decision parameters."""
 
@@ -97,7 +97,7 @@ class PatchCoreConfig:
     coreset_sampling_ratio: float = 0.1
 
 
-@dataclass(slots=True)
+@dataclass
 class ColorBranchConfig:
     """颜色一致性分支配置。"""
 
@@ -107,7 +107,7 @@ class ColorBranchConfig:
     min_valid_pixel_ratio: float = 0.4
 
 
-@dataclass(slots=True)
+@dataclass
 class RegionConfig:
     """单机位标准 ROI 内的局部 PatchCore 区域。"""
 
@@ -119,7 +119,7 @@ class RegionConfig:
     patchcore: PatchCoreConfig | None = None
 
 
-@dataclass(slots=True)
+@dataclass
 class CameraConfig:
     """单机位 runtime 配置。"""
 
@@ -136,7 +136,7 @@ class CameraConfig:
     regions: list[RegionConfig] = field(default_factory=list)
 
 
-@dataclass(slots=True)
+@dataclass
 class FusionConfig:
     """多机位融合判定策略。"""
 
@@ -145,7 +145,7 @@ class FusionConfig:
     defect_overrides_reject: bool = True
 
 
-@dataclass(slots=True)
+@dataclass
 class SeatModelConfig:
     """按座椅型号组织的多机位配置。"""
 
@@ -154,7 +154,7 @@ class SeatModelConfig:
     display_name: str | None = None
 
 
-@dataclass(slots=True)
+@dataclass
 class InspectionConfig:
     """core 顶层 inspect runtime 配置。"""
 

@@ -6,6 +6,8 @@
 
 ## 快速开始
 
+工程工具层可以继续使用现有 Python 3.10 开发环境：
+
 ```bash
 cd seat_defect_inspection
 conda create -n seat-defect-inspection python=3.10 -y
@@ -19,6 +21,30 @@ seat-defect-inspection --help
 ```bash
 python -m seat_defect_inspection --help
 ```
+
+## LabVIEW Python 3.8.5 Core 运行环境
+
+`seat_defect_core` 可作为兼容 Python 3.8.5 的检测运行时交付给 LabVIEW 或现场工具。这个运行时只覆盖 core 检测链路：加载已有 YOLO/PatchCore 模型，接收外部传入的图片或图片路径，在 CPU 上执行检测，并返回可 JSON 序列化的结果。
+
+公共机推荐环境：
+
+```bash
+conda create -n seat-defect-core-py38 python=3.8.5 -y
+conda activate seat-defect-core-py38
+pip install -r requirements-core-py38-cpu.txt
+pip install --no-build-isolation .
+```
+
+离线安装时，先在可联网的 Python 3.8.5 机器上准备 wheel 缓存，再拷贝 `wheelhouse` 到 LabVIEW 公共机：
+
+```bash
+python -m pip download --only-binary=:all: -r requirements-core-py38-cpu.txt -d wheelhouse
+python -m pip wheel --no-deps --no-build-isolation . -w wheelhouse
+python -m pip install --no-index --find-links wheelhouse -r requirements-core-py38-cpu.txt
+python -m pip install --no-index --find-links wheelhouse seat-defect-core
+```
+
+现场配置中，模型路径和报告路径必须能被 LabVIEW 进程访问。生产环境建议设置 `backbone_device = cpu`、`debug_artifacts_enabled = false`，并把 `output_json_path` / `debug_dir` 放到可写目录。
 
 ## 工程工具命令
 

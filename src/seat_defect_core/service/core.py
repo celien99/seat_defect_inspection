@@ -18,7 +18,7 @@ from ..types import DetectionResult, ImageQualityDecision, RoiRefineResult, Text
 from ..yolo import DetectionService
 
 
-@dataclass(slots=True)
+@dataclass
 class PreparedCameraSample:
     """Shared intermediate data for one camera."""
 
@@ -28,7 +28,7 @@ class PreparedCameraSample:
     rejection_reason: str | None = None
 
 
-@dataclass(slots=True)
+@dataclass
 class ResolvedInspectionContext:
     """Resolved camera set and pipelines for a model route."""
 

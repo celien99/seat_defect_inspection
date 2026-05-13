@@ -1,0 +1,51 @@
+# Python 3.8.5 CPU-only runtime lock for LabVIEW / production callers.
+#
+# Use this file for the inspect-only `seat_defect_core` package. It is not meant
+# to cover training, camera acquisition, MVS integration, or engineering CLI
+# workflows.
+#
+# PyTorch CPU wheels are hosted on the PyTorch wheel index.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# Build helpers for source installs with --no-build-isolation.
+setuptools==75.3.2
+wheel==0.45.1
+
+# Core direct runtime dependencies.
+numpy==1.24.4
+opencv-python==4.10.0.84
+PyYAML==6.0.3
+torch==2.4.1+cpu
+torchvision==0.19.1+cpu
+ultralytics==8.4.40
+
+# Ultralytics direct runtime dependencies, pinned for offline reproducibility.
+matplotlib==3.7.5
+pillow==10.4.0
+requests==2.32.4
+scipy==1.10.1
+psutil==6.1.1
+polars==0.20.31
+ultralytics-thop==2.0.18
+
+# Common transitive dependencies pulled by the runtime stack above.
+certifi==2025.1.31
+charset-normalizer==3.4.1
+contourpy==1.1.1
+cycler==0.12.1
+filelock==3.16.1
+fonttools==4.57.0
+fsspec==2024.10.0
+idna==3.10
+Jinja2==3.1.6
+kiwisolver==1.4.7
+MarkupSafe==2.1.5
+mpmath==1.3.0
+networkx==3.1
+packaging==24.2
+pyparsing==3.1.4
+python-dateutil==2.9.0.post0
+six==1.17.0
+sympy==1.12.1
+typing-extensions==4.13.2
+urllib3==2.2.3

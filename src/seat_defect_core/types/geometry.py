@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-@dataclass(slots=True)
+@dataclass
 class BoundingBox:
     """图像坐标系中的水平矩形框。"""
 

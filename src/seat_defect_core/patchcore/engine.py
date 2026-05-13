@@ -36,7 +36,7 @@ _RUNTIME_DECISION_OVERRIDE_FIELDS = (
 )
 
 
-@dataclass(slots=True)
+@dataclass
 class LoadedModelBundle:
     """Model bundle restored from disk."""
 

@@ -37,7 +37,7 @@ IMAGENET_MEAN = np.asarray([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.asarray([0.229, 0.224, 0.225], dtype=np.float32)
 
 
-@dataclass(slots=True)
+@dataclass
 class _PatchBatch:
     """记录当前图像 patch 网格与有效 patch 统计。"""
 

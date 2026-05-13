@@ -26,14 +26,38 @@
 pip install /path/to/seat_defect_core_package
 ```
 
+LabVIEW 公共机推荐使用独立 Python 3.8.5 CPU 环境：
+
+```bash
+conda create -n seat-defect-core-py38 python=3.8.5 -y
+conda activate seat-defect-core-py38
+pip install -r requirements-core-py38-cpu.txt
+pip install --no-build-isolation /path/to/seat_defect_core_package
+```
+
 也可以在同一工程中通过源码方式使用，但需要保证：
 
-- Python 版本 `>=3.10`。
-- 依赖已安装：`numpy`、`opencv-python`、`torch`、`torchvision`、`ultralytics`。
+- Python 版本 `>=3.8.5`。
+- 依赖已安装并固定到公共机验证过的版本。CPU 运行时推荐使用 `requirements-core-py38-cpu.txt`。
 - `seat_defect_core` 能被 Python import 到。
 - 配置文件中的模型路径能被当前 Python 环境访问。
+- `output_json_path` 和 `debug_dir` 指向 LabVIEW 进程可写目录。
 
 不建议长期依赖手工复制目录作为正式交付方式。手工复制可以用于临时验证，但容易遗漏依赖、版本和包数据。
+
+离线安装时，先在可联网的 Python 3.8.5 机器上准备 wheel 缓存：
+
+```bash
+python -m pip download --only-binary=:all: -r requirements-core-py38-cpu.txt -d wheelhouse
+python -m pip wheel --no-deps --no-build-isolation /path/to/seat_defect_core_package -w wheelhouse
+```
+
+拷贝 `wheelhouse` 到 LabVIEW 公共机后离线安装：
+
+```bash
+python -m pip install --no-index --find-links wheelhouse -r requirements-core-py38-cpu.txt
+python -m pip install --no-index --find-links wheelhouse seat-defect-core
+```
 
 ## 最小调用示例
 
@@ -195,12 +219,12 @@ INI 用于兼容 LabVIEW 和现场工具，核心流程仍会先把 INI 转成�
 
 ```python
 inspect_paths(
-    image_paths: dict[str, str],
+    image_paths: Dict[str, str],
     *,
-    part_id: str | None = None,
-    seat_model_id: str | None = None,
-    frame_id: str | None = None,
-    timestamp: str | None = None,
+    part_id: Optional[str] = None,
+    seat_model_id: Optional[str] = None,
+    frame_id: Optional[str] = None,
+    timestamp: Optional[str] = None,
 )
 ```
 
@@ -216,10 +240,10 @@ inspect_paths(
 
 ```python
 inspect(
-    frames: list[InspectionFrame | dict],
+    frames: List[Union[InspectionFrame, Dict]],
     *,
-    part_id: str | None = None,
-    seat_model_id: str | None = None,
+    part_id: Optional[str] = None,
+    seat_model_id: Optional[str] = None,
 )
 ```
 
@@ -395,5 +419,7 @@ PatchCore 模型中保存了训练时的上游 pipeline signature。运行时如
 - YOLO 模型文件。
 - PatchCore 模型文件。
 - Python、torch、torchvision、ultralytics 版本。
+
+LabVIEW 公共机建议固定 Python `3.8.5`，使用 CPU 版依赖，并在配置中设置 `backbone_device = cpu`。如果后续改用 GPU/CUDA，需要单独验证对应的 torch、torchvision 和驱动版本。
 
 上线后不要直接替换模型或配置。任何模型或 ROI 配置调整，都应先在离线样本集上回归验证。

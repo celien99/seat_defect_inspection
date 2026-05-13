@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from .core import CameraPipeline, InspectionService
 
 
-@dataclass(slots=True)
+@dataclass
 class RegionPatchCorePlan:
     """Deferred region PatchCore work for cross-camera batching."""
 
@@ -501,4 +501,3 @@ def _normalize_error_code(reason: str) -> str:
     normalized = reason.split(":", 1)[0].strip().lower()
     normalized = normalized.replace("-", "_").replace(" ", "_")
     return normalized or "unknown_error"
-

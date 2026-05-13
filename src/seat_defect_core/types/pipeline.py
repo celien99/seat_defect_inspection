@@ -8,7 +8,7 @@ from typing import Any
 from .geometry import BoundingBox
 
 
-@dataclass(slots=True)
+@dataclass
 class ImageQualityMetrics:
     """图像质量指标。"""
 
@@ -31,7 +31,7 @@ class ImageQualityMetrics:
     """是否判定为白帧。"""
 
 
-@dataclass(slots=True)
+@dataclass
 class ImageQualityDecision:
     """图像质量门控判定。"""
 
@@ -45,7 +45,7 @@ class ImageQualityDecision:
     """原始质量指标。"""
 
 
-@dataclass(slots=True)
+@dataclass
 class DetectionObject:
     """YOLO 输出的单个目标。"""
 
@@ -62,7 +62,7 @@ class DetectionObject:
     """目标分割掩膜；检测模型无 mask 时为空。"""
 
 
-@dataclass(slots=True)
+@dataclass
 class DetectionResult:
     """YOLO 检测结果。"""
 
@@ -73,7 +73,7 @@ class DetectionResult:
     """YOLO 输出的全部目标，主要用于调试。"""
 
 
-@dataclass(slots=True)
+@dataclass
 class RoiRefineResult:
     """ROI 精修后的图像与掩膜集合。"""
 

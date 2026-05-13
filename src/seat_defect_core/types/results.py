@@ -9,7 +9,7 @@ from .geometry import BoundingBox
 from .pipeline import DetectionResult, ImageQualityDecision
 
 
-@dataclass(slots=True)
+@dataclass
 class TextureAnomalyResult:
     """纹理异常分支输出。"""
 
@@ -68,7 +68,7 @@ class TextureAnomalyResult:
     """最终命中的判定模式。"""
 
 
-@dataclass(slots=True)
+@dataclass
 class ColorAnomalyResult:
     """颜色一致性分支输出。"""
 
@@ -85,7 +85,7 @@ class ColorAnomalyResult:
     """颜色分支诊断指标。"""
 
 
-@dataclass(slots=True)
+@dataclass
 class InspectionError:
     """结构化错误，供外部系统稳定识别。"""
 
@@ -99,7 +99,7 @@ class InspectionError:
     """错误发生阶段。"""
 
 
-@dataclass(slots=True)
+@dataclass
 class RegionPatchCoreResult:
     """单个局部区域的 PatchCore 输出。"""
 
@@ -134,7 +134,7 @@ class RegionPatchCoreResult:
     """运行时复用的区域 ROI 样本，不参与公开序列化。"""
 
 
-@dataclass(slots=True)
+@dataclass
 class CameraInspectionResult:
     """单机位最终检测结果。"""
 
@@ -187,7 +187,7 @@ class CameraInspectionResult:
     """该机位结构化错误。"""
 
 
-@dataclass(slots=True)
+@dataclass
 class InspectionResult:
     """多机位融合后的整件检测结果。"""
 
@@ -216,7 +216,7 @@ class InspectionResult:
     """整件检测各阶段耗时，单位毫秒。"""
 
 
-@dataclass(slots=True)
+@dataclass
 class InspectionResponse:
     """core 对外返回的检测响应。"""
 

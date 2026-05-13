@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from os import PathLike
-from typing import Any
+from typing import Any, Union
 
 import cv2
 
@@ -11,7 +11,7 @@ from .config import InspectionConfig
 from .runtime_config import load_config
 from .types import InspectionFrame, InspectionResponse
 
-ConfigSource = str | PathLike[str] | InspectionConfig
+ConfigSource = Union[str, PathLike[str], InspectionConfig]
 
 
 class SeatDefectInspector:

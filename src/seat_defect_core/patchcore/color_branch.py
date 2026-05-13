@@ -13,7 +13,7 @@ from ..config import ColorBranchConfig
 from ..types import ColorAnomalyResult
 
 
-@dataclass(slots=True)
+@dataclass
 class ColorReferenceProfile:
     """单机位正常颜色分布。"""
 

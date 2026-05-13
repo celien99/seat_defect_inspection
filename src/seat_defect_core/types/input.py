@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 
-@dataclass(slots=True)
+@dataclass
 class FramePacket:
     """单机位内部帧数据，供相机检测 pipeline 使用。"""
 
@@ -35,7 +35,7 @@ class FramePacket:
     """当输入来自图片文件时保留原始路径。"""
 
 
-@dataclass(slots=True)
+@dataclass
 class InspectionFrame:
     """外部系统传入主检测流程的单机位图片。"""
 
