@@ -17,8 +17,8 @@
 ```mermaid
 flowchart LR
     A["原始图像 / 相机帧"] --> B["AcquisitionService<br/>采集并标准化成 FramePacket"]
-    B --> C["PreprocessEngine<br/>畸变校正、缩放、去噪、白平衡、光照归一、CLAHE、锐化"]
-    C --> D["DetectionService<br/>YOLO 分割检测 / fallback_box"]
+    B --> C["YOLO 检测/分割"]
+    C --> D["DetectionService<br/>YOLO 分割检测"]
     D --> E["RoiRefineEngine<br/>裁切 ROI、生成 target_mask / valid_mask、缩放对齐"]
     E --> F["ImageQualityGuard<br/>只在 valid_mask 前景内做质量门控"]
     F -->|通过| G["PatchCore 输入选择<br/>优先 texture_ready_image"]
@@ -65,52 +65,20 @@ flowchart LR
 
 ---
 
-### 2.2 预处理：把原始图变成更稳定的检测输入
+### 2.2 YOLO 检测：直接使用原始输入图
 
 实现位置：
 
-- `src/seat_defect_inspection/preprocess/engine.py`
+- `src/seat_defect_core/yolo/detection.py`
 
 执行顺序：
 
-1. 复制输入图像，避免原图被原地改写。
-2. 如果配置了相机内参与畸变参数，先做 `cv2.undistort(...)` 去畸变。
-3. 如果配置了 `resize_width / resize_height`，先统一尺寸。
-4. 去噪。
-5. 白平衡。
-6. 光照归一化。
-7. 可选锐化。
+1. `CameraPipeline.prepare_image(...)` 收到调用方传入的原始 BGR 图。
+2. `DetectionService.detect(...)` 直接对这张图做 YOLO 分割推理。
+3. YOLO 结果和原始图一起交给 `RoiRefineEngine.refine(...)`。
+4. ROI 从同一张原始输入图上裁出，并同步生成 mask。
 
-具体处理细节：
-
-
-| 处理项    | 实际做法                                                        |
-| ------ | ----------------------------------------------------------- |
-| 畸变校正   | 只有在同时配置 `camera_matrix` 和 `distortion_coeffs` 时才启用          |
-| Resize | 用 `cv2.INTER_AREA` 缩放到固定尺寸                                  |
-| 去噪     | 支持 `none`、`bilateral`、默认高斯模糊                                |
-| 白平衡    | 支持 `gray_world`；按三通道均值自动估计增益，并用 `max_white_balance_gain` 限幅 |
-| 光照校正   | 先转 LAB，只处理 `L` 通道；可通过大核高斯模糊估计背景光照，再做亮度拉平                    |
-| CLAHE  | 仍然只作用于 `L` 通道，增强局部对比度                                       |
-| Gamma  | 可选查表变换                                                      |
-| 锐化     | 可选 `unsharp mask`                                           |
-
-
-当前示例配置 `configs/seat_defect_inspection.mvs.json` 中，5 路相机都基本采用：
-
-- `denoise_method = gaussian`  降噪模式
-- `gaussian_kernel_size = 5`   核大小 5 x 5
-- `white_balance_method = gray_world`  白平衡
-- `max_white_balance_gain = 1.2`
-- `apply_illumination_correction = true`
-- `illumination_blur_kernel_size = 51`
-- `illumination_strength = 0.65`
-- `apply_clahe = true`
-- `clahe_clip_limit = 2.0`
-- `clahe_tile_grid_size = 8`
-- `sharpen = false`
-
-这一阶段的输出是 `preprocessed_image`。YOLO、ROI 裁切、训练流程后续都使用这张预处理后的图，而不是原图。
+YOLO、ROI 裁切、训练流程后续都直接使用调用方传入的原始图。
 
 ---
 
@@ -118,7 +86,7 @@ flowchart LR
 
 实现位置：
 
-- `src/seat_defect_inspection/yolo/detection.py`
+- `src/seat_defect_core/yolo/detection.py`
 
 处理内容：
 
@@ -127,7 +95,7 @@ flowchart LR
 - 从所有检测框中：
   - 取 `target_class` 里置信度最高的一个作为主目标 `target`
   - 其余检测结果只保留在 `all_objects` 里用于调试观察，不再参与 ROI 忽略物管理
-- 如果没有 `model_path`，就退化成 `fallback_box` 静态框模式。
+- 如果没有配置 `model_path`，或 YOLO 没有输出目标，本次输入会返回 `target_not_found`。
 
 当前示例配置中：
 
@@ -150,8 +118,8 @@ YOLO 对图像做的事情本质上不是增强，而是“定位”：
 
 实现位置：
 
-- `src/seat_defect_inspection/cvops/roi.py`
-- `src/seat_defect_inspection/cvops/roi_geometry.py`
+- `src/seat_defect_core/cvops/roi.py`
+- `src/seat_defect_core/cvops/roi_geometry.py`
 
 这一步是整条链路里对图像“重塑”最明显的阶段。
 
@@ -159,7 +127,7 @@ YOLO 对图像做的事情本质上不是增强，而是“定位”：
 
 1. 确定裁切基准框。
 2. 扩框或缩框。
-3. 从预处理图上裁出 ROI。
+3. 从原始输入图上裁出 ROI。
 4. 构造前景掩码 `target_mask`。
 5. 把 ROI 和 `target_mask` 一起缩放到统一输出尺寸。
 6. 构造真正参与异常检测的 `valid_mask`。
@@ -247,7 +215,7 @@ valid_mask = target_mask > 0
 
 实现位置：
 
-- `src/seat_defect_inspection/cvops/quality.py`
+- `src/seat_defect_core/cvops/quality.py`
 
 质量检测不是在整张原图上做，而是在：
 
@@ -321,9 +289,9 @@ roi.texture_ready_image if roi.texture_ready_image is not None else roi.aligned_
 
 实现位置：
 
-- `src/seat_defect_inspection/patchcore/engine.py`
-- `src/seat_defect_inspection/patchcore/features.py`
-- `src/seat_defect_inspection/patchcore/scoring.py`
+- `src/seat_defect_core/patchcore/engine.py`
+- `src/seat_defect_core/patchcore/features.py`
+- `src/seat_defect_core/patchcore/scoring.py`
 
 当前示例配置使用：
 
@@ -482,7 +450,7 @@ PatchCore 最终不是只看一个 `score > threshold`，而是综合多组证�
 
 实现位置：
 
-- `src/seat_defect_inspection/patchcore/color_branch.py`
+- `src/seat_defect_core/patchcore/color_branch.py`
 
 只有满足下面 3 个条件时才会执行：
 
@@ -521,11 +489,11 @@ PatchCore 最终不是只看一个 `score > threshold`，而是综合多组证�
 
 实现位置：
 
-- `src/seat_defect_inspection/service/inspection_camera.py`
+- `src/seat_defect_core/service/inspection_camera.py`
 
 判定顺序：
 
-1. 预处理 / 检测 / ROI / 质量门控失败
+1. 检测 / ROI / 质量门控失败
   - `REJECT`
 2. PatchCore 有效 patch 比例太低
   - `REJECT`
@@ -554,17 +522,16 @@ PatchCore 最终不是只看一个 `score > threshold`，而是综合多组证�
 
 实现位置：
 
-- `src/seat_defect_inspection/fusion.py`
-- `src/seat_defect_inspection/service/inspection.py`
+- `src/seat_defect_core/fusion.py`
+- `src/seat_defect_core/service/inspection.py`
 
 融合逻辑分两层。
 
-#### 2.10.1 在线循环中的早停
+#### 2.10.1 在线循环
 
 当前示例配置：
 
 - `ng_strategy = any`
-- `early_stop_on_ng = false`
 - `reject_on_any_reject = true`
 - `defect_overrides_reject = true`
 
@@ -574,7 +541,7 @@ PatchCore 最终不是只看一个 `score > threshold`，而是综合多组证�
 - 系统仍然会继续跑完剩余机位
 - 最终报告会保留整件所有机位结果，方便现场复盘
 
-现在 `inspect` 的采图阶段已经前置为并发屏障：所有启用机位会先完成采图并释放采集资源，之后才按机位顺序进入预处理、YOLO、ROI、PatchCore 和颜色分支。若未来把 `early_stop_on_ng` 打开，早停只会跳过后续机位的算法检测，不再跳过采图。
+现在 `inspect` 的采图阶段已经前置为并发屏障：所有启用机位会先完成采图并释放采集资源，之后才按机位顺序进入 YOLO、ROI、PatchCore 和颜色分支。
 
 也就是说，在当前配置下：
 
@@ -621,10 +588,9 @@ PatchCore 最终不是只看一个 `score > threshold`，而是综合多组证�
 
 实现位置：
 
-- `src/seat_defect_inspection/cvops/debug_artifacts.py`
-- `src/seat_defect_inspection/debug_artifacts.py`
+- `src/seat_defect_core/cvops/debug_artifacts.py`
 
-只要 `save_debug_artifacts = true`，每个机位都会按：
+只要 `debug_artifacts_enabled = true`，每个机位都会按：
 
 ```text
 debug_dir / seat_model_id / part_id / camera_id / frame_id /
@@ -632,32 +598,13 @@ debug_dir / seat_model_id / part_id / camera_id / frame_id /
 
 落盘调试图。
 
-### 3.1 `standard` 档位
+### 3.1 默认调试图集合
 
-当前示例配置就是：
+当前调试图集合只输出一张机位级图片：
 
-- `debug_artifact_mode = standard`
-
-会输出：
-
-- `raw.png`
-- `detections.png`
-- `roi.png`
-- `patchcore_input.png`
 - `overlay.png`
 
-### 3.2 `full` 档位
-
-如果切到 `full`，会额外输出：
-
-- `preprocessed.png`
-- `roi_texture.png`
-- `foreground_weight.png`
-- `target_mask.png`
-- `valid_mask.png`
-- `heatmap.png`
-
-这些文件对于向用户解释“每一步到底对图做了什么”非常有帮助。
+`overlay.png` 会把最终 PatchCore 热力图叠加回原始输入图尺寸。region 模式下会先把多个 region 的热力图拼回该机位的完整 ROI，再还原到原图坐标系后输出同一张 `overlay.png`。报告和 API 返回里的 `artifact_paths` 也只暴露这张图。
 
 ---
 
@@ -665,7 +612,7 @@ debug_dir / seat_model_id / part_id / camera_id / frame_id /
 
 实现位置：
 
-- `src/seat_defect_inspection/reporting.py`
+- `src/seat_defect_core/reporting.py`
 
 输出 JSON 包含：
 
@@ -738,7 +685,7 @@ prepare_image -> PatchCore / color -> camera result -> fusion -> report
 `train-patchcore` 不会直接拿原图训练，而是先让每张正常样本完整走一遍和线上一致的图像准备链路：
 
 ```text
-原图 -> preprocess -> YOLO -> ROI -> target_mask / valid_mask -> 透明 BGRA PatchCore 训练样本
+原图 -> YOLO -> ROI -> target_mask / valid_mask -> 透明 BGRA PatchCore 训练样本
 ```
 
 处理细节：
@@ -767,15 +714,14 @@ prepare_image -> PatchCore / color -> camera result -> fusion -> report
 
 | 分支 | 训练输入 | 是否先做 ROI 裁切 | 当前示例尺寸 |
 | --- | --- | --- | --- |
-| YOLO | 整图数据集，必要时先做与线上一致的 `preprocess` | 否 | `yolo_training.imgsz = 960` |
+| YOLO | 整图数据集 | 否 | `yolo_training.imgsz = 960` |
 | PatchCore | `prepare_image(...)` 产出的有效 ROI | 是 | `roi.alignment = 320 x 320`，`patchcore.image_size = 320` |
 
 具体来说：
 
 - `YOLO` 训练使用的是整图及其标注，不会先裁出 `320 x 320` 的 ROI 再训练。
-- `YOLO` 训练阶段如果启用了 `preprocess`，处理的也是整图数据集副本，而不是 ROI。
 - 当前示例配置里，YOLO 训练尺度是 `960`，这是 Ultralytics 训练时的 `imgsz`。
-- `PatchCore` 训练才会复用线上同款 `preprocess -> YOLO -> ROI -> target_mask / valid_mask -> 透明 BGRA 输入` 链路，因此它真正看到的是 ROI。
+- `PatchCore` 训练会复用线上同款 `YOLO -> ROI -> target_mask / valid_mask -> 透明 BGRA 输入` 链路，因此它真正看到的是 ROI。
 - 当前示例配置下，`PatchCore` 训练和推理的 ROI 尺度是一致的，都是围绕 `320` 展开的。
 
 ### 6.2 如果尺寸不一致，会不会导致结果不精确
@@ -826,7 +772,6 @@ prepare_image -> PatchCore / color -> camera result -> fusion -> report
 - `yolo_training.imgsz`
 - 数据集标注质量
 - 小目标样本占比
-- 预处理是否改变了标注可分辨性
 
 ---
 
@@ -841,7 +786,7 @@ prepare_image -> PatchCore / color -> camera result -> fusion -> report
   - `cam_3`
   - `cam_4`
 2. 在线 `inspect` 会先并发采集全部启用机位图像，采集完成后再逐机位进入算法链路。
-3. 所有机位都会先做 OpenCV 预处理，再做 YOLO 分割。
+3. 所有机位都会直接使用输入图做 YOLO 分割。
 4. YOLO 当前以座椅主体分割为主；其他检测结果保留在调试信息中，不再作为 ROI 忽略物管理入口。
 5. 真正进入 PatchCore 的不是整张图，而是：
   - 从目标区域裁出的 ROI
@@ -850,11 +795,11 @@ prepare_image -> PatchCore / color -> camera result -> fusion -> report
   - `valid_mask / ignore_mask` 继续控制有效 patch 筛选
 6. 当前默认使用 full CNN PatchCore，辅助纹理口径为亮度主导的 `lab_l`，重点看结构/纹理异常并弱化颜色波动。
 7. 当前颜色分支默认关闭，所以主判定主要由 PatchCore 纹理分支承担。
-8. 当前融合策略是一票 NG 即整件 NG；示例配置里 `early_stop_on_ng = false`，会跑完全部机位以便复盘。
+8. 当前融合策略是一票 NG 即整件 NG，并且会跑完全部机位以便复盘。
 
 一句话总结当前主流程：
 
-> 项目不是拿整张原图直接判缺陷，而是先把原图稳定化、定位化、ROI 化、掩码化，再把透明背景的有效前景送进 full PatchCore 做纹理异常判断，最后按多机位规则融合成整件结论。
+> 项目不是拿整张原图直接判缺陷，而是先用 YOLO 定位座椅，再做 ROI 化和掩码化，把透明背景的有效前景送进 full PatchCore 做纹理异常判断，最后按多机位规则融合成整件结论。
 
 ---
 
@@ -862,10 +807,8 @@ prepare_image -> PatchCore / color -> camera result -> fusion -> report
 
 推荐查看：
 
-- `tests/preprocess_before_yolo_demo.py`
-  - 演示原图到预处理图
 - `tests/pipeline_prepare_image_demo.py`
-  - 演示原图、预处理、检测、ROI、mask、PatchCore 输入
+  - 演示原图、检测、ROI、mask、PatchCore 输入
 - `outputs/.../debug/...`
   - 实际在线或离线检测时输出的调试图
 
@@ -877,18 +820,17 @@ prepare_image -> PatchCore / color -> camera result -> fusion -> report
 | 功能            | 代码位置                                                       |
 | ------------- | ---------------------------------------------------------- |
 | 采集            | `src/seat_defect_inspection/acquisition.py`                |
-| 单机位准备链路       | `src/seat_defect_inspection/service/core.py`               |
-| 在线检测编排        | `src/seat_defect_inspection/service/inspection.py`         |
-| 单机位判定         | `src/seat_defect_inspection/service/inspection_camera.py`  |
+| 单机位准备链路       | `src/seat_defect_core/service/core.py`                     |
+| 在线检测编排        | `src/seat_defect_core/service/inspection.py`               |
+| 单机位判定         | `src/seat_defect_core/service/inspection_camera.py`        |
 | 离线批量检测        | `src/seat_defect_inspection/service/offline_inspection.py` |
-| 预处理           | `src/seat_defect_inspection/preprocess/engine.py`          |
-| YOLO 检测       | `src/seat_defect_inspection/yolo/detection.py`             |
-| ROI 精修        | `src/seat_defect_inspection/cvops/roi.py`                  |
-| 质量门控          | `src/seat_defect_inspection/cvops/quality.py`              |
-| PatchCore 主流程 | `src/seat_defect_inspection/patchcore/engine.py`           |
-| Patch 特征      | `src/seat_defect_inspection/patchcore/features.py`         |
-| Patch 判定规则    | `src/seat_defect_inspection/patchcore/scoring.py`          |
-| 颜色分支          | `src/seat_defect_inspection/patchcore/color_branch.py`     |
-| 多机位融合         | `src/seat_defect_inspection/fusion.py`                     |
-| 报告输出          | `src/seat_defect_inspection/reporting.py`                  |
-| 调试图输出         | `src/seat_defect_inspection/cvops/debug_artifacts.py`      |
+| YOLO 检测       | `src/seat_defect_core/yolo/detection.py`                   |
+| ROI 精修        | `src/seat_defect_core/cvops/roi.py`                        |
+| 质量门控          | `src/seat_defect_core/cvops/quality.py`                    |
+| PatchCore 主流程 | `src/seat_defect_core/patchcore/engine.py`                 |
+| Patch 特征      | `src/seat_defect_core/patchcore/features.py`               |
+| Patch 判定规则    | `src/seat_defect_core/patchcore/scoring.py`                |
+| 颜色分支          | `src/seat_defect_core/patchcore/color_branch.py`           |
+| 多机位融合         | `src/seat_defect_core/fusion.py`                           |
+| 报告输出          | `src/seat_defect_core/reporting.py`                        |
+| 调试图输出         | `src/seat_defect_core/cvops/debug_artifacts.py`            |

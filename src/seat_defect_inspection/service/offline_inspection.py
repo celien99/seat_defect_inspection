@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Any
 
 from seat_defect_core.util import write_json
 
-from ..reporting import resolve_inspection_archive_path
 from .inspection import run_inspection
 
 if TYPE_CHECKING:
@@ -78,13 +77,12 @@ def inspect_image_folder(
                 part_id=sample.part_id,
                 seat_model_id=seat_model_id,
             )
-            archive_path = resolve_inspection_archive_path(latest_output_path, result)
             records.append(
                 {
                     "part_id": sample.part_id,
                     "status": result.status,
                     "decision_reason": result.decision_reason,
-                    "report_path": str(archive_path),
+                    "report_path": str(latest_output_path),
                     "camera_sources": dict(sample.source_map),
                 }
             )

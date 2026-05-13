@@ -8,11 +8,10 @@ from seat_defect_core.config import (
     DetectionConfig,
     FusionConfig,
     PatchCoreConfig,
-    PreprocessConfig,
     QualityGuardConfig,
     RoiRefineConfig,
 )
-from seat_defect_core.schemas import BoundingBox, InspectionResult
+from seat_defect_core.types import BoundingBox, InspectionResult
 
 from .config import (
     CameraConfig,
@@ -36,7 +35,6 @@ __all__ = [
     "InspectionResult",
     "InspectionService",
     "PatchCoreConfig",
-    "PreprocessConfig",
     "QualityGuardConfig",
     "RoiRefineConfig",
     "SeatModelConfig",

@@ -1,12 +1,9 @@
-"""Load SDK runtime configuration from JSON."""
+"""Load core inspect runtime configuration from JSON or INI."""
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-from typing import Any
-
-from .config import CameraConfig, InspectionConfig
+from .config import CameraConfig, InspectionConfig, PatchCoreConfig
+from .config_file import load_inspection_payload
 from .runtime_config_parsers import _parse_inspection_config
 
 _SUPPORTED_PATCHCORE_BACKENDS = {"full"}
@@ -14,25 +11,13 @@ _SUPPORTED_PATCHCORE_BACKENDS = {"full"}
 
 def load_config(path: str) -> InspectionConfig:
     """加载缺陷检测主配置。"""
-    config_dir, inspection_payload = _load_inspection_payload(path)
+    config_dir, inspection_payload = load_inspection_payload(path)
     config = _parse_inspection_config(inspection_payload, config_dir)
-    _validate_inspection_config(config)
+    validate_inspection_config(config)
     return config
 
 
-def _load_inspection_payload(path: str) -> tuple[Path, dict[str, Any]]:
-    """读取配置文件并定位 seat_defect_inspection 顶层 payload。"""
-    config_path = Path(path).resolve()
-    payload = json.loads(config_path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise TypeError(f"配置文件顶层必须是对象：{config_path}")
-    inspection_payload = payload.get("seat_defect_inspection", payload)
-    if not isinstance(inspection_payload, dict):
-        raise TypeError(f"`seat_defect_inspection` 必须是对象：{config_path}")
-    return config_path.parent, inspection_payload
-
-
-def _validate_inspection_config(config: InspectionConfig) -> None:
+def validate_inspection_config(config: InspectionConfig) -> None:
     """做整体验证，确保配置在进入主流程前就失败得足够早。"""
     if config.default_seat_model_id and config.seat_models:
         available_ids = {item.seat_model_id for item in config.seat_models}
@@ -51,6 +36,9 @@ def _validate_inspection_config(config: InspectionConfig) -> None:
         )
 
 
+_validate_inspection_config = validate_inspection_config
+
+
 def _validate_camera_configs(cameras: list[CameraConfig], *, scope: str) -> None:
     """检查机位 ID 冲突，并校验 PatchCore 后端约束。"""
     duplicates: set[str] = set()
@@ -66,23 +54,52 @@ def _validate_camera_configs(cameras: list[CameraConfig], *, scope: str) -> None
 
     for camera in cameras:
         _validate_patchcore_config(camera, scope=scope)
+        _validate_region_configs(camera, scope=scope)
 
 
 def _validate_patchcore_config(camera: CameraConfig, *, scope: str) -> None:
     """校验 PatchCore 后端选择与权重配置是否匹配。"""
-    backend = camera.patchcore.backend.strip().lower()
+    _validate_patchcore_backend(
+        camera.patchcore,
+        scope=f"{scope} 中 camera `{camera.camera_id}`",
+    )
+
+
+def _validate_region_configs(camera: CameraConfig, *, scope: str) -> None:
+    """校验单机位内局部区域配置。"""
+    duplicates: set[str] = set()
+    seen: set[str] = set()
+    for region in camera.regions:
+        if region.region_id in seen:
+            duplicates.add(region.region_id)
+        else:
+            seen.add(region.region_id)
+        if region.patchcore is not None:
+            _validate_patchcore_backend(
+                region.patchcore,
+                scope=(
+                    f"{scope} 中 camera `{camera.camera_id}` "
+                    f"region `{region.region_id}`"
+                ),
+            )
+    if duplicates:
+        duplicated_ids = ", ".join(f"`{region_id}`" for region_id in sorted(duplicates))
+        raise ValueError(f"{scope} 中 camera `{camera.camera_id}` 存在重复 region_id: {duplicated_ids}")
+
+
+def _validate_patchcore_backend(config: PatchCoreConfig, *, scope: str) -> None:
+    backend = config.backend.strip().lower()
     if backend not in _SUPPORTED_PATCHCORE_BACKENDS:
         supported = ", ".join(sorted(_SUPPORTED_PATCHCORE_BACKENDS))
         raise ValueError(
-            f"{scope} 中 camera `{camera.camera_id}` 的 patchcore.backend "
-            f"`{camera.patchcore.backend}` 不受支持，可选值: {supported}"
+            f"{scope} 的 patchcore.backend `{config.backend}` 不受支持，可选值: {supported}"
         )
     if backend != "full":
         return
-    if camera.patchcore.backbone_pretrained or camera.patchcore.backbone_weights_path:
+    if config.backbone_pretrained or config.backbone_weights_path:
         return
     raise ValueError(
-        f"{scope} 中 camera `{camera.camera_id}` 配置了 patchcore.backend=full，"
+        f"{scope} 配置了 patchcore.backend=full，"
         "但没有提供可用 backbone 权重。"
         " 请设置 patchcore.backbone_pretrained=true，"
         "或配置 patchcore.backbone_weights_path。"

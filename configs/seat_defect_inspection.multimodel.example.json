@@ -4,12 +4,10 @@
     "default_seat_model_id": "seat_model_a",
     "output_json_path": "../outputs/seat_defect_inspection/multimodel_results.json",
     "debug_dir": "../outputs/seat_defect_inspection/multimodel_debug",
-    "capture_dir": "../outputs/seat_defect_inspection/multimodel_capture",
-    "capture_retries": 3,
+    "debug_artifacts_enabled": false,
     "fusion": {
       "reject_on_any_reject": true,
       "ng_strategy": "any",
-      "early_stop_on_ng": false,
       "defect_overrides_reject": true
     },
     "seat_models": [
@@ -18,40 +16,24 @@
         "display_name": "座椅型号A",
         "yolo_training": {
           "model_path": "yolo11m-seg.pt",
-          "data_config_path": "../datasets/seat_defect/seat_defect.yaml",
-          "epochs": 100,
-          "imgsz": 1280,
-          "batch": 8,
-          "device": "cpu",
-          "project": "../outputs/seat_defect_inspection/yolo_training",
+          "data_config_path": "../configs/seat_defect_yolo.dataset.example.yaml",
+          "project": "../outputs/yolo_training",
           "name": "seat_model_a"
         },
         "cameras": [
           {
             "camera_id": "cam_front",
             "source": "mvs://sn/REPLACE_MODEL_A_CAM_FRONT?timeout_ms=1000",
-            "train_good_dir": "../data/seat_defect_inspection/seat_model_a/cam_front/train/good",
             "patchcore_model_path": "../models/seat_defect_inspection/seat_model_a/cam_front_patchcore.npz",
             "color_insensitive_mode": true,
-            "preprocess": {
-              "white_balance_method": "gray_world",
-              "max_white_balance_gain": 1.2,
-              "apply_illumination_correction": true,
-              "illumination_blur_kernel_size": 51,
-              "illumination_strength": 0.65
-            },
             "detection": {
               "model_path": "../models/seat_defect_inspection/yolo/seat_model_a_best.pt",
               "target_class": "seat",
-              "fallback_box": {
-                "x1": 900.0,
-                "y1": 280.0,
-                "x2": 2600.0,
-                "y2": 2400.0
-              }
+              "imgsz": 960
             },
             "roi": {
               "crop_expand_ratio": 0.02,
+              "mask_erode_pixels": 1,
               "edge_ignore_pixels": 4,
               "alignment": {
                 "output_width": 256,
@@ -74,7 +56,39 @@
             },
             "color_branch": {
               "enabled": false
-            }
+            },
+            "regions": [
+              {
+                "region_id": "upper",
+                "box": [
+                  0.03,
+                  0.03,
+                  0.97,
+                  0.42
+                ],
+                "patchcore_model_path": "../models/seat_defect_inspection/seat_model_a/cam_front_upper_patchcore.npz"
+              },
+              {
+                "region_id": "middle",
+                "box": [
+                  0.03,
+                  0.33,
+                  0.97,
+                  0.74
+                ],
+                "patchcore_model_path": "../models/seat_defect_inspection/seat_model_a/cam_front_middle_patchcore.npz"
+              },
+              {
+                "region_id": "lower",
+                "box": [
+                  0.03,
+                  0.66,
+                  0.97,
+                  0.97
+                ],
+                "patchcore_model_path": "../models/seat_defect_inspection/seat_model_a/cam_front_lower_patchcore.npz"
+              }
+            ]
           }
         ]
       },
@@ -83,40 +97,24 @@
         "display_name": "座椅型号B",
         "yolo_training": {
           "model_path": "yolo11m-seg.pt",
-          "data_config_path": "../datasets/seat_defect/seat_defect.yaml",
-          "epochs": 100,
-          "imgsz": 1280,
-          "batch": 8,
-          "device": "cpu",
-          "project": "../outputs/seat_defect_inspection/yolo_training",
+          "data_config_path": "../configs/seat_defect_yolo.dataset.example.yaml",
+          "project": "../outputs/yolo_training",
           "name": "seat_model_b"
         },
         "cameras": [
           {
             "camera_id": "cam_front",
             "source": "mvs://sn/REPLACE_MODEL_B_CAM_FRONT?timeout_ms=1000",
-            "train_good_dir": "../data/seat_defect_inspection/seat_model_b/cam_front/train/good",
             "patchcore_model_path": "../models/seat_defect_inspection/seat_model_b/cam_front_patchcore.npz",
             "color_insensitive_mode": true,
-            "preprocess": {
-              "white_balance_method": "gray_world",
-              "max_white_balance_gain": 1.2,
-              "apply_illumination_correction": true,
-              "illumination_blur_kernel_size": 51,
-              "illumination_strength": 0.65
-            },
             "detection": {
               "model_path": "../models/seat_defect_inspection/yolo/seat_model_b_best.pt",
               "target_class": "seat",
-              "fallback_box": {
-                "x1": 860.0,
-                "y1": 260.0,
-                "x2": 2540.0,
-                "y2": 2360.0
-              }
+              "imgsz": 960
             },
             "roi": {
               "crop_expand_ratio": 0.02,
+              "mask_erode_pixels": 1,
               "edge_ignore_pixels": 4,
               "alignment": {
                 "output_width": 256,
@@ -139,7 +137,39 @@
             },
             "color_branch": {
               "enabled": false
-            }
+            },
+            "regions": [
+              {
+                "region_id": "upper",
+                "box": [
+                  0.03,
+                  0.03,
+                  0.97,
+                  0.42
+                ],
+                "patchcore_model_path": "../models/seat_defect_inspection/seat_model_b/cam_front_upper_patchcore.npz"
+              },
+              {
+                "region_id": "middle",
+                "box": [
+                  0.03,
+                  0.33,
+                  0.97,
+                  0.74
+                ],
+                "patchcore_model_path": "../models/seat_defect_inspection/seat_model_b/cam_front_middle_patchcore.npz"
+              },
+              {
+                "region_id": "lower",
+                "box": [
+                  0.03,
+                  0.66,
+                  0.97,
+                  0.97
+                ],
+                "patchcore_model_path": "../models/seat_defect_inspection/seat_model_b/cam_front_lower_patchcore.npz"
+              }
+            ]
           }
         ]
       }

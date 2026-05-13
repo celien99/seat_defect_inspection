@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -225,6 +226,7 @@ class _TorchPatchFeatureExtractor:
         if not self.layer_names:
             raise ValueError("完整 PatchCore 至少需要一个 feature_layers")
         self._features: dict[str, Any] = {}
+        self._lock = threading.Lock()
         self._handles = [
             _resolve_submodule(self.model, layer_name).register_forward_hook(self._make_hook(layer_name))
             for layer_name in self.layer_names
@@ -238,18 +240,20 @@ class _TorchPatchFeatureExtractor:
         ignore_mask: np.ndarray | None = None,
     ) -> tuple[np.ndarray, _PatchBatch]:
         """提取完整 PatchCore 使用的深度 embedding。"""
-        feature_image = _prepare_feature_image(image, target_mask=target_mask)
-        resized_image = cv2.resize(
-            feature_image,
-            (self.config.image_size, self.config.image_size),
-            interpolation=cv2.INTER_AREA,
-        )
-        input_tensor = _prepare_torch_input(resized_image, self.config).to(self.device)
-        with torch.inference_mode():
-            self._features.clear()
-            _ = self.model(input_tensor)
+        with self._lock:
+            feature_image = _prepare_feature_image(image, target_mask=target_mask)
+            resized_image = cv2.resize(
+                feature_image,
+                (self.config.image_size, self.config.image_size),
+                interpolation=cv2.INTER_AREA,
+            )
+            input_tensor = _prepare_torch_input(resized_image, self.config).to(self.device)
+            with torch.inference_mode():
+                self._features.clear()
+                _ = self.model(input_tensor)
 
-        feature_maps = [self._features[layer_name] for layer_name in self.layer_names]
+            feature_maps = [self._features[layer_name] for layer_name in self.layer_names]
+            feature_maps = [feature_map.detach() for feature_map in feature_maps]
         embedding_map = _generate_deep_embedding_map(feature_maps, self.config)
         _, _, grid_rows, grid_cols = embedding_map.shape
 
@@ -280,6 +284,75 @@ class _TorchPatchFeatureExtractor:
             valid_patch_count=int(valid_indices.size),
             total_patch_count=int(grid_rows * grid_cols),
         )
+
+    def extract_many(
+        self,
+        samples: list[tuple[np.ndarray, np.ndarray | None, np.ndarray | None]],
+    ) -> list[tuple[np.ndarray, _PatchBatch]]:
+        """提取同配置的多张 PatchCore 输入，复用一次 batch backbone 前向。"""
+        if not samples:
+            return []
+        with self._lock:
+            resized_images: list[np.ndarray] = []
+            for image, target_mask, _ignore_mask in samples:
+                feature_image = _prepare_feature_image(image, target_mask=target_mask)
+                resized_images.append(
+                    cv2.resize(
+                        feature_image,
+                        (self.config.image_size, self.config.image_size),
+                        interpolation=cv2.INTER_AREA,
+                    )
+                )
+
+            tensors = [
+                _prepare_torch_input(resized_image, self.config)
+                for resized_image in resized_images
+            ]
+            input_tensor = torch.cat(tensors, dim=0).to(self.device)
+            with torch.inference_mode():
+                self._features.clear()
+                _ = self.model(input_tensor)
+
+            feature_maps = [self._features[layer_name].detach() for layer_name in self.layer_names]
+
+        embedding_map = _generate_deep_embedding_map(feature_maps, self.config)
+        _, _, grid_rows, grid_cols = embedding_map.shape
+        embedding_array = embedding_map.detach().cpu().numpy()
+
+        results: list[tuple[np.ndarray, _PatchBatch]] = []
+        for index, (_image, target_mask, ignore_mask) in enumerate(samples):
+            target_grid = _resize_mask_to_grid(
+                target_mask,
+                grid_rows,
+                grid_cols,
+                interpolation=cv2.INTER_AREA,
+            )
+            ignore_grid = _resize_mask_to_grid(
+                ignore_mask,
+                grid_rows,
+                grid_cols,
+                interpolation=cv2.INTER_AREA,
+            )
+            valid_mask = np.logical_and(
+                target_grid >= float(self.config.min_target_coverage),
+                ignore_grid <= float(self.config.max_ignore_overlap),
+            )
+            valid_indices = np.flatnonzero(valid_mask.reshape(-1)).astype(np.int32)
+            sample_embedding = embedding_array[index]
+            flattened = np.moveaxis(sample_embedding, 0, -1).reshape(-1, sample_embedding.shape[0])
+            embeddings = flattened[valid_indices].astype(np.float32)
+            results.append(
+                (
+                    embeddings,
+                    _PatchBatch(
+                        grid_shape=(grid_rows, grid_cols),
+                        valid_indices=valid_indices,
+                        valid_patch_count=int(valid_indices.size),
+                        total_patch_count=int(grid_rows * grid_cols),
+                    ),
+                )
+            )
+        return results
 
     def _make_hook(self, layer_name: str):
         """保存中间层输出，供 embedding 拼接使用。"""

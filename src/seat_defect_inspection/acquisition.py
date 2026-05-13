@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from media_inputs import infer_source_kind, load_image_frame, open_frame_stream
-from seat_defect_core.schemas import FramePacket
+from seat_defect_core.types import FramePacket
 
 
 class AcquisitionService:

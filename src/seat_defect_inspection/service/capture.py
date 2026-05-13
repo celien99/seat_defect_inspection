@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from media_inputs import infer_source_kind
-from seat_defect_core.schemas import FramePacket
+from seat_defect_core.types import FramePacket
 from seat_defect_core.util import build_model_scoped_root, write_image
 
 from ..config import CameraConfig

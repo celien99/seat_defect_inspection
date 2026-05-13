@@ -15,7 +15,7 @@ def register_capture_command(subparsers) -> None:
         help="从全部启用机位抓取一帧或多帧并保存",
     )
     parser.set_defaults(run=run_capture_command)
-    add_config_argument(parser, help_text="缺陷检测配置 JSON 路径")
+    add_config_argument(parser, help_text="缺陷检测配置 JSON/INI 路径")
     parser.add_argument(
         "--part-id",
         help="本次采图的部件编号，可覆盖配置中的默认值",

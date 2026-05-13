@@ -3,57 +3,52 @@
     "part_id": "seat_production",
     "output_json_path": "../outputs/seat_defect_inspection/mvs_results.json",
     "debug_dir": "../outputs/seat_defect_inspection/mvs_debug",
-    "capture_dir": "../outputs/seat_defect_inspection/mvs_capture",
-    "capture_retries": 3,
+    "debug_artifacts_enabled": true,
     "fusion": {
       "reject_on_any_reject": true,
       "ng_strategy": "any",
-      "early_stop_on_ng": false,
       "defect_overrides_reject": true
+    },
+    "yolo_training": {
+      "model_path": "../yolo11m-seg.pt",
+      "data_config_path": "../datasets/seat_defect/seat_defect.yaml",
+      "epochs": 100,
+      "imgsz": 1280,
+      "batch": 8,
+      "device": "0",
+      "project": "../outputs/seat_defect_inspection/yolo_training",
+      "name": "seat_defect",
+      "workers": 4,
+      "patience": 20,
+      "cache": false,
+      "pretrained": true
     },
     "cameras": [
       {
         "camera_id": "cam_0",
         "source": "mvs://sn/DA9184658?timeout_ms=1000&exposure_auto=off&exposure_time=8000",
-        "train_good_dir": "../data/seat_defect_inspection/cam_0/train/good",
         "patchcore_model_path": "../models/seat_defect_inspection/cam_0_patchcore.npz",
+        "train_good_dir": "../data/seat_defect_inspection/cam_0/train/good",
         "color_insensitive_mode": false,
         "quality": {
-          "min_laplacian_variance": 80.0,
-          "min_brightness_mean": 30.0,
-          "max_brightness_mean": 225.0,
+          "min_laplacian_variance": 80,
+          "min_brightness_mean": 30,
+          "max_brightness_mean": 225,
           "max_overexposed_ratio": 0.25,
           "max_underexposed_ratio": 0.35
-        },
-        "preprocess": {
-          "denoise_method": "gaussian",
-          "gaussian_kernel_size": 5,
-          "white_balance_method": "gray_world",
-          "max_white_balance_gain": 1.2,
-          "apply_illumination_correction": true,
-          "illumination_blur_kernel_size": 51,
-          "illumination_strength": 0.65,
-          "apply_clahe": true,
-          "clahe_clip_limit": 2.0,
-          "clahe_tile_grid_size": 8,
-          "sharpen": false
         },
         "detection": {
           "model_path": "../best.pt",
           "target_class": "seat",
           "confidence": 0.35,
           "iou": 0.45,
-          "device": "cpu",
-          "fallback_box": {
-            "x1": 1116.0,
-            "y1": 332.0,
-            "x2": 2722.0,
-            "y2": 2911.0
-          }
+          "imgsz": 960,
+          "device": "cuda:0"
         },
         "roi": {
           "crop_expand_ratio": 0.04,
-          "crop_shrink_ratio": 0.0,
+          "crop_shrink_ratio": 0,
+          "mask_erode_pixels": 1,
           "edge_ignore_pixels": 4,
           "alignment": {
             "output_width": 384,
@@ -75,64 +70,64 @@
           "min_target_coverage": 0.55,
           "max_ignore_overlap": 0.15,
           "min_valid_patch_ratio": 0.35,
-          "decision_score_margin": 1.0,
+          "decision_score_margin": 1,
           "strong_patch_score_ratio": 0.8,
           "min_strong_patch_count": 2,
           "min_strong_component_count": 1,
           "min_strong_patch_ratio": 0.004,
           "min_strong_component_ratio": 0.002,
-          "critical_score_margin": 1.0,
+          "critical_score_margin": 1,
           "critical_peak_score_margin": 1.05,
           "critical_min_component_patch_count": 2
         },
         "color_branch": {
-          "enabled": true,
+          "enabled": false,
           "threshold_quantile": 0.97,
           "min_valid_pixel_ratio": 0.3
-        }
+        },
+        "regions": [
+          {
+            "region_id": "upper",
+            "box": [0.03, 0.03, 0.97, 0.42],
+            "patchcore_model_path": "../models/seat_defect_inspection/cam_0_upper_patchcore.npz"
+          },
+          {
+            "region_id": "middle",
+            "box": [0.03, 0.33, 0.97, 0.74],
+            "patchcore_model_path": "../models/seat_defect_inspection/cam_0_middle_patchcore.npz"
+          },
+          {
+            "region_id": "lower",
+            "box": [0.03, 0.66, 0.97, 0.97],
+            "patchcore_model_path": "../models/seat_defect_inspection/cam_0_lower_patchcore.npz"
+          }
+        ]
       },
       {
         "camera_id": "cam_1",
         "source": "mvs://sn/DA9184675?timeout_ms=1000&exposure_auto=off&exposure_time=8000",
-        "train_good_dir": "../data/seat_defect_inspection/cam_1/train/good",
         "patchcore_model_path": "../models/seat_defect_inspection/cam_1_patchcore.npz",
+        "train_good_dir": "../data/seat_defect_inspection/cam_1/train/good",
         "color_insensitive_mode": false,
         "quality": {
-          "min_laplacian_variance": 80.0,
-          "min_brightness_mean": 30.0,
-          "max_brightness_mean": 225.0,
+          "min_laplacian_variance": 80,
+          "min_brightness_mean": 30,
+          "max_brightness_mean": 225,
           "max_overexposed_ratio": 0.25,
           "max_underexposed_ratio": 0.35
-        },
-        "preprocess": {
-          "denoise_method": "gaussian",
-          "gaussian_kernel_size": 5,
-          "white_balance_method": "gray_world",
-          "max_white_balance_gain": 1.2,
-          "apply_illumination_correction": true,
-          "illumination_blur_kernel_size": 51,
-          "illumination_strength": 0.65,
-          "apply_clahe": true,
-          "clahe_clip_limit": 2.0,
-          "clahe_tile_grid_size": 8,
-          "sharpen": false
         },
         "detection": {
           "model_path": "../best.pt",
           "target_class": "seat",
           "confidence": 0.35,
           "iou": 0.45,
-          "device": "cpu",
-          "fallback_box": {
-            "x1": 1184.0,
-            "y1": 292.0,
-            "x2": 2601.0,
-            "y2": 2165.0
-          }
+          "imgsz": 960,
+          "device": "cuda:0"
         },
         "roi": {
           "crop_expand_ratio": 0.04,
-          "crop_shrink_ratio": 0.0,
+          "crop_shrink_ratio": 0,
+          "mask_erode_pixels": 1,
           "edge_ignore_pixels": 4,
           "alignment": {
             "output_width": 384,
@@ -154,64 +149,64 @@
           "min_target_coverage": 0.55,
           "max_ignore_overlap": 0.15,
           "min_valid_patch_ratio": 0.35,
-          "decision_score_margin": 1.0,
+          "decision_score_margin": 1,
           "strong_patch_score_ratio": 0.8,
           "min_strong_patch_count": 2,
           "min_strong_component_count": 1,
           "min_strong_patch_ratio": 0.004,
           "min_strong_component_ratio": 0.002,
-          "critical_score_margin": 1.0,
+          "critical_score_margin": 1,
           "critical_peak_score_margin": 1.05,
           "critical_min_component_patch_count": 2
         },
         "color_branch": {
-          "enabled": true,
+          "enabled": false,
           "threshold_quantile": 0.97,
           "min_valid_pixel_ratio": 0.3
-        }
+        },
+        "regions": [
+          {
+            "region_id": "upper",
+            "box": [0.03, 0.03, 0.97, 0.42],
+            "patchcore_model_path": "../models/seat_defect_inspection/cam_1_upper_patchcore.npz"
+          },
+          {
+            "region_id": "middle",
+            "box": [0.03, 0.33, 0.97, 0.74],
+            "patchcore_model_path": "../models/seat_defect_inspection/cam_1_middle_patchcore.npz"
+          },
+          {
+            "region_id": "lower",
+            "box": [0.03, 0.66, 0.97, 0.97],
+            "patchcore_model_path": "../models/seat_defect_inspection/cam_1_lower_patchcore.npz"
+          }
+        ]
       },
       {
         "camera_id": "cam_2",
         "source": "mvs://sn/DA9184671?timeout_ms=1000&exposure_auto=off&exposure_time=8000",
-        "train_good_dir": "../data/seat_defect_inspection/cam_2/train/good",
         "patchcore_model_path": "../models/seat_defect_inspection/cam_2_patchcore.npz",
+        "train_good_dir": "../data/seat_defect_inspection/cam_2/train/good",
         "color_insensitive_mode": false,
         "quality": {
-          "min_laplacian_variance": 80.0,
-          "min_brightness_mean": 30.0,
-          "max_brightness_mean": 225.0,
+          "min_laplacian_variance": 80,
+          "min_brightness_mean": 30,
+          "max_brightness_mean": 225,
           "max_overexposed_ratio": 0.25,
           "max_underexposed_ratio": 0.35
-        },
-        "preprocess": {
-          "denoise_method": "gaussian",
-          "gaussian_kernel_size": 5,
-          "white_balance_method": "gray_world",
-          "max_white_balance_gain": 1.2,
-          "apply_illumination_correction": true,
-          "illumination_blur_kernel_size": 51,
-          "illumination_strength": 0.65,
-          "apply_clahe": true,
-          "clahe_clip_limit": 2.0,
-          "clahe_tile_grid_size": 8,
-          "sharpen": false
         },
         "detection": {
           "model_path": "../best.pt",
           "target_class": "seat",
           "confidence": 0.35,
           "iou": 0.45,
-          "device": "cpu",
-          "fallback_box": {
-            "x1": 1158.0,
-            "y1": 289.0,
-            "x2": 2912.0,
-            "y2": 2484.0
-          }
+          "imgsz": 960,
+          "device": "cuda:0"
         },
         "roi": {
           "crop_expand_ratio": 0.04,
-          "crop_shrink_ratio": 0.0,
+          "crop_shrink_ratio": 0,
+          "mask_erode_pixels": 1,
           "edge_ignore_pixels": 4,
           "alignment": {
             "output_width": 384,
@@ -233,64 +228,64 @@
           "min_target_coverage": 0.55,
           "max_ignore_overlap": 0.15,
           "min_valid_patch_ratio": 0.35,
-          "decision_score_margin": 1.0,
+          "decision_score_margin": 1,
           "strong_patch_score_ratio": 0.8,
           "min_strong_patch_count": 2,
           "min_strong_component_count": 1,
           "min_strong_patch_ratio": 0.004,
           "min_strong_component_ratio": 0.002,
-          "critical_score_margin": 1.0,
+          "critical_score_margin": 1,
           "critical_peak_score_margin": 1.05,
           "critical_min_component_patch_count": 2
         },
         "color_branch": {
-          "enabled": true,
+          "enabled": false,
           "threshold_quantile": 0.97,
           "min_valid_pixel_ratio": 0.3
-        }
+        },
+        "regions": [
+          {
+            "region_id": "upper",
+            "box": [0.03, 0.03, 0.97, 0.42],
+            "patchcore_model_path": "../models/seat_defect_inspection/cam_2_upper_patchcore.npz"
+          },
+          {
+            "region_id": "middle",
+            "box": [0.03, 0.33, 0.97, 0.74],
+            "patchcore_model_path": "../models/seat_defect_inspection/cam_2_middle_patchcore.npz"
+          },
+          {
+            "region_id": "lower",
+            "box": [0.03, 0.66, 0.97, 0.97],
+            "patchcore_model_path": "../models/seat_defect_inspection/cam_2_lower_patchcore.npz"
+          }
+        ]
       },
       {
         "camera_id": "cam_3",
         "source": "mvs://sn/DA9184680?timeout_ms=1000&exposure_auto=off&exposure_time=8000",
-        "train_good_dir": "../data/seat_defect_inspection/cam_3/train/good",
         "patchcore_model_path": "../models/seat_defect_inspection/cam_3_patchcore.npz",
+        "train_good_dir": "../data/seat_defect_inspection/cam_3/train/good",
         "color_insensitive_mode": false,
         "quality": {
-          "min_laplacian_variance": 80.0,
-          "min_brightness_mean": 30.0,
-          "max_brightness_mean": 225.0,
+          "min_laplacian_variance": 80,
+          "min_brightness_mean": 30,
+          "max_brightness_mean": 225,
           "max_overexposed_ratio": 0.25,
           "max_underexposed_ratio": 0.35
-        },
-        "preprocess": {
-          "denoise_method": "gaussian",
-          "gaussian_kernel_size": 5,
-          "white_balance_method": "gray_world",
-          "max_white_balance_gain": 1.2,
-          "apply_illumination_correction": true,
-          "illumination_blur_kernel_size": 51,
-          "illumination_strength": 0.65,
-          "apply_clahe": true,
-          "clahe_clip_limit": 2.0,
-          "clahe_tile_grid_size": 8,
-          "sharpen": false
         },
         "detection": {
           "model_path": "../best.pt",
           "target_class": "seat",
           "confidence": 0.35,
           "iou": 0.45,
-          "device": "cpu",
-          "fallback_box": {
-            "x1": 1148.0,
-            "y1": 1151.0,
-            "x2": 2863.0,
-            "y2": 2597.0
-          }
+          "imgsz": 960,
+          "device": "cuda:0"
         },
         "roi": {
           "crop_expand_ratio": 0.04,
-          "crop_shrink_ratio": 0.0,
+          "crop_shrink_ratio": 0,
+          "mask_erode_pixels": 1,
           "edge_ignore_pixels": 4,
           "alignment": {
             "output_width": 384,
@@ -312,64 +307,64 @@
           "min_target_coverage": 0.55,
           "max_ignore_overlap": 0.15,
           "min_valid_patch_ratio": 0.35,
-          "decision_score_margin": 1.0,
+          "decision_score_margin": 1,
           "strong_patch_score_ratio": 0.8,
           "min_strong_patch_count": 2,
           "min_strong_component_count": 1,
           "min_strong_patch_ratio": 0.004,
           "min_strong_component_ratio": 0.002,
-          "critical_score_margin": 1.0,
+          "critical_score_margin": 1,
           "critical_peak_score_margin": 1.05,
           "critical_min_component_patch_count": 2
         },
         "color_branch": {
-          "enabled": true,
+          "enabled": false,
           "threshold_quantile": 0.97,
           "min_valid_pixel_ratio": 0.3
-        }
+        },
+        "regions": [
+          {
+            "region_id": "upper",
+            "box": [0.03, 0.03, 0.97, 0.42],
+            "patchcore_model_path": "../models/seat_defect_inspection/cam_3_upper_patchcore.npz"
+          },
+          {
+            "region_id": "middle",
+            "box": [0.03, 0.33, 0.97, 0.74],
+            "patchcore_model_path": "../models/seat_defect_inspection/cam_3_middle_patchcore.npz"
+          },
+          {
+            "region_id": "lower",
+            "box": [0.03, 0.66, 0.97, 0.97],
+            "patchcore_model_path": "../models/seat_defect_inspection/cam_3_lower_patchcore.npz"
+          }
+        ]
       },
       {
         "camera_id": "cam_4",
         "source": "mvs://sn/DA9184674?timeout_ms=1000&exposure_auto=off&exposure_time=8000",
-        "train_good_dir": "../data/seat_defect_inspection/cam_4/train/good",
         "patchcore_model_path": "../models/seat_defect_inspection/cam_4_patchcore.npz",
+        "train_good_dir": "../data/seat_defect_inspection/cam_4/train/good",
         "color_insensitive_mode": false,
         "quality": {
-          "min_laplacian_variance": 80.0,
-          "min_brightness_mean": 30.0,
-          "max_brightness_mean": 225.0,
+          "min_laplacian_variance": 80,
+          "min_brightness_mean": 30,
+          "max_brightness_mean": 225,
           "max_overexposed_ratio": 0.25,
           "max_underexposed_ratio": 0.35
-        },
-        "preprocess": {
-          "denoise_method": "gaussian",
-          "gaussian_kernel_size": 5,
-          "white_balance_method": "gray_world",
-          "max_white_balance_gain": 1.2,
-          "apply_illumination_correction": true,
-          "illumination_blur_kernel_size": 51,
-          "illumination_strength": 0.65,
-          "apply_clahe": true,
-          "clahe_clip_limit": 2.0,
-          "clahe_tile_grid_size": 8,
-          "sharpen": false
         },
         "detection": {
           "model_path": "../best.pt",
           "target_class": "seat",
           "confidence": 0.35,
           "iou": 0.45,
-          "device": "cpu",
-          "fallback_box": {
-            "x1": 1274.0,
-            "y1": 478.0,
-            "x2": 2622.0,
-            "y2": 2347.0
-          }
+          "imgsz": 960,
+          "device": "cuda:0"
         },
         "roi": {
           "crop_expand_ratio": 0.04,
-          "crop_shrink_ratio": 0.0,
+          "crop_shrink_ratio": 0,
+          "mask_erode_pixels": 1,
           "edge_ignore_pixels": 4,
           "alignment": {
             "output_width": 384,
@@ -391,36 +386,39 @@
           "min_target_coverage": 0.55,
           "max_ignore_overlap": 0.15,
           "min_valid_patch_ratio": 0.35,
-          "decision_score_margin": 1.0,
+          "decision_score_margin": 1,
           "strong_patch_score_ratio": 0.8,
           "min_strong_patch_count": 2,
           "min_strong_component_count": 1,
           "min_strong_patch_ratio": 0.004,
           "min_strong_component_ratio": 0.002,
-          "critical_score_margin": 1.0,
+          "critical_score_margin": 1,
           "critical_peak_score_margin": 1.05,
           "critical_min_component_patch_count": 2
         },
         "color_branch": {
-          "enabled": true,
+          "enabled": false,
           "threshold_quantile": 0.97,
           "min_valid_pixel_ratio": 0.3
-        }
+        },
+        "regions": [
+          {
+            "region_id": "upper",
+            "box": [0.03, 0.03, 0.97, 0.42],
+            "patchcore_model_path": "../models/seat_defect_inspection/cam_4_upper_patchcore.npz"
+          },
+          {
+            "region_id": "middle",
+            "box": [0.03, 0.33, 0.97, 0.74],
+            "patchcore_model_path": "../models/seat_defect_inspection/cam_4_middle_patchcore.npz"
+          },
+          {
+            "region_id": "lower",
+            "box": [0.03, 0.66, 0.97, 0.97],
+            "patchcore_model_path": "../models/seat_defect_inspection/cam_4_lower_patchcore.npz"
+          }
+        ]
       }
-    ],
-    "yolo_training": {
-      "model_path": "yolo11m-seg.pt",
-      "data_config_path": "../datasets/seat_defect/seat_defect.yaml",
-      "epochs": 200,
-      "imgsz": 960,
-      "batch": 8,
-      "device": "cuda:0",
-      "project": "../outputs/seat_defect_inspection/yolo_training",
-      "name": "seat_defect_mvs",
-      "workers": 6,
-      "patience": 50,
-      "cache": true,
-      "pretrained": true
-    }
+    ]
   }
 }

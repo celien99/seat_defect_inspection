@@ -15,7 +15,7 @@ def register_inspect_command(subparsers) -> None:
         help="抓取每个机位一帧并执行融合检测",
     )
     parser.set_defaults(run=run_inspect_command)
-    add_config_argument(parser, help_text="缺陷检测配置 JSON 路径")
+    add_config_argument(parser, help_text="缺陷检测配置 JSON/INI 路径")
     parser.add_argument(
         "--part-id",
         help="本次检测的部件编号，可覆盖配置中的默认值",

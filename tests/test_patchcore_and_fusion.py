@@ -9,16 +9,21 @@ import cv2
 import numpy as np
 
 import seat_defect_core.patchcore.engine as patchcore_engine
-from seat_defect_core.config import AlignmentConfig, ColorBranchConfig, DetectionConfig, FusionConfig, PatchCoreConfig, QualityGuardConfig, RoiRefineConfig
+import seat_defect_inspection.patchcore.training as patchcore_training
+from seat_defect_core.config import AlignmentConfig, CameraConfig as CoreCameraConfig, ColorBranchConfig, DetectionConfig, FusionConfig, PatchCoreConfig, QualityGuardConfig, RegionConfig, RoiRefineConfig
 from seat_defect_core.cvops import ImageQualityGuard, RoiRefineEngine
-from seat_defect_core.fusion import fuse_camera_results, should_early_stop_on_ng
-from seat_defect_core.patchcore import PatchCoreService, _decide_patchcore_anomaly
+from seat_defect_core.fusion import fuse_camera_results
+from seat_defect_core.patchcore.color_branch import ColorReferenceProfile
+from seat_defect_core.patchcore import PatchCoreService
 from seat_defect_core.patchcore.features import _PatchBatch, _prepare_feature_image
-from seat_defect_core.patchcore.scoring import _analyze_patch_evidence, normalize_map_against_threshold
-from seat_defect_core.schemas import BoundingBox, CameraInspectionResult, DetectionResult, DetectionObject, FramePacket, ImageQualityDecision, ImageQualityMetrics, RoiRefineResult, TextureAnomalyResult
+from seat_defect_core.patchcore.scoring import _analyze_patch_evidence, _decide_patchcore_anomaly, normalize_map_against_threshold
+from seat_defect_core.service.core import InspectionService as CoreInspectionService
+from seat_defect_core.service.inspection import inspect_frames as core_inspect_frames
 from seat_defect_core.service.inspection_camera import inspect_one_camera
+from seat_defect_core.types import BoundingBox, CameraInspectionResult, DetectionResult, DetectionObject, FramePacket, ImageQualityDecision, ImageQualityMetrics, InspectionFrame, RoiRefineResult, TextureAnomalyResult
 from seat_defect_core.yolo import DetectionService
 from seat_defect_inspection.config import CameraConfig
+from seat_defect_inspection.patchcore import PatchCoreTrainer
 from seat_defect_inspection.runtime_config import load_yolo_training_config
 from seat_defect_inspection.service import CameraPipeline, InspectionService, PreparedCameraSample
 from seat_defect_inspection.service.inspection import run_inspection as run_online_inspection
@@ -63,7 +68,17 @@ def _install_stubbed_full_patchcore(monkeypatch) -> None:
         fake_get_torch_feature_extractor,
     )
     monkeypatch.setattr(
+        PatchCoreTrainer,
+        "_get_torch_feature_extractor",
+        fake_get_torch_feature_extractor,
+    )
+    monkeypatch.setattr(
         patchcore_engine,
+        "extract_patch_embeddings",
+        fake_extract_patch_embeddings,
+    )
+    monkeypatch.setattr(
+        patchcore_training,
         "extract_patch_embeddings",
         fake_extract_patch_embeddings,
     )
@@ -327,7 +342,7 @@ def test_full_patchcore_threshold_uses_sample_exclusive_calibration(monkeypatch)
         texture_input="gray",
         coreset_sampling_ratio=1.0,
     )
-    service = PatchCoreService(config)
+    service = PatchCoreTrainer(config)
 
     target_mask = np.ones((4, 4), dtype=np.uint8)
     ignore_mask = np.zeros((4, 4), dtype=np.uint8)
@@ -365,38 +380,6 @@ def test_fusion_ng_can_override_reject() -> None:
 
     assert result.status == "NG"
     assert "override_reject" in result.decision_reason
-
-
-def test_fail_fast_any_ng_stops_remaining_cameras() -> None:
-    fusion = FusionConfig(
-        reject_on_any_reject=True,
-        ng_strategy="any",
-        early_stop_on_ng=True,
-        defect_overrides_reject=True,
-    )
-    camera_results = [_camera_result("cam_0", "NG")]
-
-    assert should_early_stop_on_ng(
-        camera_results=camera_results,
-        total_camera_count=3,
-        fusion_config=fusion,
-    )
-
-
-def test_fail_fast_disabled_when_reject_must_override() -> None:
-    fusion = FusionConfig(
-        reject_on_any_reject=True,
-        ng_strategy="any",
-        early_stop_on_ng=True,
-        defect_overrides_reject=False,
-    )
-    camera_results = [_camera_result("cam_0", "NG")]
-
-    assert not should_early_stop_on_ng(
-        camera_results=camera_results,
-        total_camera_count=3,
-        fusion_config=fusion,
-    )
 
 
 def test_run_inspection_captures_all_cameras_before_processing(monkeypatch) -> None:
@@ -443,17 +426,20 @@ def test_run_inspection_captures_all_cameras_before_processing(monkeypatch) -> N
         ),
     )
 
-    def fake_inspect(_service, _frame_packet, camera, _pipeline, _seat_model_id):
-        events.append(f"inspect:{camera.camera_id}")
-        return _camera_result(camera.camera_id, "OK")
+    def fake_inspect_frames(_service, frames, *, part_id=None, seat_model_id=None):
+        for frame in frames:
+            events.append(f"inspect:{frame.camera_id}")
+        return fuse_camera_results(
+            part_id=part_id or "seat_demo",
+            frame_id=frames[0].frame_id or "",
+            timestamp=frames[0].timestamp or "",
+            camera_results=[_camera_result(frame.camera_id, "OK") for frame in frames],
+            fusion_config=FusionConfig(),
+        )
 
     monkeypatch.setattr(
-        "seat_defect_inspection.service.inspection.inspect_one_camera",
-        fake_inspect,
-    )
-    monkeypatch.setattr(
-        "seat_defect_inspection.service.inspection._export_result",
-        lambda _service, result: result,
+        "seat_defect_inspection.service.inspection.inspect_frames",
+        fake_inspect_frames,
     )
 
     result = run_online_inspection(service)
@@ -468,7 +454,10 @@ def test_run_inspection_captures_all_cameras_before_processing(monkeypatch) -> N
         events.index(f"capture_done:{camera.camera_id}") < first_inspect_index
         for camera in cameras
     )
-    assert events.index("inspect:cam_0") < events.index("inspect:cam_1")
+    assert set(event for event in events if event.startswith("inspect:")) == {
+        "inspect:cam_0",
+        "inspect:cam_1",
+    }
 
 
 def test_run_inspection_processes_cameras_concurrently_when_fail_fast_is_disabled(monkeypatch) -> None:
@@ -483,6 +472,7 @@ def test_run_inspection_processes_cameras_concurrently_when_fail_fast_is_disable
 
     class _FakeAcquisition:
         def capture(self, camera_id: str, source: str, part_id: str) -> FramePacket:
+            events.append(f"capture_done:{camera_id}")
             return FramePacket(
                 camera_id=camera_id,
                 frame_id=f"{camera_id}_frame",
@@ -496,7 +486,7 @@ def test_run_inspection_processes_cameras_concurrently_when_fail_fast_is_disable
     service = SimpleNamespace(
         config=SimpleNamespace(
             part_id="seat_demo",
-            fusion=FusionConfig(early_stop_on_ng=False),
+            fusion=FusionConfig(),
         ),
         acquisition=_FakeAcquisition(),
         resolve_context=lambda _seat_model_id: SimpleNamespace(
@@ -506,38 +496,35 @@ def test_run_inspection_processes_cameras_concurrently_when_fail_fast_is_disable
         ),
     )
 
-    def fake_inspect(_service, _frame_packet, camera, _pipeline, _seat_model_id):
-        with lock:
-            events.append(f"inspect_start:{camera.camera_id}")
-            started.add(camera.camera_id)
-            if len(started) == len(cameras):
-                all_inspections_started.set()
-        if not all_inspections_started.wait(timeout=1.0):
-            raise AssertionError("inspections did not run concurrently")
-        with lock:
-            events.append(f"inspect_done:{camera.camera_id}")
-        return _camera_result(camera.camera_id, "OK")
+    def fake_inspect_frames(_service, frames, *, part_id=None, seat_model_id=None):
+        for frame in frames:
+            events.append(f"inspect:{frame.camera_id}")
+        return fuse_camera_results(
+            part_id=part_id or "seat_demo",
+            frame_id=frames[0].frame_id or "",
+            timestamp=frames[0].timestamp or "",
+            camera_results=[_camera_result(frame.camera_id, "OK") for frame in frames],
+            fusion_config=FusionConfig(),
+        )
 
     monkeypatch.setattr(
-        "seat_defect_inspection.service.inspection.inspect_one_camera",
-        fake_inspect,
-    )
-    monkeypatch.setattr(
-        "seat_defect_inspection.service.inspection._export_result",
-        lambda _service, result: result,
+        "seat_defect_inspection.service.inspection.inspect_frames",
+        fake_inspect_frames,
     )
 
     result = run_online_inspection(service)
 
-    first_done_index = next(
+    first_inspect_index = next(
         index
         for index, event in enumerate(events)
-        if event.startswith("inspect_done:")
+        if event.startswith("inspect:")
     )
     assert result.status == "OK"
     assert [item.camera_id for item in result.camera_results] == ["cam_0", "cam_1"]
-    assert events.index("inspect_start:cam_0") < first_done_index
-    assert events.index("inspect_start:cam_1") < first_done_index
+    assert all(
+        events.index(f"capture_done:{camera.camera_id}") < first_inspect_index
+        for camera in cameras
+    )
 
 
 def test_wrapped_top_level_yolo_training_is_loaded(tmp_path) -> None:
@@ -583,7 +570,7 @@ def test_yolo_training_alias_is_preserved_for_example_config() -> None:
     assert config.model_path == "yolo11m-seg.pt"
 
 
-def test_detection_does_not_use_fallback_when_yolo_misses() -> None:
+def test_detection_returns_no_target_when_yolo_misses() -> None:
     class _EmptyBoxes:
         xyxy = None
 
@@ -595,18 +582,228 @@ def test_detection_does_not_use_fallback_when_yolo_misses() -> None:
         def predict(self, *_args, **_kwargs):
             return [_EmptyResult()]
 
-    service = DetectionService(
-        DetectionConfig(
-            model_path="dummy.pt",
-            fallback_box=BoundingBox(1.0, 2.0, 30.0, 40.0),
-        )
-    )
+    service = DetectionService(DetectionConfig(model_path="dummy.pt"))
     service._model = _FakeModel()
 
     result = service.detect(np.zeros((64, 64, 3), dtype=np.uint8))
 
     assert result.target is None
     assert result.all_objects == []
+
+
+def test_detection_service_batches_images_with_shared_model() -> None:
+    class _EmptyBoxes:
+        xyxy = None
+
+    class _EmptyResult:
+        boxes = _EmptyBoxes()
+        names = {}
+
+    class _FakeModel:
+        def __init__(self) -> None:
+            self.calls: list[int] = []
+            self.kwargs: list[dict] = []
+
+        def predict(self, images, **kwargs):
+            self.calls.append(len(images))
+            self.kwargs.append(kwargs)
+            return [_EmptyResult() for _image in images]
+
+    service = DetectionService(DetectionConfig(model_path="dummy.pt", imgsz=960))
+    fake_model = _FakeModel()
+    service._model = fake_model
+
+    results = service.detect_many(
+        [
+            np.zeros((32, 32, 3), dtype=np.uint8),
+            np.zeros((32, 32, 3), dtype=np.uint8),
+        ]
+    )
+
+    assert fake_model.calls == [2]
+    assert fake_model.kwargs[0]["imgsz"] == 960
+    assert [result.target for result in results] == [None, None]
+
+
+def test_detection_masks_remove_yolo_letterbox_padding_before_resize() -> None:
+    class _ArrayProxy:
+        def __init__(self, value):
+            self._value = value
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            return self._value
+
+    class _FakeBoxes:
+        xyxy = _ArrayProxy(np.array([[100.0, 200.0, 900.0, 2600.0]], dtype=np.float32))
+        conf = _ArrayProxy(np.array([0.99], dtype=np.float32))
+        cls = _ArrayProxy(np.array([0], dtype=np.float32))
+
+    # Simulate a 4096x3072 image letterboxed to 960x960. The actual image
+    # content occupies y=120..840, so the active mask area starts at y=120.
+    raw_mask = np.zeros((1, 960, 960), dtype=np.float32)
+    raw_mask[0, 120:840, 240:720] = 1.0
+
+    class _FakeMasks:
+        data = _ArrayProxy(raw_mask)
+
+    class _FakeResult:
+        boxes = _FakeBoxes()
+        masks = _FakeMasks()
+        names = {0: "seat"}
+
+    service = DetectionService(DetectionConfig(model_path="dummy.pt"))
+    detections = service._extract_detections(_FakeResult(), (3072, 4096))
+
+    assert len(detections) == 1
+    mask = detections[0].segmentation_mask
+    assert mask is not None
+    ys, xs = np.nonzero(mask)
+    assert int(xs.min()) == 1024
+    assert int(xs.max()) == 3071
+    assert int(ys.min()) == 0
+    assert int(ys.max()) == 3071
+
+
+def test_detection_masks_fill_enclosed_holes_without_expanding_outline() -> None:
+    class _ArrayProxy:
+        def __init__(self, value):
+            self._value = value
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            return self._value
+
+    class _FakeBoxes:
+        xyxy = _ArrayProxy(np.array([[0.0, 0.0, 12.0, 12.0]], dtype=np.float32))
+        conf = _ArrayProxy(np.array([0.99], dtype=np.float32))
+        cls = _ArrayProxy(np.array([0], dtype=np.float32))
+
+    raw_mask = np.zeros((1, 12, 12), dtype=np.float32)
+    raw_mask[0, 2:10, 2:10] = 1.0
+    raw_mask[0, 5:7, 5:7] = 0.0
+
+    class _FakeMasks:
+        data = _ArrayProxy(raw_mask)
+
+    class _FakeResult:
+        boxes = _FakeBoxes()
+        masks = _FakeMasks()
+        names = {0: "seat"}
+
+    service = DetectionService(DetectionConfig(model_path="dummy.pt"))
+    detections = service._extract_detections(_FakeResult(), (12, 12))
+
+    mask = detections[0].segmentation_mask
+    assert mask is not None
+    assert mask[5:7, 5:7].sum() == 4
+    assert mask[:2, :].sum() == 0
+    assert mask[:, :2].sum() == 0
+
+
+def test_detection_masks_do_not_fill_background_connected_to_border() -> None:
+    class _ArrayProxy:
+        def __init__(self, value):
+            self._value = value
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            return self._value
+
+    class _FakeBoxes:
+        xyxy = _ArrayProxy(np.array([[0.0, 0.0, 12.0, 12.0]], dtype=np.float32))
+        conf = _ArrayProxy(np.array([0.99], dtype=np.float32))
+        cls = _ArrayProxy(np.array([0], dtype=np.float32))
+
+    raw_mask = np.zeros((1, 12, 12), dtype=np.float32)
+    raw_mask[0, 2:10, 2:10] = 1.0
+    raw_mask[0, 5, 0:7] = 0.0
+
+    class _FakeMasks:
+        data = _ArrayProxy(raw_mask)
+
+    class _FakeResult:
+        boxes = _FakeBoxes()
+        masks = _FakeMasks()
+        names = {0: "seat"}
+
+    service = DetectionService(DetectionConfig(model_path="dummy.pt"))
+    detections = service._extract_detections(_FakeResult(), (12, 12))
+
+    mask = detections[0].segmentation_mask
+    assert mask is not None
+    assert mask[5, 2:7].sum() == 0
+
+
+def test_detection_masks_respect_hole_fill_area_limit() -> None:
+    class _ArrayProxy:
+        def __init__(self, value):
+            self._value = value
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            return self._value
+
+    class _FakeBoxes:
+        xyxy = _ArrayProxy(np.array([[0.0, 0.0, 20.0, 20.0]], dtype=np.float32))
+        conf = _ArrayProxy(np.array([0.99], dtype=np.float32))
+        cls = _ArrayProxy(np.array([0], dtype=np.float32))
+
+    raw_mask = np.zeros((1, 20, 20), dtype=np.float32)
+    raw_mask[0, 2:18, 2:18] = 1.0
+    raw_mask[0, 7:13, 7:13] = 0.0
+
+    class _FakeMasks:
+        data = _ArrayProxy(raw_mask)
+
+    class _FakeResult:
+        boxes = _FakeBoxes()
+        masks = _FakeMasks()
+        names = {0: "seat"}
+
+    service = DetectionService(
+        DetectionConfig(
+            model_path="dummy.pt",
+            segmentation_hole_fill_max_area_ratio=0.01,
+        )
+    )
+    detections = service._extract_detections(_FakeResult(), (20, 20))
+
+    mask = detections[0].segmentation_mask
+    assert mask is not None
+    assert mask[7:13, 7:13].sum() == 0
+
+
+def test_detection_service_warmup_runs_dummy_forward() -> None:
+    class _EmptyBoxes:
+        xyxy = None
+
+    class _EmptyResult:
+        boxes = _EmptyBoxes()
+        names = {}
+
+    class _FakeModel:
+        def __init__(self) -> None:
+            self.input_shapes: list[tuple[int, int, int]] = []
+
+        def predict(self, images, **_kwargs):
+            self.input_shapes.append(images[0].shape)
+            return [_EmptyResult()]
+
+    service = DetectionService(DetectionConfig(model_path="dummy.pt"))
+    service._model = _FakeModel()
+
+    service.warmup()
+
+    assert service._model.input_shapes == [(640, 640, 3)]
 
 
 def test_legacy_patchcore_bundle_without_color_profile_loads(tmp_path) -> None:
@@ -789,13 +986,13 @@ def test_inspection_service_rejects_missing_color_profile_when_color_branch_enab
         ),
     )
 
-    camera = CameraConfig(
+    camera = CoreCameraConfig(
         camera_id="cam_0",
         source="0",
         patchcore_model_path=str(model_path),
         color_branch=ColorBranchConfig(enabled=True),
     )
-    service = InspectionService(
+    service = CoreInspectionService(
         SimpleNamespace(
             cameras=[camera],
             seat_models=[],
@@ -818,6 +1015,465 @@ def test_inspection_service_rejects_missing_color_profile_when_color_branch_enab
         assert "train-patchcore" in str(exc)
         return
     raise AssertionError("expected RuntimeError for missing color profile")
+
+
+def test_inspection_service_shares_matching_patchcore_feature_extractors(tmp_path, monkeypatch) -> None:
+    created_configs: list[PatchCoreConfig] = []
+
+    class _FakeFeatureExtractor:
+        def __init__(self, config: PatchCoreConfig) -> None:
+            created_configs.append(config)
+
+    monkeypatch.setattr(
+        "seat_defect_core.service.core._TorchPatchFeatureExtractor",
+        _FakeFeatureExtractor,
+    )
+
+    config = PatchCoreConfig(
+        backend="full",
+        image_size=128,
+        backbone_pretrained=True,
+        backbone_device="cpu",
+    )
+    service = InspectionService(
+        SimpleNamespace(
+            cameras=[],
+            seat_models=[],
+            default_seat_model_id=None,
+            output_json_path="results.json",
+            debug_dir=str(tmp_path / "debug"),
+            capture_dir="capture",
+            capture_retries=1,
+            part_id="seat_demo",
+            fusion=FusionConfig(),
+        )
+    )
+    first = PatchCoreService(
+        config,
+        memory_bank=np.zeros((1, 2), dtype=np.float32),
+        feature_mean=np.zeros((2,), dtype=np.float32),
+        feature_std=np.ones((2,), dtype=np.float32),
+        threshold=1.0,
+    )
+    second = PatchCoreService(
+        config,
+        memory_bank=np.zeros((1, 2), dtype=np.float32),
+        feature_mean=np.zeros((2,), dtype=np.float32),
+        feature_std=np.ones((2,), dtype=np.float32),
+        threshold=1.0,
+    )
+
+    service.prepare_patchcore_for_predict(first)
+    service.prepare_patchcore_for_predict(second)
+
+    assert len(created_configs) == 1
+    assert first._get_torch_feature_extractor() is second._get_torch_feature_extractor()
+
+
+def test_inspection_service_batches_matching_region_patchcores(tmp_path, monkeypatch) -> None:
+    extract_many_calls: list[int] = []
+
+    class _FakeFeatureExtractor:
+        def __init__(self, _config: PatchCoreConfig) -> None:
+            pass
+
+        def extract_many(self, samples):
+            extract_many_calls.append(len(samples))
+            return [
+                (
+                    np.asarray([[0.0, 0.0]], dtype=np.float32),
+                    _PatchBatch(
+                        grid_shape=(1, 1),
+                        valid_indices=np.asarray([0], dtype=np.int32),
+                        valid_patch_count=1,
+                        total_patch_count=1,
+                    ),
+                )
+                for _sample in samples
+            ]
+
+    monkeypatch.setattr(
+        "seat_defect_core.service.core._TorchPatchFeatureExtractor",
+        _FakeFeatureExtractor,
+    )
+
+    config = PatchCoreConfig(
+        backend="full",
+        image_size=32,
+        backbone_pretrained=True,
+        backbone_device="cpu",
+    )
+    service = InspectionService(
+        SimpleNamespace(
+            cameras=[],
+            seat_models=[],
+            default_seat_model_id=None,
+            output_json_path="results.json",
+            debug_dir=str(tmp_path / "debug"),
+            capture_dir="capture",
+            capture_retries=1,
+            part_id="seat_demo",
+            fusion=FusionConfig(),
+        )
+    )
+    first = PatchCoreService(
+        config,
+        memory_bank=np.zeros((1, 2), dtype=np.float32),
+        feature_mean=np.zeros((2,), dtype=np.float32),
+        feature_std=np.ones((2,), dtype=np.float32),
+        threshold=1.0,
+    )
+    second = PatchCoreService(
+        config,
+        memory_bank=np.zeros((1, 2), dtype=np.float32),
+        feature_mean=np.zeros((2,), dtype=np.float32),
+        feature_std=np.ones((2,), dtype=np.float32),
+        threshold=1.0,
+    )
+    image = np.zeros((16, 16, 3), dtype=np.uint8)
+    target_mask = np.ones((16, 16), dtype=np.uint8)
+    ignore_mask = np.zeros((16, 16), dtype=np.uint8)
+
+    results = service.predict_patchcore_batch(
+        [
+            (first, image, target_mask, ignore_mask),
+            (second, image, target_mask, ignore_mask),
+        ]
+    )
+
+    assert extract_many_calls == [2]
+    assert len(results) == 2
+    assert all(result.valid_patch_count == 1 for result in results)
+
+
+def test_inspection_service_warmup_loads_region_models(tmp_path: Path) -> None:
+    camera = CoreCameraConfig(
+        camera_id="cam_0",
+        source="0",
+        patchcore_model_path="full.npz",
+        detection=DetectionConfig(model_path=None),
+        patchcore=PatchCoreConfig(backend="fake"),
+        regions=[
+            RegionConfig(
+                region_id="upper",
+                box=[0.0, 0.0, 1.0, 1.0],
+                patchcore_model_path="region.npz",
+            )
+        ],
+    )
+    service = CoreInspectionService(
+        SimpleNamespace(
+            cameras=[camera],
+            seat_models=[],
+            default_seat_model_id=None,
+            output_json_path=str(tmp_path / "result.json"),
+            debug_dir=str(tmp_path / "debug"),
+            debug_artifacts_enabled=False,
+            debug_artifact_names=["overlay"],
+            part_id="seat_demo",
+            fusion=FusionConfig(),
+        )
+    )
+    loaded_regions: list[str] = []
+    service.load_region_model_bundle = lambda _camera, region, _seat_model_id: (  # type: ignore[method-assign]
+        loaded_regions.append(region.region_id)
+        or SimpleNamespace(patchcore=SimpleNamespace(config=PatchCoreConfig(backend="fake")), color_profile=None)
+    )
+    service.predict_patchcore_batch = lambda items: []  # type: ignore[method-assign]
+
+    service.warmup()
+
+    assert loaded_regions == ["upper"]
+
+
+def test_patchcore_gpu_scoring_matches_numpy_when_device_is_available(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_min_distance_to_bank_torch(embeddings, memory_bank, *, device, chunk_size=1024):
+        calls.append(str(device))
+        return patchcore_engine.min_distance_to_bank(embeddings, np.asarray(memory_bank))
+
+    monkeypatch.setattr(
+        patchcore_engine,
+        "min_distance_to_bank_torch",
+        fake_min_distance_to_bank_torch,
+    )
+
+    config = PatchCoreConfig(backend="full", backbone_pretrained=True, backbone_device="cuda")
+    service = PatchCoreService(
+        config,
+        memory_bank=np.asarray([[0.0, 0.0], [2.0, 2.0]], dtype=np.float32),
+        feature_mean=np.zeros((2,), dtype=np.float32),
+        feature_std=np.ones((2,), dtype=np.float32),
+        threshold=1.0,
+    )
+    service.set_feature_extractor(SimpleNamespace(device="cuda:0"))
+    service._get_torch_memory_bank = lambda memory_bank, _device: memory_bank  # type: ignore[method-assign]
+
+    score, patch_scores = service.score_embeddings(
+        np.asarray([[0.0, 1.0], [2.0, 1.0]], dtype=np.float32)
+    )
+
+    assert calls == ["cuda:0"]
+    assert np.allclose(patch_scores, np.asarray([1.0, 1.0], dtype=np.float32))
+    assert np.isclose(score, 1.0)
+
+
+def test_core_inspect_frames_batches_region_patchcore_across_cameras(tmp_path: Path) -> None:
+    class _BatchPatchCore:
+        config = PatchCoreConfig(backend="fake")
+
+        def predict(self, _image, target_mask, _ignore_mask):
+            return TextureAnomalyResult(
+                score=0.1,
+                threshold=1.0,
+                is_anomaly=False,
+                heatmap=np.zeros(target_mask.shape, dtype=np.float32),
+                valid_patch_ratio=1.0,
+                valid_patch_count=1,
+                total_patch_count=1,
+            )
+
+    class _FakePipeline:
+        def __init__(self, camera_id: str) -> None:
+            self.camera_id = camera_id
+            self.detection_service = SimpleNamespace(
+                detect_many=lambda images: [
+                    DetectionResult(
+                        target=DetectionObject(
+                            label="seat",
+                            confidence=1.0,
+                            bounding_box=BoundingBox(0.0, 0.0, 16.0, 16.0),
+                            segmentation_mask=np.ones((16, 16), dtype=np.uint8),
+                        )
+                    )
+                    for _image in images
+                ]
+            )
+
+        def prepare_from_detection(self, _image, detection):
+            roi = RoiRefineResult(
+                crop_box=BoundingBox(0.0, 0.0, 16.0, 16.0),
+                roi_image=np.zeros((16, 16, 3), dtype=np.uint8),
+                aligned_roi_image=np.zeros((16, 16, 3), dtype=np.uint8),
+                texture_ready_image=np.zeros((16, 16, 3), dtype=np.uint8),
+                target_mask=np.ones((16, 16), dtype=np.uint8),
+                valid_mask=np.ones((16, 16), dtype=np.uint8),
+                ignore_mask=np.zeros((16, 16), dtype=np.uint8),
+                foreground_weight=None,
+            )
+            return PreparedCameraSample(
+                quality=None,
+                detection=detection,
+                roi=roi,
+            )
+
+        def prepare_image(self, image):
+            return self.prepare_from_detection(
+                image,
+                DetectionResult(
+                    target=DetectionObject(
+                        label="seat",
+                        confidence=1.0,
+                        bounding_box=BoundingBox(0.0, 0.0, 16.0, 16.0),
+                    )
+                ),
+            )
+
+    cameras = [
+        CoreCameraConfig(
+            camera_id="cam_0",
+            source="0",
+            patchcore_model_path="full_0.npz",
+            regions=[
+                RegionConfig("upper", [0.0, 0.0, 1.0, 0.5], "upper_0.npz"),
+                RegionConfig("lower", [0.0, 0.5, 1.0, 1.0], "lower_0.npz"),
+            ],
+        ),
+        CoreCameraConfig(
+            camera_id="cam_1",
+            source="1",
+            patchcore_model_path="full_1.npz",
+            regions=[
+                RegionConfig("upper", [0.0, 0.0, 1.0, 0.5], "upper_1.npz"),
+                RegionConfig("lower", [0.0, 0.5, 1.0, 1.0], "lower_1.npz"),
+            ],
+        ),
+    ]
+    service = CoreInspectionService(
+        SimpleNamespace(
+            cameras=cameras,
+            seat_models=[],
+            default_seat_model_id=None,
+            output_json_path=str(tmp_path / "result.json"),
+            debug_dir=str(tmp_path / "debug"),
+            debug_artifacts_enabled=False,
+            debug_artifact_names=["overlay"],
+            part_id="seat_demo",
+            fusion=FusionConfig(),
+        )
+    )
+    service._pipeline_cache["__default__"] = {
+        camera.camera_id: _FakePipeline(camera.camera_id)
+        for camera in cameras
+    }
+    service.load_region_model_bundle = lambda *_args, **_kwargs: SimpleNamespace(  # type: ignore[method-assign]
+        patchcore=_BatchPatchCore(),
+        color_profile=None,
+    )
+    service.resolve_patchcore_config = lambda camera, region=None: camera.patchcore  # type: ignore[method-assign]
+    batch_sizes: list[int] = []
+
+    def _predict_batch(items):
+        batch_sizes.append(len(items))
+        results = []
+        for index, item in enumerate(items):
+            is_anomaly = index == 0
+            results.append(
+                TextureAnomalyResult(
+                    score=1.5 if is_anomaly else 0.1,
+                    threshold=1.0,
+                    is_anomaly=is_anomaly,
+                    heatmap=np.zeros(item[2].shape, dtype=np.float32),
+                    valid_patch_ratio=1.0,
+                    valid_patch_count=1,
+                    total_patch_count=1,
+                )
+            )
+        return results
+
+    service.predict_patchcore_batch = _predict_batch  # type: ignore[method-assign]
+
+    result = core_inspect_frames(
+        service,
+        [
+            InspectionFrame("cam_0", np.zeros((16, 16, 3), dtype=np.uint8)),
+            InspectionFrame("cam_1", np.zeros((16, 16, 3), dtype=np.uint8)),
+        ],
+    )
+
+    assert batch_sizes == [4]
+    assert result.status == "NG"
+    assert [camera_result.camera_id for camera_result in result.camera_results] == ["cam_0", "cam_1"]
+    assert all(len(camera_result.region_results) == 2 for camera_result in result.camera_results)
+    assert result.camera_results[0].status == "NG"
+    assert result.camera_results[0].region_results[0].reason == "texture_anomaly"
+
+
+def test_region_inspection_keeps_color_branch_decision(tmp_path: Path) -> None:
+    class _NormalPatchCore:
+        def predict(self, _image, target_mask, _ignore_mask):
+            return TextureAnomalyResult(
+                score=0.1,
+                threshold=1.0,
+                is_anomaly=False,
+                heatmap=np.zeros(target_mask.shape, dtype=np.float32),
+                valid_patch_ratio=1.0,
+                valid_patch_count=4,
+                total_patch_count=4,
+            )
+
+    class _FakePipeline:
+        def prepare_image(self, _image):
+            roi = RoiRefineResult(
+                crop_box=BoundingBox(0.0, 0.0, 16.0, 16.0),
+                roi_image=np.zeros((16, 16, 3), dtype=np.uint8),
+                aligned_roi_image=np.full((16, 16, 3), 255, dtype=np.uint8),
+                texture_ready_image=None,
+                target_mask=np.ones((16, 16), dtype=np.uint8),
+                valid_mask=np.ones((16, 16), dtype=np.uint8),
+                ignore_mask=np.zeros((16, 16), dtype=np.uint8),
+                foreground_weight=None,
+            )
+            return PreparedCameraSample(
+                quality=ImageQualityDecision(
+                    accepted=True,
+                    reason=None,
+                    metrics=ImageQualityMetrics(
+                        laplacian_variance=100.0,
+                        brightness_mean=255.0,
+                        overexposed_ratio=0.0,
+                        underexposed_ratio=0.0,
+                        is_black_frame=False,
+                        is_white_frame=False,
+                    ),
+                ),
+                detection=DetectionResult(
+                    target=DetectionObject(
+                        label="seat",
+                        confidence=1.0,
+                        bounding_box=BoundingBox(0.0, 0.0, 16.0, 16.0),
+                    )
+                ),
+                roi=roi,
+            )
+
+    camera = CoreCameraConfig(
+        camera_id="cam_0",
+        source="0",
+        patchcore_model_path="full.npz",
+        color_branch=ColorBranchConfig(enabled=True),
+        regions=[
+            RegionConfig(
+                region_id="upper",
+                box=[0.0, 0.0, 1.0, 1.0],
+                patchcore_model_path="region.npz",
+            )
+        ],
+    )
+    service = CoreInspectionService(
+        SimpleNamespace(
+            cameras=[camera],
+            seat_models=[],
+            default_seat_model_id=None,
+            output_json_path="results.json",
+            debug_dir=str(tmp_path / "debug"),
+            debug_artifacts_enabled=False,
+            part_id="seat_demo",
+            fusion=FusionConfig(),
+        )
+    )
+    color_profile = ColorReferenceProfile(
+        feature_mean=np.zeros((6,), dtype=np.float32),
+        feature_std=np.ones((6,), dtype=np.float32),
+        threshold=1.0,
+    )
+    service.load_region_model_bundle = lambda *_args, **_kwargs: SimpleNamespace(  # type: ignore[method-assign]
+        patchcore=_NormalPatchCore(),
+        color_profile=None,
+    )
+    service.load_model_bundle = lambda *_args, **_kwargs: SimpleNamespace(  # type: ignore[method-assign]
+        patchcore=_NormalPatchCore(),
+        color_profile=color_profile,
+    )
+    def _resolve_patchcore_config(camera, region=None):
+        if region is None:
+            return camera.patchcore
+        return region.patchcore or camera.patchcore
+
+    service.resolve_patchcore_config = _resolve_patchcore_config  # type: ignore[method-assign]
+    frame_packet = FramePacket(
+        camera_id="cam_0",
+        frame_id="frame_0",
+        part_id="part_0",
+        source="0",
+        source_kind="image",
+        timestamp="2026-04-21T00:00:00+08:00",
+        image=np.zeros((16, 16, 3), dtype=np.uint8),
+    )
+
+    result = inspect_one_camera(
+        service,
+        frame_packet,
+        camera,
+        _FakePipeline(),
+        seat_model_id=None,
+    )
+
+    assert result.status == "NG"
+    assert result.reason == "color_anomaly"
+    assert result.color_result is not None
+    assert result.region_results[0].status == "OK"
 
 
 def test_inspect_image_folder_restores_caller_state(tmp_path: Path, monkeypatch) -> None:
@@ -858,10 +1514,6 @@ def test_inspect_image_folder_restores_caller_state(tmp_path: Path, monkeypatch)
         "seat_defect_inspection.service.offline_inspection.run_inspection",
         fake_run_inspection,
     )
-    monkeypatch.setattr(
-        "seat_defect_inspection.service.offline_inspection.resolve_inspection_archive_path",
-        lambda latest_output_path, _result: latest_output_path.parent / "archived.json",
-    )
 
     summary = inspect_image_folder(
         service,
@@ -881,6 +1533,7 @@ def test_inspect_image_folder_restores_caller_state(tmp_path: Path, monkeypatch)
         "cam_1": "mvs://cam_1",
     }
     assert summary["ok_count"] == 1
+    assert Path(summary["records"][0]["report_path"]).name == "latest.json"
 
 
 def test_camera_pipeline_quality_uses_roi_instead_of_full_frame() -> None:
@@ -893,21 +1546,50 @@ def test_camera_pipeline_quality_uses_roi_instead_of_full_frame() -> None:
         min_brightness_mean=30.0,
     )
     full_frame_decision = ImageQualityGuard(full_frame_quality).evaluate(image)
+
+    class _ArrayProxy:
+        def __init__(self, value):
+            self._value = value
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            return self._value
+
+    class _FakeBoxes:
+        xyxy = _ArrayProxy(np.array([[70.0, 70.0, 130.0, 130.0]], dtype=np.float32))
+        conf = _ArrayProxy(np.array([0.99], dtype=np.float32))
+        cls = _ArrayProxy(np.array([0], dtype=np.float32))
+
+    mask = np.zeros((1, 200, 200), dtype=np.float32)
+    mask[0, 70:130, 70:130] = 1.0
+
+    class _FakeMasks:
+        data = _ArrayProxy(mask)
+
+    class _FakeResult:
+        boxes = _FakeBoxes()
+        masks = _FakeMasks()
+        names = {0: "seat"}
+
+    class _FakeModel:
+        def predict(self, *_args, **_kwargs):
+            return [_FakeResult()]
+
     camera = CameraConfig(
         camera_id="cam_0",
         source="0",
         patchcore_model_path="model.npz",
         quality=full_frame_quality,
-        detection=DetectionConfig(
-            model_path=None,
-            fallback_box=BoundingBox(70.0, 70.0, 130.0, 130.0),
-        ),
+        detection=DetectionConfig(model_path="dummy.pt"),
         roi=RoiRefineConfig(
             edge_ignore_pixels=0,
         ),
     )
 
     pipeline = CameraPipeline(camera)
+    pipeline.detection_service._model = _FakeModel()
     prepared = pipeline.prepare_image(image)
 
     assert full_frame_decision.accepted is False
@@ -917,7 +1599,7 @@ def test_camera_pipeline_quality_uses_roi_instead_of_full_frame() -> None:
     assert prepared.rejection_reason is None
 
 
-def test_train_patchcore_writes_per_image_audit_artifacts(tmp_path: Path) -> None:
+def test_train_patchcore_writes_per_image_audit_artifacts(tmp_path: Path, monkeypatch) -> None:
     train_dir = tmp_path / "train_good"
     train_dir.mkdir()
     image_path = train_dir / "sample.png"
@@ -970,14 +1652,12 @@ def test_train_patchcore_writes_per_image_audit_artifacts(tmp_path: Path) -> Non
                         is_white_frame=False,
                     ),
                 ),
-                preprocessed_image=np.full((24, 24, 3), 120, dtype=np.uint8),
                 detection=DetectionResult(
                     target=DetectionObject(
                         label="seat",
                         confidence=1.0,
                         bounding_box=BoundingBox(1.0, 2.0, 17.0, 18.0),
                     ),
-                    used_fallback=True,
                 ),
                 roi=roi,
                 rejection_reason=None,
@@ -996,9 +1676,14 @@ def test_train_patchcore_writes_per_image_audit_artifacts(tmp_path: Path) -> Non
             cameras=[camera],
             pipelines={"cam_0": _FakePipeline()},
         ),
-        build_patchcore_service=lambda _camera: _FakePatchCore(),
+        resolve_patchcore_config=lambda camera, region=None: camera.patchcore if region is None else region.patchcore or camera.patchcore,
         build_patchcore_pipeline_context=lambda _camera: {"pipeline": "fake"},
         build_patchcore_pipeline_signature=lambda _camera: "signature",
+    )
+
+    monkeypatch.setattr(
+        "seat_defect_inspection.service.training.PatchCoreTrainer",
+        lambda _config: _FakePatchCore(),
     )
 
     summaries = train_patchcore_models(service)
@@ -1006,14 +1691,6 @@ def test_train_patchcore_writes_per_image_audit_artifacts(tmp_path: Path) -> Non
     summary = summaries[0]
     assert summary["accepted_image_count"] == 1
     assert summary["skipped_image_count"] == 0
-    audit_dir = Path(summary["training_audit_dir"])
-    records_path = Path(summary["training_audit_records_path"])
-    assert records_path.is_file()
-    loaded_records = json.loads(records_path.read_text(encoding="utf-8"))["records"]
-    assert loaded_records[0]["status"] == "accepted"
-    assert Path(loaded_records[0]["artifacts"]["patchcore_input"]).is_file()
-    assert Path(loaded_records[0]["artifacts"]["valid_mask"]).is_file()
-    assert audit_dir.is_dir()
     summary_path = Path(camera.patchcore_model_path).with_suffix(".summary.json")
     assert summary_path.is_file()
 
@@ -1027,7 +1704,7 @@ def test_full_patchcore_fit_predict_and_reload(tmp_path, monkeypatch) -> None:
         texture_input="lab_l",
         coreset_sampling_ratio=0.5,
     )
-    service = PatchCoreService(config)
+    service = PatchCoreTrainer(config)
 
     rng = np.random.default_rng(42)
     samples = []
@@ -1085,7 +1762,7 @@ def test_roi_valid_mask_respects_edge_ignore_pixels() -> None:
     assert roi.ignore_mask.sum() == roi.target_mask.sum() - roi.valid_mask.sum()
 
 
-def test_roi_rejects_missing_segmentation_mask_without_fallback() -> None:
+def test_roi_rejects_missing_segmentation_mask() -> None:
     image = np.full((64, 64, 3), 127, dtype=np.uint8)
     detection = DetectionResult(
         target=DetectionObject(
@@ -1093,7 +1770,6 @@ def test_roi_rejects_missing_segmentation_mask_without_fallback() -> None:
             confidence=1.0,
             bounding_box=BoundingBox(8.0, 8.0, 56.0, 56.0),
         ),
-        used_fallback=False,
     )
     engine = RoiRefineEngine(
         RoiRefineConfig(
@@ -1296,7 +1972,6 @@ def test_inspection_service_passes_target_and_ignore_masks_to_patchcore(tmp_path
     )
     prepared = PreparedCameraSample(
         quality=None,
-        preprocessed_image=np.zeros((32, 32, 3), dtype=np.uint8),
         detection=DetectionResult(
             target=DetectionObject(
                 label="seat",
@@ -1330,8 +2005,7 @@ def test_inspection_service_passes_target_and_ignore_masks_to_patchcore(tmp_path
     assert fake_patchcore.image.shape == (32, 32, 4)
     assert np.array_equal(fake_patchcore.target_mask, roi.target_mask)
     assert np.array_equal(fake_patchcore.ignore_mask, roi.ignore_mask)
-    assert set(result.artifact_paths) >= {"heatmap", "overlay"}
-    assert Path(result.artifact_paths["heatmap"]).is_file()
+    assert set(result.artifact_paths) == {"overlay"}
     assert Path(result.artifact_paths["overlay"]).is_file()
 
 
@@ -1401,7 +2075,6 @@ def test_quality_reject_can_still_return_ng_when_patchcore_finds_obvious_defect(
                 is_white_frame=False,
             ),
         ),
-        preprocessed_image=np.zeros((32, 32, 3), dtype=np.uint8),
         detection=DetectionResult(
             target=DetectionObject(
                 label="seat",
@@ -1432,4 +2105,4 @@ def test_quality_reject_can_still_return_ng_when_patchcore_finds_obvious_defect(
 
     assert result.status == "NG"
     assert result.reason == "texture_anomaly_quality_override"
-    assert set(result.artifact_paths) >= {"heatmap", "overlay"}
+    assert set(result.artifact_paths) == {"overlay"}

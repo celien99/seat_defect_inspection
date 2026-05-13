@@ -5,7 +5,7 @@ from __future__ import annotations
 from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
-from seat_defect_core.schemas import InspectionResult
+from seat_defect_core.types import InspectionResult
 
 from ..config import InspectionConfig
 from ..schemas import CaptureSummary
