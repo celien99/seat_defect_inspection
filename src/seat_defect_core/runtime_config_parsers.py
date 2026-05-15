@@ -307,6 +307,10 @@ def _parse_patchcore_config(payload: Any, config_dir: Path, *, scope: str) -> Pa
             payload.get("threshold_quantile"),
             defaults.threshold_quantile,
         ),
+        training_threshold_upper_quantile=_float_or_default(
+            payload.get("training_threshold_upper_quantile"),
+            defaults.training_threshold_upper_quantile,
+        ),
         texture_input=_string_or_default(payload.get("texture_input"), defaults.texture_input),
         min_target_coverage=_float_or_default(
             payload.get("min_target_coverage"),
@@ -356,6 +360,10 @@ def _parse_patchcore_config(payload: Any, config_dir: Path, *, scope: str) -> Pa
             payload.get("critical_min_component_patch_count"),
             defaults.critical_min_component_patch_count,
         ),
+        min_peak_component_patch_count=_int_or_default(
+            payload.get("min_peak_component_patch_count"),
+            defaults.min_peak_component_patch_count,
+        ),
         backbone_name=_string_or_default(payload.get("backbone_name"), defaults.backbone_name),
         feature_layers=_string_list(
             payload.get("feature_layers"),
@@ -401,6 +409,10 @@ def _parse_color_branch_config(payload: Any, *, scope: str) -> ColorBranchConfig
         min_valid_pixel_ratio=_float_or_default(
             payload.get("min_valid_pixel_ratio"),
             defaults.min_valid_pixel_ratio,
+        ),
+        training_threshold_upper_quantile=_float_or_default(
+            payload.get("training_threshold_upper_quantile"),
+            defaults.training_threshold_upper_quantile,
         ),
     )
 

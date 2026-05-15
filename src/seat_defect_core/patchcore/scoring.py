@@ -182,11 +182,12 @@ def _decide_patchcore_anomaly(
     decision_threshold = float(threshold) * _threshold_margin(config.decision_score_margin)
     critical_score_threshold = float(threshold) * _threshold_margin(config.critical_score_margin)
     critical_peak_threshold = float(threshold) * _threshold_margin(config.critical_peak_score_margin)
-    peak_min_patch_count = max(2, int(config.critical_min_component_patch_count))
-    component_min_patch_count = max(2, int(config.critical_min_component_patch_count))
-    decision_patch_count = int(evidence.get("decision_patch_count", 0))
+    component_min_patch_count = max(1, int(config.critical_min_component_patch_count))
     largest_decision_component_patch_count = int(
         evidence.get("largest_decision_component_patch_count", 0),
+    )
+    largest_component_patch_count = int(
+        evidence.get("largest_component_patch_count", 0),
     )
 
     normal_trigger = (
@@ -199,14 +200,14 @@ def _decide_patchcore_anomaly(
     critical_trigger = (
         float(score) > critical_score_threshold
         and float(evidence["peak_patch_score"]) > critical_peak_threshold
-        and int(evidence["largest_component_patch_count"]) >= component_min_patch_count
+        and max(largest_component_patch_count, largest_decision_component_patch_count) >= component_min_patch_count
     )
     # If the heatmap already contains a peak that crosses the final decision
     # threshold, the result should not stay at OK even when the anomaly is very
     # small and does not form a large connected region.
     peak_trigger = (
         float(evidence["peak_patch_score"]) > decision_threshold
-        and decision_patch_count >= 1
+        and largest_decision_component_patch_count >= max(1, int(config.min_peak_component_patch_count))
     )
 
     if normal_trigger and critical_trigger:

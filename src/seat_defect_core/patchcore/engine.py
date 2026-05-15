@@ -33,6 +33,7 @@ _RUNTIME_DECISION_OVERRIDE_FIELDS = (
     "critical_score_margin",
     "critical_peak_score_margin",
     "critical_min_component_patch_count",
+    "min_peak_component_patch_count",
 )
 
 
@@ -249,6 +250,9 @@ class PatchCoreService:
             stride=int(meta["stride"]),
             max_memory=int(meta["max_memory"]),
             threshold_quantile=float(meta["threshold_quantile"]),
+            training_threshold_upper_quantile=float(
+                meta.get("training_threshold_upper_quantile", 0.999)
+            ),
             texture_input=str(meta.get("texture_input", "lab_l")),
             min_target_coverage=float(meta.get("min_target_coverage", 0.8)),
             max_ignore_overlap=float(meta.get("max_ignore_overlap", 0.1)),
@@ -262,6 +266,7 @@ class PatchCoreService:
             critical_score_margin=float(meta.get("critical_score_margin", 1.35)),
             critical_peak_score_margin=float(meta.get("critical_peak_score_margin", 1.45)),
             critical_min_component_patch_count=int(meta.get("critical_min_component_patch_count", 2)),
+            min_peak_component_patch_count=int(meta.get("min_peak_component_patch_count", 1)),
             backbone_name=str(meta.get("backbone_name", "wide_resnet50_2")),
             feature_layers=list(meta.get("feature_layers", ["layer2", "layer3"])),
             backbone_pretrained=bool(meta.get("backbone_pretrained", False)),

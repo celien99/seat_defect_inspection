@@ -49,10 +49,22 @@
               ],
               "backbone_pretrained": true,
               "backbone_device": "cpu",
+              "max_memory": 1024,
+              "training_threshold_upper_quantile": 0.995,
               "coreset_sampling_ratio": 0.1,
               "texture_input": "lab_l",
               "min_target_coverage": 0.6,
-              "min_valid_patch_ratio": 0.4
+              "min_valid_patch_ratio": 0.4,
+              "decision_score_margin": 1,
+              "strong_patch_score_ratio": 0.8,
+              "min_strong_patch_count": 1,
+              "min_strong_component_count": 1,
+              "min_strong_patch_ratio": 0.0,
+              "min_strong_component_ratio": 0.0,
+              "critical_score_margin": 1,
+              "critical_peak_score_margin": 1.05,
+              "critical_min_component_patch_count": 1,
+              "min_peak_component_patch_count": 1
             },
             "color_branch": {
               "enabled": false
@@ -130,10 +142,22 @@
               ],
               "backbone_pretrained": true,
               "backbone_device": "cpu",
+              "max_memory": 1024,
+              "training_threshold_upper_quantile": 0.995,
               "coreset_sampling_ratio": 0.1,
               "texture_input": "lab_l",
               "min_target_coverage": 0.6,
-              "min_valid_patch_ratio": 0.4
+              "min_valid_patch_ratio": 0.4,
+              "decision_score_margin": 1,
+              "strong_patch_score_ratio": 0.8,
+              "min_strong_patch_count": 1,
+              "min_strong_component_count": 1,
+              "min_strong_patch_ratio": 0.0,
+              "min_strong_component_ratio": 0.0,
+              "critical_score_margin": 1,
+              "critical_peak_score_margin": 1.05,
+              "critical_min_component_patch_count": 1,
+              "min_peak_component_patch_count": 1
             },
             "color_branch": {
               "enabled": false

@@ -68,10 +68,13 @@ class ColorConsistencyService:
         if self.config.threshold is not None:
             threshold = float(self.config.threshold)
         else:
+            upper_quantile = float(
+                np.clip(self.config.training_threshold_upper_quantile, 0.9, 1.0)
+            )
             threshold = max(
                 float(np.quantile(normalized_distances, self.config.threshold_quantile)),
                 float(normalized_distances.mean() + 3.0 * normalized_distances.std()),
-                float(normalized_distances.max() * 1.1 + 1e-6),
+                float(np.quantile(normalized_distances, upper_quantile)),
             )
 
         self.profile = ColorReferenceProfile(

@@ -78,10 +78,13 @@ class PatchCoreTrainer(PatchCoreService):
             sample_start = sample_end
 
         score_array = np.asarray(image_scores, dtype=np.float32)
+        upper_quantile = float(
+            np.clip(self.config.training_threshold_upper_quantile, 0.9, 1.0)
+        )
         self.threshold = max(
             float(np.quantile(score_array, self.config.threshold_quantile)),
             float(score_array.mean() + 3.0 * score_array.std()),
-            float(score_array.max() * 1.1 + 1e-6),
+            float(np.quantile(score_array, upper_quantile)),
         )
         return {
             "backend": self.config.backend,
@@ -148,6 +151,7 @@ def _build_model_meta(
         "stride": config.stride,
         "max_memory": config.max_memory,
         "threshold_quantile": config.threshold_quantile,
+        "training_threshold_upper_quantile": config.training_threshold_upper_quantile,
         "texture_input": config.texture_input,
         "min_target_coverage": config.min_target_coverage,
         "max_ignore_overlap": config.max_ignore_overlap,
@@ -161,6 +165,7 @@ def _build_model_meta(
         "critical_score_margin": config.critical_score_margin,
         "critical_peak_score_margin": config.critical_peak_score_margin,
         "critical_min_component_patch_count": config.critical_min_component_patch_count,
+        "min_peak_component_patch_count": config.min_peak_component_patch_count,
         "backbone_name": config.backbone_name,
         "feature_layers": list(config.feature_layers),
         "backbone_pretrained": config.backbone_pretrained,

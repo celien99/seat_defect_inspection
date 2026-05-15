@@ -382,12 +382,15 @@ def _merge_region_status(
     ng_regions = [item for item in region_results if item.status == "NG"]
     reject_regions = [item for item in region_results if item.status == "REJECT"]
     if ng_regions and color_result is not None and color_result.is_anomaly:
-        return (
-            "NG",
+        reason = (
             "region_texture_and_color_anomaly_quality_override"
             if quality_rejected
-            else "region_texture_and_color_anomaly",
+            else "region_texture_and_color_anomaly"
         )
+        if reject_regions:
+            reject_ids = ",".join(item.region_id for item in reject_regions)
+            reason += f"_with_reject:{reject_ids}"
+        return "NG", reason
     if ng_regions:
         region_ids = ",".join(item.region_id for item in ng_regions)
         prefix = (
@@ -395,7 +398,11 @@ def _merge_region_status(
             if quality_rejected
             else "region_texture_anomaly"
         )
-        return "NG", f"{prefix}:{region_ids}"
+        reason = f"{prefix}:{region_ids}"
+        if reject_regions:
+            reject_ids = ",".join(item.region_id for item in reject_regions)
+            reason += f"_with_reject:{reject_ids}"
+        return "NG", reason
     if color_result is not None and color_result.is_anomaly:
         return (
             "NG",

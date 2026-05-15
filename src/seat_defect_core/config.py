@@ -65,7 +65,7 @@ class PatchCoreConfig:
     image_size: int = 256
     patch_size: int = 32
     stride: int = 16
-    max_memory: int = 512
+    max_memory: int = 1024
     threshold_quantile: float = 0.99
     texture_input: str = "lab_l"
 
@@ -73,6 +73,9 @@ class PatchCoreConfig:
     min_target_coverage: float = 0.8
     max_ignore_overlap: float = 0.1
     min_valid_patch_ratio: float = 0.65
+
+    # 训练时阈值上限分位数（替代 max*1.1 的统计鲁棒上界）。
+    training_threshold_upper_quantile: float = 0.995
 
     # 图像级与连通域判定。
     decision_score_margin: float = 1.08
@@ -86,6 +89,9 @@ class PatchCoreConfig:
     critical_score_margin: float = 1.35
     critical_peak_score_margin: float = 1.45
     critical_min_component_patch_count: int = 2
+
+    # 峰值规则（peak_rule）最小连通 patch 数，防止单 patch 噪声误触发。
+    min_peak_component_patch_count: int = 1
 
     # full 后端的骨干网络参数。
     backbone_name: str = "wide_resnet50_2"
@@ -105,6 +111,7 @@ class ColorBranchConfig:
     threshold_quantile: float = 0.99
     threshold: float | None = None
     min_valid_pixel_ratio: float = 0.4
+    training_threshold_upper_quantile: float = 0.995
 
 
 @dataclass
