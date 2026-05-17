@@ -557,8 +557,27 @@ def _parse_yolo_training_config(
         name=_string_or_default(payload.get("name"), defaults.name),
         workers=_int_or_default(payload.get("workers"), defaults.workers),
         patience=_int_or_default(payload.get("patience"), defaults.patience),
-        cache=_bool_or_default(payload.get("cache"), defaults.cache),
+        cache=_cache_or_default(payload.get("cache"), defaults.cache),
         pretrained=_bool_or_default(payload.get("pretrained"), defaults.pretrained),
+        amp=_bool_or_default(payload.get("amp"), defaults.amp),
+        optimizer=_string_or_default(payload.get("optimizer"), defaults.optimizer),
+        lr0=_float_or_default(payload.get("lr0"), defaults.lr0),
+        lrf=_float_or_default(payload.get("lrf"), defaults.lrf),
+        momentum=_float_or_default(payload.get("momentum"), defaults.momentum),
+        weight_decay=_float_or_default(payload.get("weight_decay"), defaults.weight_decay),
+        warmup_epochs=_float_or_default(payload.get("warmup_epochs"), defaults.warmup_epochs),
+        warmup_momentum=_float_or_default(payload.get("warmup_momentum"), defaults.warmup_momentum),
+        warmup_bias_lr=_float_or_default(payload.get("warmup_bias_lr"), defaults.warmup_bias_lr),
+        mixup=_float_or_default(payload.get("mixup"), defaults.mixup),
+        copy_paste=_float_or_default(payload.get("copy_paste"), defaults.copy_paste),
+        degrees=_float_or_default(payload.get("degrees"), defaults.degrees),
+        translate=_float_or_default(payload.get("translate"), defaults.translate),
+        scale=_float_or_default(payload.get("scale"), defaults.scale),
+        shear=_float_or_default(payload.get("shear"), defaults.shear),
+        perspective=_float_or_default(payload.get("perspective"), defaults.perspective),
+        flipud=_float_or_default(payload.get("flipud"), defaults.flipud),
+        fliplr=_float_or_default(payload.get("fliplr"), defaults.fliplr),
+        rect=_bool_or_default(payload.get("rect"), defaults.rect),
         seat_model_id=resolved_seat_model_id,
     )
 
@@ -671,6 +690,22 @@ def _bool_or_default(value: Any, default: bool) -> bool:
         if normalized == "false":
             return False
     raise TypeError(f"布尔配置必须是 true/false，当前值: {value!r}")
+
+
+def _cache_or_default(value: Any, default: bool | str) -> bool | str:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in ("true", "false", "ram", "disk"):
+            if normalized == "true":
+                return True
+            if normalized == "false":
+                return False
+            return normalized
+    raise TypeError(f"cache 配置必须是 true/false/ram/disk，当前值: {value!r}")
 
 
 def _int_or_default(value: Any, default: int) -> int:
