@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 import cv2
 import numpy as np
 
-from seat_defect_core.config import PatchCoreConfig
+from seat_defect_core.config import (PatchCoreConfig, RegionConfig)
 from seat_defect_core.cvops import split_roi_regions
 from seat_defect_core.patchcore import ColorConsistencyService
 from seat_defect_core.patchcore.features import (
@@ -79,33 +79,45 @@ def _train_one_camera(
     skipped_images: list[str] = []
     skipped_reason_counter: Counter[str] = Counter()
 
-    for image_path in image_paths:
-        image = cv2.imread(str(image_path))
-        if image is None:
-            skipped_images.append(str(image_path))
-            skipped_reason_counter["image_read_failed"] += 1
+    yolo_batch_size = 64
+    for start in range(0, len(image_paths), yolo_batch_size):
+        chunk_paths = image_paths[start : start + yolo_batch_size]
+        chunk_images: list[np.ndarray] = []
+        path_by_index: list[Path] = []
+        for path in chunk_paths:
+            image = cv2.imread(str(path))
+            if image is None:
+                skipped_images.append(str(path))
+                skipped_reason_counter["image_read_failed"] += 1
+                continue
+            chunk_images.append(image)
+            path_by_index.append(path)
+
+        if not chunk_images:
             continue
 
-        prepared = pipeline.prepare_image(image)
-        if prepared.rejection_reason is not None or prepared.roi is None:
-            reason = prepared.rejection_reason or "roi_missing"
-            skipped_images.append(str(image_path))
-            skipped_reason_counter[reason] += 1
-            continue
+        detections = pipeline.detection_service.detect_many(chunk_images)
+        for path, image, detection in zip(path_by_index, chunk_images, detections):
+            prepared = pipeline.prepare_from_detection(image, detection)
+            if prepared.rejection_reason is not None or prepared.roi is None:
+                reason = prepared.rejection_reason or "roi_missing"
+                skipped_images.append(str(path))
+                skipped_reason_counter[reason] += 1
+                continue
 
-        patchcore_samples.append(
-            (
-                select_patchcore_input(prepared.roi),
-                prepared.roi.target_mask,
-                prepared.roi.ignore_mask,
+            patchcore_samples.append(
+                (
+                    select_patchcore_input(prepared.roi),
+                    prepared.roi.target_mask,
+                    prepared.roi.ignore_mask,
+                )
             )
-        )
-        color_samples.append(
-            (
-                prepared.roi.aligned_roi_image,
-                prepared.roi.valid_mask,
+            color_samples.append(
+                (
+                    prepared.roi.aligned_roi_image,
+                    prepared.roi.valid_mask,
+                )
             )
-        )
 
     if not patchcore_samples:
         raise ValueError(
@@ -198,44 +210,56 @@ def _train_one_camera_regions(
     skipped_reason_counter: Counter[str] = Counter()
     accepted_image_count = 0
 
-    for image_path in image_paths:
-        image = cv2.imread(str(image_path))
-        if image is None:
-            skipped_images.append(str(image_path))
-            skipped_reason_counter["image_read_failed"] += 1
-            continue
-
-        prepared = pipeline.prepare_image(image)
-        if prepared.rejection_reason is not None or prepared.roi is None:
-            reason = prepared.rejection_reason or "roi_missing"
-            skipped_images.append(str(image_path))
-            skipped_reason_counter[reason] += 1
-            continue
-
-        sample_by_region = {
-            sample.region_id: sample
-            for sample in split_roi_regions(prepared.roi, active_regions)
-        }
-        accepted_region_count = 0
-        for region in active_regions:
-            sample = sample_by_region.get(region.region_id)
-            if sample is None:
-                skipped_reason_counter[f"region_empty:{region.region_id}"] += 1
+    yolo_batch_size = 64
+    for start in range(0, len(image_paths), yolo_batch_size):
+        chunk_paths = image_paths[start : start + yolo_batch_size]
+        chunk_images: list[np.ndarray] = []
+        path_by_index: list[Path] = []
+        for path in chunk_paths:
+            image = cv2.imread(str(path))
+            if image is None:
+                skipped_images.append(str(path))
+                skipped_reason_counter["image_read_failed"] += 1
                 continue
-            patchcore_samples_by_region[region.region_id].append(
-                (
-                    sample.image,
-                    sample.target_mask,
-                    sample.ignore_mask,
-                )
-            )
-            accepted_region_count += 1
+            chunk_images.append(image)
+            path_by_index.append(path)
 
-        if accepted_region_count <= 0:
-            skipped_images.append(str(image_path))
-            skipped_reason_counter["no_region_samples"] += 1
-        else:
-            accepted_image_count += 1
+        if not chunk_images:
+            continue
+
+        detections = pipeline.detection_service.detect_many(chunk_images)
+        for path, image, detection in zip(path_by_index, chunk_images, detections):
+            prepared = pipeline.prepare_from_detection(image, detection)
+            if prepared.rejection_reason is not None or prepared.roi is None:
+                reason = prepared.rejection_reason or "roi_missing"
+                skipped_images.append(str(path))
+                skipped_reason_counter[reason] += 1
+                continue
+
+            sample_by_region = {
+                sample.region_id: sample
+                for sample in split_roi_regions(prepared.roi, active_regions)
+            }
+            accepted_region_count = 0
+            for region in active_regions:
+                sample = sample_by_region.get(region.region_id)
+                if sample is None:
+                    skipped_reason_counter[f"region_empty:{region.region_id}"] += 1
+                    continue
+                patchcore_samples_by_region[region.region_id].append(
+                    (
+                        sample.image,
+                        sample.target_mask,
+                        sample.ignore_mask,
+                    )
+                )
+                accepted_region_count += 1
+
+            if accepted_region_count <= 0:
+                skipped_images.append(str(path))
+                skipped_reason_counter["no_region_samples"] += 1
+            else:
+                accepted_image_count += 1
 
     # 检查所有区域的特征提取配置是否一致，以决定是否跨区域共享 backbone。
     _FEATURE_EXTRACTION_FIELDS = (

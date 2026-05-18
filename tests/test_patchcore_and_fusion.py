@@ -1622,7 +1622,21 @@ def test_train_patchcore_writes_per_image_audit_artifacts(tmp_path: Path, monkey
             Path(model_path).write_bytes(b"fake")
 
     class _FakePipeline:
-        def prepare_image(self, _image):
+        def __init__(self):
+            self.detection_service = SimpleNamespace(
+                detect_many=lambda images: [
+                    DetectionResult(
+                        target=DetectionObject(
+                            label="seat",
+                            confidence=1.0,
+                            bounding_box=BoundingBox(1.0, 2.0, 17.0, 18.0),
+                        ),
+                    )
+                    for _image in images
+                ],
+            )
+
+        def prepare_from_detection(self, _image, _detection):
             target_mask = np.ones((16, 16), dtype=np.uint8)
             roi = RoiRefineResult(
                 crop_box=BoundingBox(1.0, 2.0, 17.0, 18.0),
@@ -1652,13 +1666,7 @@ def test_train_patchcore_writes_per_image_audit_artifacts(tmp_path: Path, monkey
                         is_white_frame=False,
                     ),
                 ),
-                detection=DetectionResult(
-                    target=DetectionObject(
-                        label="seat",
-                        confidence=1.0,
-                        bounding_box=BoundingBox(1.0, 2.0, 17.0, 18.0),
-                    ),
-                ),
+                detection=_detection,
                 roi=roi,
                 rejection_reason=None,
             )
