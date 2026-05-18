@@ -434,6 +434,28 @@ def _apply_defect_classification(
                     future.cancel()
                     return
             texture_result.classification_results = results
+
+            # 3) SAM 缺陷边界精修（仅当分类器检测到缺陷且启用时）
+            if (
+                classification_config.sam_refinement_enabled
+                and results
+                and results[0].defect_type != DefectType.NONE
+                and results[0].confidence >= classification_config.confidence_threshold
+            ):
+                try:
+                    mask = _refine_with_sam(
+                        np.asarray(roi_image),
+                        np.asarray(heatmap),
+                        results[0],
+                    )
+                    if mask is not None:
+                        results[0].defect_area_ratio = _mask_area_ratio(mask)
+                        results[0].defect_bbox = _mask_to_bbox(mask, roi_image.shape[:2])
+                except Exception:
+                    _logger.warning(
+                        "SAM 缺陷精修失败，降级使用热力图结果",
+                        exc_info=True,
+                    )
         except Exception:
             _logger.warning(
                 "缺陷分类器执行失败，降级跳过 classification",
@@ -601,3 +623,44 @@ def _normalize_error_code(reason: str) -> str:
     normalized = reason.split(":", 1)[0].strip().lower()
     normalized = normalized.replace("-", "_").replace(" ", "_")
     return normalized or "unknown_error"
+
+
+def _refine_with_sam(
+    roi_image: "np.ndarray",
+    heatmap: "np.ndarray",
+    classification_result: "DefectClassificationResult",
+) -> "np.ndarray | None":
+    """调用 SAM 精修缺陷边界。"""
+    from ..cvops.sam_refinement import refine_defect_boundary
+
+    return refine_defect_boundary(
+        roi_image,
+        heatmap,
+        classification_result=classification_result,
+    )
+
+
+def _mask_area_ratio(mask: "np.ndarray") -> float:
+    """计算缺陷 mask 面积占 ROI 面积的比例。"""
+    if mask.size == 0:
+        return 0.0
+    return float(mask.sum() / 255.0) / float(mask.size)
+
+
+def _mask_to_bbox(
+    mask: "np.ndarray",
+    roi_shape: tuple[int, int],
+) -> "BoundingBox":
+    """从缺陷 mask 提取外接矩形（ROI 归一化坐标系）。"""
+    import numpy as np
+
+    rows = np.any(mask > 0, axis=1)
+    cols = np.any(mask > 0, axis=0)
+    if not rows.any() or not cols.any():
+        return BoundingBox(x1=0.0, y1=0.0, x2=0.0, y2=0.0)
+
+    y1 = float(np.argmax(rows)) / roi_shape[0]
+    y2 = float(len(rows) - np.argmax(rows[::-1])) / roi_shape[0]
+    x1 = float(np.argmax(cols)) / roi_shape[1]
+    x2 = float(len(cols) - np.argmax(cols[::-1])) / roi_shape[1]
+    return BoundingBox(x1=x1, y1=y1, x2=x2, y2=y2)

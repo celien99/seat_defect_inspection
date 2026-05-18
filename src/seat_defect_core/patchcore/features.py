@@ -210,7 +210,7 @@ def _build_patch_feature(
 
 
 class _TorchPatchFeatureExtractor:
-    """CNN 特征提取器，用于完整 PatchCore 后端。"""
+    """CNN / DINOv2 特征提取器，用于完整 PatchCore 后端。"""
 
     def __init__(self, config: PatchCoreConfig) -> None:
         if torch is None or torch_f is None:
@@ -218,19 +218,29 @@ class _TorchPatchFeatureExtractor:
                 "完整 PatchCore 依赖 torch 和 torchvision，请先安装可用运行环境。"
             )
         self.config = config
+        self._is_dinov2 = _is_dinov2_backbone(config)
         self.device = _resolve_torch_device(config.backbone_device)
         self.model = _load_torch_backbone(config)
         self.model.to(self.device)
         self.model.eval()
-        self.layer_names = [layer.strip() for layer in config.feature_layers if layer.strip()]
-        if not self.layer_names:
-            raise ValueError("完整 PatchCore 至少需要一个 feature_layers")
-        self._features: dict[str, Any] = {}
+
+        if self._is_dinov2:
+            self._n_dino_layers = 2  # 使用最后2层
+            self.layer_names = [f"dinov2_block_{i}" for i in range(-self._n_dino_layers, 0)]
+            self._features = None
+            self._handles = []
+        else:
+            self.layer_names = [layer.strip() for layer in config.feature_layers if layer.strip()]
+            if not self.layer_names:
+                raise ValueError("完整 PatchCore 至少需要一个 feature_layers")
+            self._features: dict[str, Any] = {}
+            self._handles = [
+                _resolve_submodule(self.model, layer_name).register_forward_hook(
+                    self._make_hook(layer_name)
+                )
+                for layer_name in self.layer_names
+            ]
         self._lock = threading.Lock()
-        self._handles = [
-            _resolve_submodule(self.model, layer_name).register_forward_hook(self._make_hook(layer_name))
-            for layer_name in self.layer_names
-        ]
 
     def extract(
         self,
@@ -248,16 +258,22 @@ class _TorchPatchFeatureExtractor:
                 interpolation=cv2.INTER_AREA,
             )
             input_tensor = _prepare_torch_input(resized_image, self.config).to(self.device)
-            with torch.inference_mode():
-                self._features.clear()
-                with torch.autocast(
-                    device_type=str(self.device.type),
-                    enabled=self.device.type in ("cuda", "mps"),
-                ):
-                    _ = self.model(input_tensor)
 
-            feature_maps = [self._features[layer_name] for layer_name in self.layer_names]
-            feature_maps = [feature_map.detach().float() for feature_map in feature_maps]
+            if self._is_dinov2:
+                feature_maps = _extract_dinov2_features(
+                    self.model, input_tensor,
+                    n_last_layers=self._n_dino_layers,
+                )
+            else:
+                with torch.inference_mode():
+                    self._features.clear()
+                    with torch.autocast(
+                        device_type=str(self.device.type),
+                        enabled=self.device.type in ("cuda", "mps"),
+                    ):
+                        _ = self.model(input_tensor)
+                feature_maps = [self._features[layer_name].detach().float() for layer_name in self.layer_names]
+
         embedding_map = _generate_deep_embedding_map(feature_maps, self.config)
         _, _, grid_rows, grid_cols = embedding_map.shape
 
@@ -313,15 +329,21 @@ class _TorchPatchFeatureExtractor:
                 for resized_image in resized_images
             ]
             input_tensor = torch.cat(tensors, dim=0).to(self.device)
-            with torch.inference_mode():
-                self._features.clear()
-                with torch.autocast(
-                    device_type=str(self.device.type),
-                    enabled=self.device.type in ("cuda", "mps"),
-                ):
-                    _ = self.model(input_tensor)
 
-            feature_maps = [self._features[layer_name].detach().float() for layer_name in self.layer_names]
+            if self._is_dinov2:
+                feature_maps = _extract_dinov2_features(
+                    self.model, input_tensor,
+                    n_last_layers=self._n_dino_layers,
+                )
+            else:
+                with torch.inference_mode():
+                    self._features.clear()
+                    with torch.autocast(
+                        device_type=str(self.device.type),
+                        enabled=self.device.type in ("cuda", "mps"),
+                    ):
+                        _ = self.model(input_tensor)
+                feature_maps = [self._features[layer_name].detach().float() for layer_name in self.layer_names]
 
         embedding_map = _generate_deep_embedding_map(feature_maps, self.config)
         _, _, grid_rows, grid_cols = embedding_map.shape
@@ -439,8 +461,48 @@ def _resolve_torch_device(requested_device: str) -> Any:
     return torch.device("cpu")
 
 
+def _is_dinov2_backbone(config: PatchCoreConfig) -> bool:
+    return config.backbone_name.strip().lower().startswith("dinov2_")
+
+
+def _load_dinov2_model(config: PatchCoreConfig) -> Any:
+    """加载 DINOv2 模型（通过 torch.hub）。"""
+    size = config.backbone_name.strip().lower().replace("dinov2_", "")
+    repo = "facebookresearch/dinov2"
+    model_name = f"dinov2_vit{size[0]}14"
+    try:
+        return torch.hub.load(repo, model_name)
+    except Exception as exc:
+        raise RuntimeError(
+            f"无法加载 DINOv2 模型 {model_name}。请确认 torch.hub 可访问 facebookresearch/dinov2。"
+        ) from exc
+
+
+def _extract_dinov2_features(
+    model: Any,
+    input_tensor: Any,
+    n_last_layers: int = 2,
+) -> list[Any]:
+    """从 DINOv2 提取多层特征图。
+
+    DINOv2 的 get_intermediate_layers 在 reshape=True 时直接返回
+    list[Tensor(B, C, H, W)]，无需 forward hooks。
+    """
+    with torch.inference_mode():
+        features = model.get_intermediate_layers(
+            input_tensor,
+            n=[n_last_layers],
+            reshape=True,
+            return_class_token=False,
+        )
+    return [f.detach().float() for f in features[0]]
+
+
 def _load_torch_backbone(config: PatchCoreConfig) -> Any:
     """加载完整 PatchCore 使用的 torchvision backbone。"""
+    if _is_dinov2_backbone(config):
+        return _load_dinov2_model(config)
+
     builder, default_weights = _resolve_backbone_builder(config.backbone_name)
     if config.backbone_weights_path:
         model = builder(weights=None)
@@ -480,8 +542,19 @@ def _load_torch_backbone(config: PatchCoreConfig) -> Any:
 
 
 def _resolve_backbone_builder(backbone_name: str) -> tuple[Any, Any]:
-    """根据 backbone 名称返回构造器和默认权重枚举。"""
+    """根据 backbone 名称返回构造器和默认权重枚举。
+
+    DINOv2 backbone 返回 (name, None) 标记为特殊处理。
+    """
     normalized = backbone_name.strip().lower()
+    if normalized.startswith("dinov2_"):
+        dino_size = normalized.replace("dinov2_", "")
+        if dino_size not in ("small", "base"):
+            raise ValueError(
+                f"DINOv2 backbone 目前仅支持 dinov2_small 和 dinov2_base，收到: {backbone_name}"
+            )
+        return (normalized, None)
+
     builders = {
         "resnet18": (resnet18, ResNet18_Weights.DEFAULT if ResNet18_Weights is not None else None),
         "resnet50": (resnet50, ResNet50_Weights.DEFAULT if ResNet50_Weights is not None else None),
@@ -492,7 +565,7 @@ def _resolve_backbone_builder(backbone_name: str) -> tuple[Any, Any]:
     }
     builder = builders.get(normalized)
     if builder is None or builder[0] is None:
-        supported = ", ".join(sorted(builders))
+        supported = ", ".join(sorted(list(builders) + ["dinov2_small", "dinov2_base"]))
         raise ValueError(f"Unsupported PatchCore backbone `{backbone_name}`，当前支持：{supported}")
     return builder
 

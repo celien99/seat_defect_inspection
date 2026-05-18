@@ -98,6 +98,9 @@ def _validate_patchcore_backend(config: PatchCoreConfig, *, scope: str) -> None:
         return
     if config.backbone_pretrained or config.backbone_weights_path:
         return
+    # DINOv2 始终使用预训练权重，无需额外配置
+    if config.backbone_name.strip().lower().startswith("dinov2_"):
+        return
     raise ValueError(
         f"{scope} 配置了 patchcore.backend=full，"
         "但没有提供可用 backbone 权重。"

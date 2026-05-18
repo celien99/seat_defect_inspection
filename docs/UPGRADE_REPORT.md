@@ -89,8 +89,9 @@ YOLO11m-seg  →  ROI 裁剪  →  PatchCore(无监督)  →  颜色一致性  �
 |------|------|------|------|
 | Phase 1 | 缺陷分类层 + 误报过滤 | 已完成 | ✅ |
 | Phase 2 | 自学习数据闭环 | 已完成 | ✅ |
-| Phase 3 | 基础模型集成 (DINOv2 / SAM / CLIP) | 待规划 | 🔲 |
+| Phase 3 | 基础模型集成 (DINOv2 / SAM) | 已完成 | ✅ |
 | Phase 4 | MLOps 基础设施 (A/B测试/持续评估) | 待规划 | 🔲 |
+| 生产加固 | 异步飞轮/超时保护/热加载/缺陷图返回 | 已完成 | ✅ |
 
 ---
 
@@ -310,7 +311,7 @@ datasets/defect_classifier/
 
 ## 六、文件变更清单
 
-### 6.1 新增文件（10 个）
+### 6.1 新增文件（13 个）
 
 | 文件路径 | 说明 |
 |---------|------|
@@ -325,8 +326,9 @@ datasets/defect_classifier/
 | `src/seat_defect_inspection/cli_commands/train_classifier.py` | train-classifier 命令 |
 | `src/seat_defect_inspection/service/classifier_training.py` | 分类器训练编排 |
 | `src/seat_defect_inspection/service/flywheel.py` | 飞轮自学习训练编排 |
+| `src/seat_defect_core/cvops/sam_refinement.py` | SAM 缺陷边界精修 |
 
-### 6.2 修改文件（13 个）
+### 6.2 修改文件（16 个）
 
 | 文件路径 | 变更内容 |
 |---------|---------|
@@ -334,12 +336,16 @@ datasets/defect_classifier/
 | `src/seat_defect_core/types/__init__.py` | 导出新类型 |
 | `src/seat_defect_core/config.py` | 新增 3 个配置类，扩展 CameraConfig 和 InspectionConfig |
 | `src/seat_defect_core/__init__.py` | 导出新配置类和类型 |
-| `src/seat_defect_core/runtime_config_parsers.py` | 新增 3 段配置解析器 |
-| `src/seat_defect_core/service/core.py` | 分类器缓存、飞轮采集器/缓冲区管理 |
+| `src/seat_defect_core/runtime_config_parsers.py` | 新增 3 段配置解析器 + inference_timeout_ms |
+| `src/seat_defect_core/runtime_config.py` | DINOv2 免检 pretrained 配置 |
+| `src/seat_defect_core/service/core.py` | 分类器缓存(mtime热加载)、飞轮采集器/缓冲区管理 |
 | `src/seat_defect_core/service/inspection.py` | 检测完成后自动采集飞轮样本 |
-| `src/seat_defect_core/service/inspection_camera.py` | 全 ROI 和区域两条路径均集成 veto + 分类器 |
+| `src/seat_defect_core/service/inspection_camera.py` | 集成 veto + 分类器 + SAM + defect_images |
+| `src/seat_defect_core/service/response.py` | defect_images base64 编码返回 |
 | `src/seat_defect_core/fusion.py` | 融合决策原因包含缺陷类型摘要 |
 | `src/seat_defect_core/serialization.py` | 分类结果 JSON 序列化 |
+| `src/seat_defect_core/patchcore/features.py` | DINOv2 backbone 特征提取 |
+| `src/seat_defect_core/classifier/engine.py` | is_stale/reload mtime 热加载 |
 | `src/seat_defect_inspection/cli.py` | 注册 train-classifier 命令 |
 | `src/seat_defect_inspection/cli_commands/__init__.py` | 导出新命令 |
 | `src/seat_defect_inspection/service/__init__.py` | 导出 train_classifier_models |
@@ -460,35 +466,106 @@ python -m seat_defect_inspection train-classifier \
 
 ---
 
-## 九、后续规划
+## 九、Phase 3 — 基础模型集成（已实现）
 
-### Phase 3 — 基础模型集成（规划中）
+### 9.1 DINOv2 骨干网络
 
-| 能力 | 技术方案 | 预期收益 |
+DINOv2 作为 PatchCore 特征提取器的可选替代方案。
+
+| 属性 | WideResNet50 (原) | DINOv2-Small (新) | DINOv2-Base (新) |
+|------|-------------------|-------------------|-------------------|
+| 参数量 | 69M | 21M | 86M |
+| 训练方式 | ImageNet 监督 | 自监督 (无需标签) | 自监督 |
+| 特征维度 | 1024+2048 | 384×2层 | 768×2层 |
+| 推理速度 | 基准 | ~快 30% | ~相近 |
+| 配置名 | `wide_resnet50_2` | `dinov2_small` | `dinov2_base` |
+
+**使用方式**：在配置中修改 `patchcore.backbone_name`，无需改代码。
+
+```json
+{
+  "patchcore": {
+    "backend": "full",
+    "backbone_name": "dinov2_small"
+  }
+}
+```
+
+DINOv2 为自监督模型，从 `torch.hub` 自动下载，无需配置 `backbone_pretrained` 或 `backbone_weights_path`。特征提取通过 `model.get_intermediate_layers()` 在 `reshape=True` 模式直接获取空间特征图，无需 forward hook 机制。
+
+### 9.2 SAM 缺陷边界精修
+
+当分类器检测到缺陷且 `sam_refinement_enabled=true` 时，使用 SAM (Segment Anything) 在热力图峰值位置生成精确缺陷 mask。
+
+**特性**：
+- 懒加载 + 进程级单例缓存
+- 使用轻量 SAM ViT-B (375MB)
+- GPU 推理 ~50ms，CPU 推理 ~500ms
+- 失败时静默降级，不影响主流程
+- 输出：精确 `defect_bbox`（归一化坐标）和 `defect_area_ratio`
+
+```json
+{
+  "classification": {
+    "sam_refinement_enabled": true
+  }
+}
+```
+
+---
+
+## 十、生产可靠性加固（已实现）
+
+### 10.1 异步飞轮采集
+
+DataCollectorService 使用后台 daemon 线程 + queue.Queue 实现异步磁盘写入。主检测流程仅需 `np.copy()` + `queue.put()` (~2ms)，不影响检测延迟。
+
+### 10.2 分类器超时保护
+
+`ClassificationConfig.inference_timeout_ms` (默认 200ms)。推理通过 `ThreadPoolExecutor.submit()` + `future.result(timeout=...)` 执行。超时后降级为 PatchCore 原结果，不阻塞主流程。
+
+### 10.3 模型热加载
+
+`get_classifier_service()` 基于 mtime 检测模型文件变更。飞轮重训练覆盖 active 模型文件后，下一次检测自动加载新模型，无需重启进程。与 PatchCore `ModelBundleCache` 保持一致的失效策略。
+
+### 10.4 全线异常降级
+
+| 组件 | 异常处理 | 降级行为 |
 |------|---------|---------|
-| 更强的特征提取 | DINOv2 替换 WideResNet50 | 对细微纹理异常检测 AUROC 提升 |
-| 精细化缺陷分割 | SAM 在热力图峰值区域做分割 | 精确缺陷边界，支持面积/形状统计 |
-| 零样本缺陷识别 | CLIP 图文匹配作为分类器兜底 | 新增缺陷类型只需加文本描述 |
+| Veto | try/except | 跳过过滤，PatchCore 原结果 |
+| Classifier | try/except + 超时 | 跳过分类，NG 判定不变 |
+| SAM | try/except | 跳过精修，无 bbox/area |
+| Flywheel collect | try/except | 跳过采集，不影响结果导出 |
+| Classifier warmup | try/except | 跳过预加载，首次推理时懒加载 |
 
-### Phase 4 — MLOps 基础设施（规划中）
+### 10.5 缺陷图 API 返回
+
+`InspectionResponse.defect_images` 直接返回 NG 机位的 base64 编码缺陷标注图（热力图叠加 JET 配色），调用方无需读取磁盘。
+
+---
+
+## 十一、后续规划 (Phase 4)
 
 | 能力 | 说明 |
 |------|------|
 | A/B 测试 | 流量分配对照/实验模型，自动对比指标 |
 | 持续评估 | 定期在标注验证集上评估模型衰减 |
 | 自动回滚 | 精度下降超阈值自动切回上一版本 |
-| 模型血缘追踪 | ModelCard 记录父版本，支持溯源 |
+| PatchCore 增量更新 | 新正常样本 embedding 追加到 memory bank + coreset 重采样 |
+| CLIP 零样本分类 | 图文匹配作为分类器兜底 |
 
 ---
 
-## 十、风险与对策
+## 十二、风险与对策
 
 | 风险 | 影响 | 对策 |
 |------|------|------|
 | 分类器冷启动需要标注数据 | 初期无分类器可用 | 分类器默认关闭；误报过滤器可独立工作 |
 | 自动标注错误导致模型退化 | 错误标签进入训练集 | 高置信度阈值 (0.92) + 人工复核通道 + 精度下降自动回滚 |
-| 分类器推理增加延迟 | 产线节拍超时 | 轻量 backbone (<50ms)；配置超时后可 fallback 到 PatchCore-only |
+| 分类器推理增加延迟 | 产线节拍超时 | 轻量 backbone (<50ms)；200ms 超时 fallback 到 PatchCore-only |
 | 新缺陷类型未被分类器识别 | 漏检未知缺陷 | PatchCore 永远作为兜底筛查层；unknown 缺陷类型触发告警 |
+| DINOv2 首次下载失败 | 离线产线无法启动 | 预置模型文件到 .torch_cache；回退到 WideResNet50 |
+| SAM CPU 推理过慢 | 产线节拍超时 | 默认关闭；仅 GPU 环境启用；失败静默降级 |
 
 ---
 
