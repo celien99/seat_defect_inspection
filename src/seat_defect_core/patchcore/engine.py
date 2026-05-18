@@ -226,23 +226,10 @@ class PatchCoreService:
         cls,
         model_path: str | Path,
         runtime_config: PatchCoreConfig | None = None,
-        expected_pipeline_signature: str | None = None,
     ) -> LoadedModelBundle:
         """Restore a model bundle from disk."""
         saved = np.load(model_path, allow_pickle=False)
         meta = json.loads(saved["meta_json"].item())
-        saved_pipeline_signature = meta.get("pipeline_signature")
-        if expected_pipeline_signature is not None:
-            if not saved_pipeline_signature:
-                raise RuntimeError(
-                    "PatchCore model is missing the upstream pipeline signature. "
-                    "Please retrain the model before running inspection.",
-                )
-            if str(saved_pipeline_signature) != str(expected_pipeline_signature):
-                raise RuntimeError(
-                    "PatchCore model no longer matches the current ROI pipeline. "
-                    "Please retrain the model before running inspection.",
-                )
         trained_config = PatchCoreConfig(
             backend=str(meta.get("backend", "handcrafted")),
             image_size=int(meta["image_size"]),

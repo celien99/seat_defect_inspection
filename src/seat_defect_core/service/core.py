@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
-from dataclasses import asdict, dataclass, replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -141,56 +140,6 @@ class InspectionService:
         resolved_seat_model_id = seat_model_id or self.config.default_seat_model_id
         return resolved_seat_model_id, [camera for camera in self.config.cameras if camera.enabled]
 
-    def build_patchcore_pipeline_context(self, camera: CameraConfig) -> dict[str, Any]:
-        return {
-            "signature_version": 2,
-            "patchcore_input_mode": "transparent_bgra",
-            "color_insensitive_mode": bool(camera.color_insensitive_mode),
-            "quality": asdict(camera.quality),
-            "detection": {
-                "model_path": camera.detection.model_path,
-                "target_class": camera.detection.target_class,
-                "confidence": float(camera.detection.confidence),
-                "iou": float(camera.detection.iou),
-            },
-            "roi": asdict(camera.roi),
-        }
-
-    def build_region_patchcore_pipeline_context(
-        self,
-        camera: CameraConfig,
-        region: RegionConfig,
-    ) -> dict[str, Any]:
-        context = self.build_patchcore_pipeline_context(camera)
-        context["region"] = {
-            "region_id": region.region_id,
-            "box": [float(value) for value in region.box],
-            "patchcore_input_mode": "transparent_bgra_region",
-        }
-        return context
-
-    def build_patchcore_pipeline_signature(self, camera: CameraConfig) -> str:
-        payload = json.dumps(
-            self.build_patchcore_pipeline_context(camera),
-            sort_keys=True,
-            ensure_ascii=True,
-            separators=(",", ":"),
-        )
-        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-    def build_region_patchcore_pipeline_signature(
-        self,
-        camera: CameraConfig,
-        region: RegionConfig,
-    ) -> str:
-        payload = json.dumps(
-            self.build_region_patchcore_pipeline_context(camera, region),
-            sort_keys=True,
-            ensure_ascii=True,
-            separators=(",", ":"),
-        )
-        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
     def resolve_patchcore_config(
         self,
         camera: CameraConfig,
@@ -270,24 +219,22 @@ class InspectionService:
 
 
 class ModelBundleCache:
-    """Load and cache PatchCore bundles by model file and pipeline signature."""
+    """Load and cache PatchCore bundles by model file."""
 
     def __init__(self, service: InspectionService) -> None:
         self._service = service
-        self._cache: dict[tuple[str, str, str, str, int], LoadedModelBundle] = {}
+        self._cache: dict[tuple[str, str, str, int], LoadedModelBundle] = {}
 
     def load_camera_bundle(
         self,
         camera: CameraConfig,
         seat_model_id: str | None,
     ) -> LoadedModelBundle:
-        pipeline_signature = self._service.build_patchcore_pipeline_signature(camera)
         cache_key = self._cache_key(
             seat_model_id=seat_model_id,
             camera_id=camera.camera_id,
             model_id="__full__",
             model_path=camera.patchcore_model_path,
-            pipeline_signature=pipeline_signature,
         )
         bundle = self._cache.get(cache_key)
         if bundle is not None:
@@ -296,7 +243,6 @@ class ModelBundleCache:
         loaded = PatchCoreService.load_bundle(
             camera.patchcore_model_path,
             runtime_config=self._service.resolve_patchcore_config(camera),
-            expected_pipeline_signature=pipeline_signature,
         )
         if (
             camera.color_branch.enabled
@@ -316,13 +262,11 @@ class ModelBundleCache:
         region: RegionConfig,
         seat_model_id: str | None,
     ) -> LoadedModelBundle:
-        pipeline_signature = self._service.build_region_patchcore_pipeline_signature(camera, region)
         cache_key = self._cache_key(
             seat_model_id=seat_model_id,
             camera_id=camera.camera_id,
             model_id=region.region_id,
             model_path=region.patchcore_model_path,
-            pipeline_signature=pipeline_signature,
         )
         bundle = self._cache.get(cache_key)
         if bundle is not None:
@@ -331,7 +275,6 @@ class ModelBundleCache:
         loaded = PatchCoreService.load_bundle(
             region.patchcore_model_path,
             runtime_config=self._service.resolve_patchcore_config(camera, region),
-            expected_pipeline_signature=pipeline_signature,
         )
         self._cache[cache_key] = loaded
         return loaded
@@ -343,14 +286,12 @@ class ModelBundleCache:
         camera_id: str,
         model_id: str,
         model_path: str,
-        pipeline_signature: str,
-    ) -> tuple[str, str, str, str, int]:
+    ) -> tuple[str, str, str, int]:
         model_mtime_ns = Path(model_path).stat().st_mtime_ns
         return (
             seat_model_id or "__default__",
             camera_id,
             model_id,
-            pipeline_signature,
             model_mtime_ns,
         )
 

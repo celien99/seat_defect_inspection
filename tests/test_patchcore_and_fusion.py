@@ -928,7 +928,7 @@ def test_load_bundle_rejects_runtime_backend_mismatch(tmp_path) -> None:
     raise AssertionError("expected RuntimeError for PatchCore backend mismatch")
 
 
-def test_load_bundle_rejects_pipeline_signature_mismatch(tmp_path) -> None:
+def test_load_bundle_ignores_legacy_pipeline_signature_in_meta(tmp_path) -> None:
     model_path = tmp_path / "pipeline_signature_patchcore.npz"
     np.savez_compressed(
         model_path,
@@ -953,15 +953,8 @@ def test_load_bundle_rejects_pipeline_signature_mismatch(tmp_path) -> None:
         color_profile_json=np.array(""),
     )
 
-    try:
-        PatchCoreService.load_bundle(
-            model_path,
-            expected_pipeline_signature="sig_runtime",
-        )
-    except RuntimeError as exc:
-        assert "Please retrain" in str(exc)
-        return
-    raise AssertionError("expected RuntimeError for mismatched PatchCore pipeline signature")
+    bundle = PatchCoreService.load_bundle(model_path)
+    assert bundle is not None
 
 
 def test_inspection_service_rejects_missing_color_profile_when_color_branch_enabled(tmp_path) -> None:
@@ -1005,8 +998,6 @@ def test_inspection_service_rejects_missing_color_profile_when_color_branch_enab
             fusion=FusionConfig(),
         )
     )
-
-    service.build_patchcore_pipeline_signature = lambda _camera: None  # type: ignore[method-assign]
 
     try:
         service.load_model_bundle(camera, None)
@@ -1685,8 +1676,6 @@ def test_train_patchcore_writes_per_image_audit_artifacts(tmp_path: Path, monkey
             pipelines={"cam_0": _FakePipeline()},
         ),
         resolve_patchcore_config=lambda camera, region=None: camera.patchcore if region is None else region.patchcore or camera.patchcore,
-        build_patchcore_pipeline_context=lambda _camera: {"pipeline": "fake"},
-        build_patchcore_pipeline_signature=lambda _camera: "signature",
     )
 
     monkeypatch.setattr(
@@ -1869,45 +1858,6 @@ def test_patchcore_feature_image_does_not_turn_transparent_background_black() ->
     assert prepared.shape == (4, 4, 3)
     assert np.array_equal(prepared[0, 0], np.asarray([20, 80, 140], dtype=np.uint8))
     assert np.array_equal(prepared[1, 1], np.asarray([20, 80, 140], dtype=np.uint8))
-
-
-def test_patchcore_pipeline_context_records_transparent_bgra_input_mode() -> None:
-    camera = CameraConfig(
-        camera_id="cam_0",
-        source="0",
-        patchcore_model_path="model.npz",
-        patchcore=PatchCoreConfig(backbone_pretrained=True),
-    )
-    service = InspectionService(
-        SimpleNamespace(
-            cameras=[camera],
-            seat_models=[],
-            default_seat_model_id=None,
-            output_json_path="results.json",
-            debug_dir="debug",
-            capture_dir="capture",
-            capture_retries=1,
-            part_id="seat_demo",
-            fusion=FusionConfig(),
-        )
-    )
-
-    context = service.build_patchcore_pipeline_context(camera)
-    signature = service.build_patchcore_pipeline_signature(camera)
-
-    changed_camera = CameraConfig(
-        camera_id="cam_0",
-        source="0",
-        patchcore_model_path="model.npz",
-        patchcore=PatchCoreConfig(backbone_pretrained=True),
-        roi=RoiRefineConfig(
-            alignment=AlignmentConfig(output_width=512, output_height=512),
-        ),
-    )
-
-    assert context["signature_version"] == 2
-    assert context["patchcore_input_mode"] == "transparent_bgra"
-    assert service.build_patchcore_pipeline_signature(changed_camera) != signature
 
 
 def test_inspection_service_passes_target_and_ignore_masks_to_patchcore(tmp_path: Path, monkeypatch) -> None:
