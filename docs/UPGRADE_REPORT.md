@@ -95,7 +95,276 @@ YOLO11m-seg  →  ROI 裁剪  →  PatchCore(无监督)  →  颜色一致性  �
 
 ---
 
-## 三、Phase 1 — 缺陷分类层（已实现）
+## 三、升级后完整系统架构
+
+### 3.1 总体架构图
+
+```
+                           ┌─────────────────────────────────────────┐
+                           │              外部调用方                   │
+                           │   SeatDefectInspector.inspect(frames)   │
+                           └──────────────────┬──────────────────────┘
+                                              │
+                                              ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         inspect_frames() 主流程                              │
+│                                                                             │
+│  ┌──────────┐   ┌──────────┐   ┌──────────────────┐   ┌──────────────────┐ │
+│  │ 帧校验     │   │ YOLO     │   │ 逐相机检测         │   │ 多机位融合        │ │
+│  │ 帧映射     │──▶│ 批量检测  │──▶│ inspect_prepared   │──▶│ fuse_camera      │ │
+│  │ 校验ID    │   │ 分组推理  │   │ _camera()         │   │ _results()       │ │
+│  └──────────┘   └──────────┘   └───────┬────────────┘   └────────┬─────────┘ │
+│                                        │                          │          │
+│               ┌────────────────────────┼──────────────────────────┤          │
+│               │                        ▼                          ▼          │
+│               │  ┌──────────────────────────────────────────────────────┐   │
+│               │  │              单相机检测流水线                          │   │
+│               │  │                                                      │   │
+│               │  │  prepare ──▶ PatchCore ──▶ Color ──▶ ★Veto+Classify │   │
+│               │  │  (YOLO→ROI)  (纹理异常)   (LAB色差)  (误报过滤+分类)  │   │
+│               │  │                                 ★SAM refine        │   │
+│               │  └──────────────────────────────────────────────────────┘   │
+│               │                                                             │
+│               │  ┌──────────────────────────────────────────────────────┐   │
+│               │  │              自学习数据飞轮 (异步)                      │   │
+│               │  │                                                      │   │
+│               │  │  collect → queue → bg_thread → .npz disk write      │   │
+│               │  │     ↑                          ↓                    │   │
+│               │  │  检测出口                   buffer 积累               │   │
+│               │  │     ↑                          ↓                    │   │
+│               │  │  人工确认  ←── hard/  ←── 触发重训练                   │   │
+│               │  │     │                          ↓                    │   │
+│               │  │     └── tp/{type}/ ── 分类器微调 → 覆盖active模型      │   │
+│               │  │                              ↓                      │   │
+│               │  │                       mtime变化 → 热加载 → 生效        │   │
+│               │  └──────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                              │
+                                              ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          InspectionResponse                                 │
+│                                                                             │
+│  ┌─────────────────────┐  ┌──────────────────────┐  ┌────────────────────┐ │
+│  │ result              │  │ defect_images        │  │ report_path        │ │
+│  │ .status / .reason   │  │ {cam_id: base64 PNG} │  │ → results.json     │ │
+│  │ .camera_results[]   │  │ (NG相机热力图叠加)     │  │                    │ │
+│  │ .classification[]   │  └──────────────────────┘  └────────────────────┘ │
+│  │ .timings_ms         │                                                    │
+│  └─────────────────────┘                                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 3.2 单相机检测决策树
+
+```
+inspect_prepared_camera(frame, camera, prepared)
+│
+├─ ROI=None / prepare失败 ────────────────────────▶ REJECT
+│
+├─ enabled regions 存在 ──▶ build_region_patchcore_plan()
+│   └─ _finish_region_plans() → 批量PatchCore → 逐区域★veto+classify
+│
+└─ 全ROI路径:
+   │
+   ├─ load_model_bundle()          ← mtime校验 / pipeline签名校验
+   ├─ PatchCore.predict()          ← 无监督纹理异常检测
+   │   ├─ backbone: WideResNet50 / DINOv2-small / DINOv2-base
+   │   └─ 输出: score, is_anomaly, heatmap, decision_mode
+   │
+   ├─ valid_patch_ratio < min? ───────────────────▶ REJECT
+   │
+   ├─ _predict_color_branch()      ← LAB颜色一致性 (可选)
+   │
+   ├─ ★ _apply_defect_classification()
+   │   │
+   │   ├─ is_anomaly=false? ──────▶ skip (OK路径, 0开销)
+   │   │
+   │   ├─ ★ 1) apply_veto(heatmap)
+   │   │   ├─ 面积比 < 0.02%?     → veto → is_anomaly=false → OK
+   │   │   ├─ 长宽比 < 1:20?      → veto
+   │   │   └─ 80%+在边缘2%内?     → veto
+   │   │
+   │   ├─ ★ 2) classifier.predict(heatmap, roi)
+   │   │   ├─ 超时保护: 200ms ThreadPoolExecutor
+   │   │   ├─ 输出: [DefectClassificationResult, ...]
+   │   │   └─ 超时/异常 → 降级跳过
+   │   │
+   │   └─ ★ 3) SAM refinement (可选)
+   │       ├─ 热力图峰值 → 提示点
+   │       ├─ SAM ViT-B predict → 精确mask
+   │       └─ 输出: defect_bbox, defect_area_ratio
+   │
+   └─ 最终判定:
+      ├─ texture+color NG → NG "texture_and_color_anomaly"
+      ├─ texture NG only  → NG "texture_anomaly"
+      ├─ color NG only    → NG "color_anomaly"
+      ├─ quality reject   → REJECT
+      └─ all pass         → OK
+```
+
+### 3.3 数据流拓扑
+
+```
+                        ┌──────────────┐
+                        │  外部帧输入    │
+                        │  {cam_id: img}│
+                        └──────┬───────┘
+                               │
+               ┌───────────────┼───────────────┐
+               ▼               ▼               ▼
+          ┌─────────┐    ┌─────────┐    ┌─────────┐
+          │ cam_0   │    │ cam_1   │    │ cam_N   │
+          └────┬────┘    └────┬────┘    └────┬────┘
+               │              │              │
+     ┌─────────┼──────────────┼──────────────┼─────────┐
+     │         ▼              ▼              ▼         │
+     │    YOLO detect    YOLO detect    YOLO detect    │  批量分组
+     │    + ROI refine   + ROI refine   + ROI refine   │
+     │         │              │              │         │
+     │    ┌────▼────┐   ┌────▼────┐   ┌────▼────┐     │
+     │    │PatchCore│   │PatchCore│   │PatchCore│     │  独立推理
+     │    │+ Color  │   │+ Color  │   │+ Color  │     │
+     │    │+ Veto   │   │+ Veto   │   │+ Veto   │     │
+     │    │+Classify│   │+Classify│   │+Classify│     │
+     │    │+ SAM    │   │+ SAM    │   │+ SAM    │     │
+     │    └────┬────┘   └────┬────┘   └────┬────┘     │
+     │         │              │              │         │
+     └─────────┼──────────────┼──────────────┼─────────┘
+               │              │              │
+               └──────────────┼──────────────┘
+                              │
+                              ▼
+                    ┌──────────────────┐
+                    │   fuse_camera_   │
+                    │   results()      │
+                    │   any/majority/  │
+                    │   all strategy   │
+                    └────────┬─────────┘
+                             │
+              ┌──────────────┴──────────────┐
+              ▼                             ▼
+    ┌──────────────────┐        ┌──────────────────┐
+    │  InspectionResult │        │  飞轮异步采集     │
+    │  + report JSON    │        │  queue → disk    │
+    └────────┬─────────┘        └────────┬─────────┘
+             │                           │
+             ▼                           ▼
+    ┌──────────────────┐        ┌──────────────────┐
+    │  InspectionResponse│       │  flywheel_data/  │
+    │  + defect_images  │        │  cam/type/*.npz  │
+    └──────────────────┘        └──────────────────┘
+```
+
+### 3.4 耗时分布
+
+```
+单相机典型耗时 (WideResNet50, CPU):
+
+阶段           默认       +Veto    +Classifier   +SAM     说明
+────────────── ────────  ───────  ────────────  ───────  ──────────────────
+YOLO detect    20-50ms   →        →             →        批量分组推理
+ROI refine      2-5ms    →        →             →        mask+resize
+PatchCore      50-200ms  →        →             →        backbone相关
+Color branch    5-10ms   →        →             →        可选
+Veto             0       <1ms     <1ms          <1ms     仅NG触发
+Classifier       0        0       30-50ms       30-50ms  仅NG+超时保护
+SAM              0        0        0           50-500ms  仅NG+GPU/CPU
+Debug artifact  5-10ms   →        →             →        overlay.png
+Flywheel         0       2-3ms    2-3ms         2-3ms    异步入队(非阻塞)
+────────────── ────────  ───────  ────────────  ───────  ──────────────────
+OK 总计         80-270   82-273   82-273        82-273
+NG 总计         同上     同上     +32-52ms      +82-552ms
+```
+
+**关键**: OK 路径 (>95% 座椅) 零额外开销 (仅飞轮 2ms 异步入队)。NG 路径额外 30-50ms 在产线 10-15s 节拍内可吸收。
+
+### 3.5 模块依赖关系
+
+```
+seat_defect_core/
+│
+├── api.py ───────────────────────────── 对外入口 (SeatDefectInspector)
+│   └── service/inspection.py ────────── 主流程编排 (inspect_frames)
+│       ├── service/frames.py ────────── 帧规范化
+│       ├── service/core.py ──────────── InspectionService
+│       │   ├── ModelBundleCache ─────── PatchCore模型缓存 (mtime校验)
+│       │   ├── PatchCorePredictorPool ─ PatchCore批量推理
+│       │   ├── ★ classifier_cache ──── 分类器缓存 (mtime热加载)
+│       │   └── ★ flywheel_* ────────── 飞轮采集器/缓冲区
+│       ├── service/inspection_camera.py 单相机检测
+│       │   ├── yolo/detection.py ────── YOLO检测
+│       │   ├── cvops/roi.py ─────────── ROI裁剪
+│       │   ├── cvops/quality.py ─────── 质量门控
+│       │   ├── patchcore/engine.py ──── PatchCore推理
+│       │   │   └── patchcore/features.py ── ★ WideResNet50/DINOv2
+│       │   ├── patchcore/color_branch.py ─ 颜色一致性
+│       │   ├── ★ classifier/veto.py ─── 误报过滤
+│       │   ├── ★ classifier/engine.py ── 缺陷分类 (EfficientNet)
+│       │   └── ★ cvops/sam_refinement.py ─ SAM边界精修
+│       ├── fusion.py ───────────────── 多机位融合 (★ 含defect_type)
+│       ├── serialization.py ────────── JSON序列化 (★ 含classification)
+│       └── service/response.py ─────── ★ defect_images base64
+│
+├── ★ classifier/ ──────────────────── 缺陷分类模块
+│   ├── engine.py ──────────────────── DefectClassifierService
+│   ├── training.py ────────────────── DefectClassifierTrainer
+│   └── veto.py ────────────────────── FalsePositiveVeto
+│
+├── ★ flywheel/ ────────────────────── 自学习飞轮
+│   ├── collector.py ───────────────── 异步数据采集
+│   └── buffer_manager.py ──────────── 缓冲区管理+触发
+│
+├── ★ model_registry.py ────────────── 模型版本管理
+│
+└── types/results.py ───────────────── ★ DefectType, DefectClassificationResult
+```
+
+### 3.6 配置完整示例
+
+```json
+{
+  "cameras": [{
+    "camera_id": "cam_front",
+    "patchcore_model_path": "models/cam_front_patchcore.npz",
+    "source": "0",
+    "patchcore": {
+      "backend": "full",
+      "backbone_name": "dinov2_small",
+      "backbone_device": "cuda"
+    },
+    "classification": {
+      "enabled": true,
+      "model_path": "models/cam_front_classifier.pt",
+      "confidence_threshold": 0.5,
+      "inference_timeout_ms": 200,
+      "sam_refinement_enabled": false
+    },
+    "veto": {
+      "enabled": true,
+      "min_defect_area_ratio": 0.0002,
+      "max_defect_aspect_ratio": 0.05,
+      "edge_proximity_ratio": 0.02
+    },
+    "color_branch": { "enabled": true }
+  }],
+  "flywheel": {
+    "enabled": true,
+    "buffer_dir": "flywheel_data/",
+    "auto_label_threshold": 0.92,
+    "human_validation_threshold": 0.60,
+    "min_samples_before_retrain": 200,
+    "retrain_cooldown_hours": 72,
+    "sampling_rate_ok": 0.01,
+    "max_samples_per_class": 5000
+  },
+  "model_registry_dir": "model_registry/",
+  "fusion": { "ng_strategy": "any", "defect_overrides_reject": true }
+}
+```
+
+---
+
+## 四、Phase 1 — 缺陷分类层（已实现）
 
 ### 3.1 缺陷类型体系
 
