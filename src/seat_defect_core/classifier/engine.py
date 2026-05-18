@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -42,6 +43,7 @@ class DefectClassifierService:
         self._image_size: int = 224
         self._version: str = "unknown"
         self._loaded: bool = False
+        self._loaded_mtime_ns: int = 0
 
     @property
     def is_loaded(self) -> bool:
@@ -54,6 +56,28 @@ class DefectClassifierService:
     @property
     def class_names(self) -> list[str]:
         return list(self._class_names)
+
+    @property
+    def model_path(self) -> str | None:
+        return self._config.model_path
+
+    def is_stale(self) -> bool:
+        """检查模型文件是否已被更新（mtime 变化）。"""
+        if self._config.model_path is None:
+            return False
+        try:
+            current_mtime = Path(self._config.model_path).stat().st_mtime_ns
+        except OSError:
+            return False
+        return self._loaded and current_mtime != self._loaded_mtime_ns
+
+    def reload(self) -> None:
+        """如果模型文件已更新，重新加载。"""
+        if self.is_stale():
+            self._loaded = False
+            self._model = None
+        if not self._loaded:
+            self.load()
 
     def load(self) -> None:
         """加载分类模型权重。"""
@@ -69,6 +93,8 @@ class DefectClassifierService:
         model_path = Path(self._config.model_path)
         if not model_path.exists():
             raise FileNotFoundError(f"Classifier model not found: {model_path}")
+
+        self._loaded_mtime_ns = model_path.stat().st_mtime_ns
 
         checkpoint = torch.load(
             str(model_path), map_location="cpu", weights_only=False

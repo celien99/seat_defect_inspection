@@ -234,17 +234,29 @@ class InspectionService:
         return self._patchcore_predictor.predict_batch(items)
 
     def get_classifier_service(self, camera: CameraConfig):
-        """获取或创建指定机位的缺陷分类器（懒加载）。"""
+        """获取或创建指定机位的缺陷分类器（懒加载，mtime 自动热更新）。
+
+        与 PatchCore 模型缓存策略一致：当分类器模型文件 mtime 变化时，
+        下次调用自动重新加载，无需重启进程。
+        """
         if not camera.classification.enabled or camera.classification.model_path is None:
             return None
         cache_key = camera.classification.model_path
-        if cache_key not in self._classifier_cache:
-            from ..classifier import DefectClassifierService
+        cached = self._classifier_cache.get(cache_key)
+        if cached is not None:
+            if cached.is_stale():
+                try:
+                    cached.reload()
+                except Exception:
+                    # 重载失败继续使用旧模型
+                    pass
+            return cached
+        from ..classifier import DefectClassifierService
 
-            classifier = DefectClassifierService(camera.classification)
-            # 模型在首次 predict() 调用时懒加载，避免此处同步阻塞
-            self._classifier_cache[cache_key] = classifier
-        return self._classifier_cache[cache_key]
+        classifier = DefectClassifierService(camera.classification)
+        # 模型在首次 predict() 调用时懒加载，避免此处同步阻塞
+        self._classifier_cache[cache_key] = classifier
+        return classifier
 
     def get_flywheel_collector(self):
         """获取飞轮数据采集器（懒加载）。"""

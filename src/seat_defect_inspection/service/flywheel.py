@@ -204,6 +204,7 @@ def _fine_tune_classifier(
         augment=True,
     )
 
+    # 保存到版本化路径（注册中心用）
     trainer.save(
         fine_tuned_path,
         metadata={
@@ -212,6 +213,13 @@ def _fine_tune_classifier(
             "parent_version": getattr(service.get_classifier_service(camera), "version", None),
         },
     )
+
+    # 覆盖生产用的 active 模型文件（mtime 变化触发热加载）
+    import shutil
+    shutil.copy2(str(fine_tuned_path), str(output_path))
+
+    # 清除分类器缓存，下一次检测自动加载新模型
+    service._classifier_cache.pop(camera.classification.model_path, None)
 
     # 注册新版本
     if registry is not None:
