@@ -1,9 +1,10 @@
 # 汽车座椅缺陷检测系统升级方案报告
 
-> 版本：v1.0  
+> 版本：v2.0  
 > 日期：2026-05-18  
 > 分支：`feature/defect-classification-self-learning`  
-> 状态：Phase 1 & 2 已完成，84 项测试全部通过
+> 提交：`65fa8e3` `70d9f9a` `f045e01`  
+> 状态：Phase 1/2/3 + 生产加固 全部完成，84 项测试通过
 
 ---
 
@@ -366,7 +367,7 @@ seat_defect_core/
 
 ## 四、Phase 1 — 缺陷分类层（已实现）
 
-### 3.1 缺陷类型体系
+### 4.1 缺陷类型体系
 
 ```python
 class DefectType(str, Enum):
@@ -382,7 +383,7 @@ class DefectType(str, Enum):
     POOR_ALIGNMENT = "poor_alignment"  # 座椅姿态异常
 ```
 
-### 3.2 分类器技术方案
+### 4.2 分类器技术方案
 
 | 属性 | 设计选择 | 理由 |
 |------|---------|------|
@@ -393,7 +394,7 @@ class DefectType(str, Enum):
 
 **分类器与 PatchCore 完全解耦**：分类器不依赖 PatchCore 的 backbone，切换 PatchCore 特征提取器（如 WideResNet50→DINOv2）不需要重新训练分类器。
 
-### 3.3 误报过滤器（FalsePositiveVeto）
+### 4.3 误报过滤器（FalsePositiveVeto）
 
 三条启发式规则，在分类器之前执行，独立于分类器工作：
 
@@ -403,7 +404,7 @@ class DefectType(str, Enum):
 | 长宽比检测 | 最大异常连通域宽/高比 < 1:20 | 过滤光照条带状伪影 |
 | 边缘贴近 | 异常像素 80%+ 位于 ROI 边界 2% 范围内 | 过滤 ROI 边界伪影 |
 
-### 3.4 流水线集成点
+### 4.4 流水线集成点
 
 在 `inspection_camera.py` 的相机检测流水线中：
 
@@ -419,7 +420,7 @@ color_branch.predict()  →  color_result
 merge_status()  →  CameraInspectionResult(含 defect_type)
 ```
 
-### 3.5 CLI 训练命令
+### 4.5 CLI 训练命令
 
 ```bash
 python -m seat_defect_inspection train-classifier \
@@ -447,9 +448,9 @@ datasets/defect_classifier/
 
 ---
 
-## 四、Phase 2 — 自学习数据闭环（已实现）
+## 五、Phase 2 — 自学习数据闭环（已实现）
 
-### 4.1 数据飞轮架构
+### 5.1 数据飞轮架构
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -477,7 +478,7 @@ datasets/defect_classifier/
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 4.2 训练触发与执行
+### 5.2 训练触发与执行
 
 **触发条件**（满足任一）：
 - TP 样本总数 ≥ `min_samples_before_retrain`（默认 200）
@@ -503,7 +504,7 @@ datasets/defect_classifier/
    └── 裁剪超量类别（每类最多 max_samples_per_class）
 ```
 
-### 4.3 模型注册中心（ModelRegistry）
+### 5.3 模型注册中心（ModelRegistry）
 
 ```
 {registry_dir}/
@@ -525,7 +526,7 @@ datasets/defect_classifier/
     └── ...
 ```
 
-### 4.4 增量 PatchCore 更新（设计就绪，代码占位）
+### 5.4 增量 PatchCore 更新（设计就绪，代码占位）
 
 当飞轮积累了被确认的正常纹理变化样本后，可以增量更新 PatchCore 记忆库：
 
@@ -537,9 +538,9 @@ datasets/defect_classifier/
 
 ---
 
-## 五、配置体系扩展
+## 六、配置体系扩展
 
-### 5.1 新增配置项
+### 6.1 新增配置项
 
 ```json
 {
@@ -578,9 +579,9 @@ datasets/defect_classifier/
 
 ---
 
-## 六、文件变更清单
+## 七、文件变更清单
 
-### 6.1 新增文件（13 个）
+### 7.1 新增文件（13 个）
 
 | 文件路径 | 说明 |
 |---------|------|
@@ -597,7 +598,7 @@ datasets/defect_classifier/
 | `src/seat_defect_inspection/service/flywheel.py` | 飞轮自学习训练编排 |
 | `src/seat_defect_core/cvops/sam_refinement.py` | SAM 缺陷边界精修 |
 
-### 6.2 修改文件（16 个）
+### 7.2 修改文件（16 个）
 
 | 文件路径 | 变更内容 |
 |---------|---------|
@@ -621,22 +622,22 @@ datasets/defect_classifier/
 
 ---
 
-## 七、测试验证
+## 八、测试验证
 
-### 7.1 测试结果
+### 8.1 测试结果
 
 ```
 84 passed in 1.96s — 全部通过，无回归
 ```
 
-### 7.2 向后兼容性验证
+### 8.2 向后兼容性验证
 
 - 现有 PatchCore 推理结果序列化格式不变
 - 现有 JSON/INI 配置文件无需修改即可正常加载
 - 所有新功能默认关闭 (`enabled: false`)
 - 无监督异常检测路径（PatchCore 直出）完全不受影响
 
-### 7.3 配置解析验证
+### 8.3 配置解析验证
 
 ```python
 # 验证新字段可被正确解析
@@ -649,7 +650,7 @@ assert config.flywheel.auto_label_threshold == 0.92
 load_config("config_with_unknown_field.json")  # raises ValueError
 ```
 
-### 7.4 误报过滤器验证
+### 8.4 误报过滤器验证
 
 ```python
 # 极小异常 → 否决（斑点噪声）
@@ -665,9 +666,9 @@ assert result.vetoed == False
 
 ---
 
-## 八、使用指南
+## 九、使用指南
 
-### 8.1 启用分类器
+### 9.1 启用分类器
 
 在现有的检测配置 JSON 中，为需要分类的机位添加 `classification` 块：
 
@@ -685,7 +686,7 @@ assert result.vetoed == False
 }
 ```
 
-### 8.2 启用误报过滤（可选，独立使用）
+### 9.2 启用误报过滤（可选，独立使用）
 
 ```json
 {
@@ -698,7 +699,7 @@ assert result.vetoed == False
 }
 ```
 
-### 8.3 启用自学习飞轮
+### 9.3 启用自学习飞轮
 
 ```json
 {
@@ -722,7 +723,7 @@ summary = check_and_retrain_if_needed(service, dry_run=False)
 
 或设置定时任务调用该函数。
 
-### 8.4 训练分类器
+### 9.4 训练分类器
 
 ```bash
 # 准备标注数据集后
@@ -735,9 +736,9 @@ python -m seat_defect_inspection train-classifier \
 
 ---
 
-## 九、Phase 3 — 基础模型集成（已实现）
+## 十、Phase 3 — 基础模型集成（已实现）
 
-### 9.1 DINOv2 骨干网络
+### 10.1 DINOv2 骨干网络
 
 DINOv2 作为 PatchCore 特征提取器的可选替代方案。
 
@@ -762,7 +763,7 @@ DINOv2 作为 PatchCore 特征提取器的可选替代方案。
 
 DINOv2 为自监督模型，从 `torch.hub` 自动下载，无需配置 `backbone_pretrained` 或 `backbone_weights_path`。特征提取通过 `model.get_intermediate_layers()` 在 `reshape=True` 模式直接获取空间特征图，无需 forward hook 机制。
 
-### 9.2 SAM 缺陷边界精修
+### 10.2 SAM 缺陷边界精修
 
 当分类器检测到缺陷且 `sam_refinement_enabled=true` 时，使用 SAM (Segment Anything) 在热力图峰值位置生成精确缺陷 mask。
 
@@ -783,21 +784,21 @@ DINOv2 为自监督模型，从 `torch.hub` 自动下载，无需配置 `backbon
 
 ---
 
-## 十、生产可靠性加固（已实现）
+## 十一、生产可靠性加固（已实现）
 
-### 10.1 异步飞轮采集
+### 11.1 异步飞轮采集
 
 DataCollectorService 使用后台 daemon 线程 + queue.Queue 实现异步磁盘写入。主检测流程仅需 `np.copy()` + `queue.put()` (~2ms)，不影响检测延迟。
 
-### 10.2 分类器超时保护
+### 11.2 分类器超时保护
 
 `ClassificationConfig.inference_timeout_ms` (默认 200ms)。推理通过 `ThreadPoolExecutor.submit()` + `future.result(timeout=...)` 执行。超时后降级为 PatchCore 原结果，不阻塞主流程。
 
-### 10.3 模型热加载
+### 11.3 模型热加载
 
 `get_classifier_service()` 基于 mtime 检测模型文件变更。飞轮重训练覆盖 active 模型文件后，下一次检测自动加载新模型，无需重启进程。与 PatchCore `ModelBundleCache` 保持一致的失效策略。
 
-### 10.4 全线异常降级
+### 11.4 全线异常降级
 
 | 组件 | 异常处理 | 降级行为 |
 |------|---------|---------|
@@ -807,13 +808,13 @@ DataCollectorService 使用后台 daemon 线程 + queue.Queue 实现异步磁盘
 | Flywheel collect | try/except | 跳过采集，不影响结果导出 |
 | Classifier warmup | try/except | 跳过预加载，首次推理时懒加载 |
 
-### 10.5 缺陷图 API 返回
+### 11.5 缺陷图 API 返回
 
 `InspectionResponse.defect_images` 直接返回 NG 机位的 base64 编码缺陷标注图（热力图叠加 JET 配色），调用方无需读取磁盘。
 
 ---
 
-## 十一、后续规划 (Phase 4)
+## 十二、后续规划 (Phase 4)
 
 | 能力 | 说明 |
 |------|------|
@@ -825,7 +826,7 @@ DataCollectorService 使用后台 daemon 线程 + queue.Queue 实现异步磁盘
 
 ---
 
-## 十二、风险与对策
+## 十三、风险与对策
 
 | 风险 | 影响 | 对策 |
 |------|------|------|
