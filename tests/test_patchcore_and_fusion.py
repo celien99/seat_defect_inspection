@@ -35,7 +35,7 @@ def _install_stubbed_full_patchcore(monkeypatch) -> None:
     """Avoid torch/backbone dependencies while keeping tests on the full backend contract."""
 
     def fake_get_torch_feature_extractor(self):
-        return object()
+        return None
 
     def fake_extract_patch_embeddings(
         image,

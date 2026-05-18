@@ -28,27 +28,47 @@ class PatchCoreTrainer(PatchCoreService):
     def fit(
         self,
         samples: Iterable[tuple[np.ndarray, np.ndarray, np.ndarray]],
+        batch_size: int = 16,
     ) -> dict[str, float | int | str]:
         """从正常 ROI 样本训练 memory bank 和异常阈值。"""
         raw_embeddings: list[np.ndarray] = []
         sample_count = 0
+        samples_list = list(samples)
+        extractor = self._get_torch_feature_extractor()
 
-        for image, target_mask, ignore_mask in samples:
-            embeddings, _ = extract_patch_embeddings(
-                image,
-                self.config,
-                target_mask=target_mask,
-                ignore_mask=ignore_mask,
-                feature_extractor=self._get_torch_feature_extractor(),
-            )
-            if len(embeddings) == 0:
-                continue
-            raw_embeddings.append(embeddings.astype(np.float32))
-            sample_count += 1
+        if extractor is not None and batch_size > 1:
+            for start in range(0, len(samples_list), batch_size):
+                chunk = samples_list[start : start + batch_size]
+                for embeddings, __ in extractor.extract_many(chunk):
+                    if len(embeddings) == 0:
+                        continue
+                    raw_embeddings.append(embeddings.astype(np.float32))
+                    sample_count += 1
+        else:
+            for image, target_mask, ignore_mask in samples_list:
+                embeddings, _ = extract_patch_embeddings(
+                    image,
+                    self.config,
+                    target_mask=target_mask,
+                    ignore_mask=ignore_mask,
+                    feature_extractor=extractor,
+                )
+                if len(embeddings) == 0:
+                    continue
+                raw_embeddings.append(embeddings.astype(np.float32))
+                sample_count += 1
 
+        return self.fit_from_embeddings(raw_embeddings)
+
+    def fit_from_embeddings(
+        self,
+        raw_embeddings: list[np.ndarray],
+    ) -> dict[str, float | int | str]:
+        """从预提取的 embedding 构建 memory bank 并计算异常阈值。"""
         if not raw_embeddings:
             raise ValueError("PatchCore 没有可用的有效训练样本")
 
+        sample_count = len(raw_embeddings)
         stacked = np.concatenate(raw_embeddings, axis=0).astype(np.float32)
         self.feature_mean = stacked.mean(axis=0).astype(np.float32)
         self.feature_std = (stacked.std(axis=0) + 1e-6).astype(np.float32)

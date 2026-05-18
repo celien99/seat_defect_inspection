@@ -250,10 +250,14 @@ class _TorchPatchFeatureExtractor:
             input_tensor = _prepare_torch_input(resized_image, self.config).to(self.device)
             with torch.inference_mode():
                 self._features.clear()
-                _ = self.model(input_tensor)
+                with torch.autocast(
+                    device_type=str(self.device.type),
+                    enabled=self.device.type in ("cuda", "mps"),
+                ):
+                    _ = self.model(input_tensor)
 
             feature_maps = [self._features[layer_name] for layer_name in self.layer_names]
-            feature_maps = [feature_map.detach() for feature_map in feature_maps]
+            feature_maps = [feature_map.detach().float() for feature_map in feature_maps]
         embedding_map = _generate_deep_embedding_map(feature_maps, self.config)
         _, _, grid_rows, grid_cols = embedding_map.shape
 
@@ -311,9 +315,13 @@ class _TorchPatchFeatureExtractor:
             input_tensor = torch.cat(tensors, dim=0).to(self.device)
             with torch.inference_mode():
                 self._features.clear()
-                _ = self.model(input_tensor)
+                with torch.autocast(
+                    device_type=str(self.device.type),
+                    enabled=self.device.type in ("cuda", "mps"),
+                ):
+                    _ = self.model(input_tensor)
 
-            feature_maps = [self._features[layer_name].detach() for layer_name in self.layer_names]
+            feature_maps = [self._features[layer_name].detach().float() for layer_name in self.layer_names]
 
         embedding_map = _generate_deep_embedding_map(feature_maps, self.config)
         _, _, grid_rows, grid_cols = embedding_map.shape

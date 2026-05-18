@@ -31,6 +31,20 @@ def coreset_subsample_indices(embeddings: np.ndarray, max_points: int) -> np.nda
     if len(embeddings) <= max_points:
         return np.arange(len(embeddings), dtype=np.int32)
 
+    if torch is not None and len(embeddings) * embeddings.shape[1] >= 1_000_000:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if str(device) == "cpu" and torch.backends.mps.is_available():
+            device = torch.device("mps")
+        try:
+            return _coreset_subsample_torch(embeddings, max_points, device)
+        except Exception:
+            pass
+
+    return _coreset_subsample_numpy(embeddings, max_points)
+
+
+def _coreset_subsample_numpy(embeddings: np.ndarray, max_points: int) -> np.ndarray:
+    """CPU numpy implementation of greedy coreset sampling."""
     rng = np.random.default_rng(42)
     first_index = int(rng.integers(0, len(embeddings)))
     chosen_indices = [first_index]
@@ -41,6 +55,29 @@ def coreset_subsample_indices(embeddings: np.ndarray, max_points: int) -> np.nda
         chosen_indices.append(next_index)
         next_distances = np.linalg.norm(embeddings - embeddings[next_index], axis=1)
         min_distances = np.minimum(min_distances, next_distances)
+
+    return np.asarray(chosen_indices, dtype=np.int32)
+
+
+def _coreset_subsample_torch(
+    embeddings: np.ndarray,
+    max_points: int,
+    device,
+) -> np.ndarray:
+    """GPU-accelerated greedy coreset sampling via torch.cdist."""
+    rng = np.random.default_rng(42)
+    first_index = int(rng.integers(0, len(embeddings)))
+
+    tensor = torch.as_tensor(embeddings, dtype=torch.float32, device=device)
+    chosen_indices = [first_index]
+    min_distances = torch.norm(tensor - tensor[first_index], dim=1)
+
+    with torch.inference_mode():
+        while len(chosen_indices) < max_points:
+            next_index = int(torch.argmax(min_distances).item())
+            chosen_indices.append(next_index)
+            next_distances = torch.norm(tensor - tensor[next_index], dim=1)
+            torch.minimum(min_distances, next_distances, out=min_distances)
 
     return np.asarray(chosen_indices, dtype=np.int32)
 
