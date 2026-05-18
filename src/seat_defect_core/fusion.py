@@ -100,7 +100,34 @@ def _build_ng_decision_reason(
     rejects: list[CameraInspectionResult],
 ) -> str:
     ng_cameras = ",".join(result.camera_id for result in ng_results)
+    defect_info = _extract_defect_type_info(ng_results)
     if rejects:
         reject_cameras = ",".join(result.camera_id for result in rejects)
-        return f"ng_from_{ng_cameras}_override_reject_from_{reject_cameras}"
-    return f"ng_from_{ng_cameras}"
+        return f"ng_from_{ng_cameras}_types:{defect_info}_override_reject_from_{reject_cameras}"
+    return f"ng_from_{ng_cameras}_types:{defect_info}"
+
+
+def _extract_defect_type_info(
+    ng_results: list[CameraInspectionResult],
+) -> str:
+    """从 NG 相机结果中提取缺陷类型摘要。"""
+    defect_types: list[str] = []
+    for result in ng_results:
+        if result.texture_result and result.texture_result.classification_results:
+            primary = result.texture_result.classification_results[0]
+            if primary.defect_type.value != "none":
+                defect_types.append(
+                    f"{result.camera_id}:{primary.defect_type.value}"
+                )
+        if result.region_results:
+            for region in result.region_results:
+                if (
+                    region.texture_result
+                    and region.texture_result.classification_results
+                ):
+                    primary = region.texture_result.classification_results[0]
+                    if primary.defect_type.value != "none":
+                        defect_types.append(
+                            f"{result.camera_id}/{region.region_id}:{primary.defect_type.value}"
+                        )
+    return ",".join(defect_types) if defect_types else "unknown_anomaly"

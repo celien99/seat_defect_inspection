@@ -20,6 +20,7 @@ __all__ = [
     "capture_samples",
     "inspect_image_folder",
     "run_inspection",
+    "train_classifier_models",
     "train_patchcore_models",
 ]
 
@@ -58,6 +59,30 @@ def train_patchcore_models(
     return _train_patchcore_models(
         _create_service(config),
         seat_model_id=seat_model_id,
+    )
+
+
+def train_classifier_models(
+    config: InspectionConfig,
+    seat_model_id: str | None = None,
+    *,
+    dataset_dir: str,
+    output_path: str | None = None,
+    epochs: int = 50,
+    batch_size: int = 32,
+    backbone: str = "efficientnet_b0",
+) -> dict[str, Any]:
+    """训练缺陷分类器模型。"""
+    from .classifier_training import train_classifier_models as _train
+
+    return _train(
+        _create_service(config),
+        seat_model_id=seat_model_id,
+        dataset_dir=dataset_dir,
+        output_path=output_path,
+        epochs=epochs,
+        batch_size=batch_size,
+        backbone=backbone,
     )
 
 

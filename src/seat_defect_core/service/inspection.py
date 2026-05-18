@@ -134,6 +134,14 @@ def inspect_frames(
         "fusion": fusion_ms,
     }
     _finish_result_timing(fused, started_at)
+
+    # 自学习飞轮数据采集
+    _collect_flywheel_samples(
+        service,
+        fused,
+        camera_results,
+    )
+
     return export_result(service.config, fused)
 
 
@@ -314,6 +322,55 @@ def _error_code_from_reason(reason: str) -> str:
     normalized = reason.split(":", 1)[0].strip().lower()
     normalized = normalized.replace("-", "_").replace(" ", "_")
     return normalized or "input_error"
+
+
+def _collect_flywheel_samples(
+    service: InspectionService,
+    result: InspectionResult,
+    camera_results: list[CameraInspectionResult],
+) -> None:
+    """采集飞轮样本（在检测完成后异步安全调用）。
+
+    飞轮采集失败不阻断主检测流程——仅记录警告。
+    """
+    import logging
+    import numpy as np
+
+    _logger = logging.getLogger(__name__)
+
+    collector = service.get_flywheel_collector()
+    if collector is None:
+        return
+
+    try:
+        heatmaps: dict[str, np.ndarray] = {}
+        for cam_result in camera_results:
+            if cam_result.texture_result is not None:
+                heatmap = getattr(cam_result.texture_result, "heatmap", None)
+                if heatmap is not None:
+                    heatmaps[cam_result.camera_id] = np.asarray(heatmap)
+            if cam_result.region_results:
+                # 区域模式：合并各区域热力图
+                region_heatmaps = []
+                for region in cam_result.region_results:
+                    if region.texture_result is not None:
+                        rh = getattr(region.texture_result, "heatmap", None)
+                        if rh is not None:
+                            region_heatmaps.append(np.asarray(rh))
+                if region_heatmaps:
+                    # 取逐元素最大值作为合并热力图
+                    merged = region_heatmaps[0]
+                    for rh in region_heatmaps[1:]:
+                        if rh.shape == merged.shape:
+                            merged = np.maximum(merged, rh)
+                    heatmaps[cam_result.camera_id] = merged
+
+        collector.collect(result, camera_results, heatmaps=heatmaps)
+    except Exception:
+        _logger.warning(
+            "飞轮样本采集失败，降级跳过 flywheel collect",
+            exc_info=True,
+        )
 
 
 __all__ = [

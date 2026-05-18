@@ -9,6 +9,7 @@ from .cli_commands import (
     register_capture_command,
     register_inspect_command,
     register_inspect_folder_command,
+    register_train_classifier_command,
     register_train_patchcore_command,
     register_train_yolo_command,
 )
@@ -22,6 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     # 主入口只负责把各个子命令挂起来，避免业务继续堆回这里。
     subparsers = parser.add_subparsers(required=True)
     register_train_patchcore_command(subparsers)
+    register_train_classifier_command(subparsers)
     register_capture_command(subparsers)
     register_inspect_command(subparsers)
     register_inspect_folder_command(subparsers)

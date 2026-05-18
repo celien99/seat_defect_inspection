@@ -14,6 +14,8 @@ from .pipeline import (
 from .results import (
     CameraInspectionResult,
     ColorAnomalyResult,
+    DefectClassificationResult,
+    DefectType,
     InspectionError,
     InspectionResponse,
     InspectionResult,
@@ -25,6 +27,8 @@ __all__ = [
     "BoundingBox",
     "CameraInspectionResult",
     "ColorAnomalyResult",
+    "DefectClassificationResult",
+    "DefectType",
     "DetectionObject",
     "DetectionResult",
     "FramePacket",

@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import base64
+import logging
+from pathlib import Path
+
 from ..config import CameraConfig, InspectionConfig
 from ..reporting import export_inspection_report
 from ..types import CameraInspectionResult, InspectionError, InspectionResponse, InspectionResult
+
+_logger = logging.getLogger(__name__)
 
 
 def build_missing_frame_result(
@@ -63,10 +69,13 @@ def build_inspection_response(
     result: InspectionResult,
 ) -> InspectionResponse:
     """Build the public response wrapper returned by the core API."""
+    artifact_paths = collect_artifact_paths(result)
+    defect_images = _collect_defect_images(result, artifact_paths)
     return InspectionResponse(
         result=result,
         report_path=config.output_json_path,
-        artifact_paths=collect_artifact_paths(result),
+        artifact_paths=artifact_paths,
+        defect_images=defect_images,
     )
 
 
@@ -77,6 +86,35 @@ def collect_artifact_paths(result: InspectionResult) -> dict[str, dict[str, str]
         for camera_result in result.camera_results
         if camera_result.artifact_paths
     }
+
+
+def _collect_defect_images(
+    result: InspectionResult,
+    artifact_paths: dict[str, dict[str, str]],
+) -> dict[str, str]:
+    """为 NG 机位读取已保存的 overlay 调试产物并编码为 base64。
+
+    仅在 debug_artifacts_enabled 且 overlay 文件存在时生效。
+    """
+    defect_images: dict[str, str] = {}
+    for cam_result in result.camera_results:
+        if cam_result.status != "NG":
+            continue
+        cam_artifacts = artifact_paths.get(cam_result.camera_id, {})
+        overlay_path = cam_artifacts.get("overlay")
+        if overlay_path is None:
+            continue
+        try:
+            data = Path(overlay_path).read_bytes()
+            defect_images[cam_result.camera_id] = base64.b64encode(data).decode("ascii")
+        except Exception:
+            _logger.warning(
+                "无法读取 camera %s 的缺陷标注图: %s",
+                cam_result.camera_id,
+                overlay_path,
+                exc_info=True,
+            )
+    return defect_images
 
 
 __all__ = [

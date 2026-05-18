@@ -3,10 +3,49 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any
 
 from .geometry import BoundingBox
 from .pipeline import DetectionResult, ImageQualityDecision
+
+
+class DefectType(str, Enum):
+    """缺陷类型枚举。"""
+
+    NONE = "none"
+    SCRATCH = "scratch"
+    STAIN = "stain"
+    WRINKLE = "wrinkle"
+    THREAD_JUMP = "thread_jump"
+    FOREIGN_MATTER = "foreign_matter"
+    DENT = "dent"
+    COLOR_SHIFT = "color_shift"
+    OTHER = "other"
+    POOR_ALIGNMENT = "poor_alignment"
+
+
+@dataclass
+class DefectClassificationResult:
+    """单次缺陷分类预测结果。"""
+
+    defect_type: DefectType
+    """分类器预测的缺陷类型。"""
+
+    confidence: float
+    """分类器置信度 [0, 1]。"""
+
+    defect_bbox: BoundingBox | None = None
+    """ROI 坐标系下的缺陷边界框（SAM 精修后）。"""
+
+    defect_area_ratio: float = 0.0
+    """缺陷面积占有效 ROI 面积的比例。"""
+
+    classifier_version: str | None = None
+    """分类器模型版本号。"""
+
+    veto_applied: bool = False
+    """是否被误报过滤器否决。"""
 
 
 @dataclass
@@ -66,6 +105,9 @@ class TextureAnomalyResult:
 
     decision_mode: str = "none"
     """最终命中的判定模式。"""
+
+    classification_results: list[DefectClassificationResult] = field(default_factory=list)
+    """缺陷分类结果列表（仅当分类器启用且检测到异常时填充）。"""
 
 
 @dataclass
@@ -229,6 +271,9 @@ class InspectionResponse:
     artifact_paths: dict[str, dict[str, str]]
     """按机位聚合的调试产物路径。"""
 
+    defect_images: dict[str, str] = field(default_factory=dict)
+    """NG 机位的缺陷标注图（base64 编码 PNG），键为 camera_id。"""
+
     @property
     def status(self) -> str:
         """整件状态快捷访问。"""
@@ -258,6 +303,7 @@ class InspectionResponse:
             {
                 "report_path": self.report_path,
                 "artifact_paths": self.artifact_paths,
+                "defect_images": dict(self.defect_images),
             }
         )
         return payload
@@ -266,6 +312,8 @@ class InspectionResponse:
 __all__ = [
     "CameraInspectionResult",
     "ColorAnomalyResult",
+    "DefectClassificationResult",
+    "DefectType",
     "InspectionError",
     "InspectionResponse",
     "InspectionResult",

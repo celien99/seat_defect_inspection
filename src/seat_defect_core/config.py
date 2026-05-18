@@ -57,6 +57,29 @@ class DetectionConfig:
 
 
 @dataclass
+class ClassificationConfig:
+    """缺陷分类配置。"""
+
+    enabled: bool = False
+    model_path: str | None = None
+    confidence_threshold: float = 0.5
+    inference_timeout_ms: float = 200.0
+    sam_refinement_enabled: bool = False
+    enable_zero_shot_fallback: bool = False
+    zero_shot_prompts: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class FalsePositiveVetoConfig:
+    """基于启发式规则的误报过滤。"""
+
+    enabled: bool = False
+    min_defect_area_ratio: float = 0.0002
+    max_defect_aspect_ratio: float = 0.05
+    edge_proximity_ratio: float = 0.02
+
+
+@dataclass
 class PatchCoreConfig:
     """PatchCore model and decision parameters."""
 
@@ -141,6 +164,8 @@ class CameraConfig:
     patchcore: PatchCoreConfig = field(default_factory=PatchCoreConfig)
     color_branch: ColorBranchConfig = field(default_factory=ColorBranchConfig)
     regions: list[RegionConfig] = field(default_factory=list)
+    classification: ClassificationConfig = field(default_factory=ClassificationConfig)
+    veto: FalsePositiveVetoConfig = field(default_factory=FalsePositiveVetoConfig)
 
 
 @dataclass
@@ -150,6 +175,22 @@ class FusionConfig:
     reject_on_any_reject: bool = True
     ng_strategy: str = "any"
     defect_overrides_reject: bool = True
+
+
+@dataclass
+class FlywheelConfig:
+    """自学习数据闭环配置。"""
+
+    enabled: bool = False
+    buffer_dir: str = "flywheel_data/"
+    auto_label_threshold: float = 0.92
+    human_validation_threshold: float = 0.60
+    min_samples_before_retrain: int = 200
+    retrain_cooldown_hours: int = 72
+    sampling_rate_ok: float = 0.01
+    incremental_patchcore_enabled: bool = True
+    max_samples_per_class: int = 5000
+    retrain_trigger_mode: str = "any"
 
 
 @dataclass
@@ -176,13 +217,18 @@ class InspectionConfig:
     )
     part_id: str = "seat_demo"
     fusion: FusionConfig = field(default_factory=FusionConfig)
+    flywheel: FlywheelConfig = field(default_factory=FlywheelConfig)
+    model_registry_dir: str | None = None
 
 
 __all__ = [
     "AlignmentConfig",
     "CameraConfig",
+    "ClassificationConfig",
     "ColorBranchConfig",
     "DetectionConfig",
+    "FalsePositiveVetoConfig",
+    "FlywheelConfig",
     "FusionConfig",
     "InspectionConfig",
     "PatchCoreConfig",

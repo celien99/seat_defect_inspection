@@ -101,6 +101,23 @@ def texture_result_to_dict(texture_result) -> dict[str, Any] | None:
             texture_result.largest_decision_component_patch_ratio
         ),
         "decision_mode": texture_result.decision_mode,
+        "classification_results": [
+            classification_result_to_dict(item)
+            for item in texture_result.classification_results
+        ],
+    }
+
+
+def classification_result_to_dict(result) -> dict[str, Any] | None:
+    if result is None:
+        return None
+    return {
+        "defect_type": result.defect_type.value,
+        "confidence": result.confidence,
+        "defect_bbox": box_to_dict(result.defect_bbox),
+        "defect_area_ratio": result.defect_area_ratio,
+        "classifier_version": result.classifier_version,
+        "veto_applied": result.veto_applied,
     }
 
 
@@ -146,6 +163,7 @@ def resolve_target_box(result: CameraInspectionResult) -> dict[str, float] | Non
 __all__ = [
     "box_to_dict",
     "camera_result_to_dict",
+    "classification_result_to_dict",
     "color_result_to_dict",
     "error_to_dict",
     "inspection_result_to_dict",

@@ -1,9 +1,11 @@
 """Core inspect runtime for seat defect inspection."""
 
-from .config import InspectionConfig
+from .config import ClassificationConfig, FalsePositiveVetoConfig, FlywheelConfig, InspectionConfig
 from .runtime_config import load_config
 from .types import (
     CameraInspectionResult,
+    DefectClassificationResult,
+    DefectType,
     FramePacket,
     InspectionError,
     InspectionFrame,
@@ -13,7 +15,12 @@ from .types import (
 
 __all__ = [
     "CameraInspectionResult",
+    "ClassificationConfig",
     "ConfigSource",
+    "DefectClassificationResult",
+    "DefectType",
+    "FalsePositiveVetoConfig",
+    "FlywheelConfig",
     "FramePacket",
     "InspectionFrame",
     "InspectionConfig",

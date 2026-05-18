@@ -105,6 +105,9 @@ class InspectionService:
         self._pipeline_cache: dict[str, dict[str, CameraPipeline]] = {}
         self._model_cache = ModelBundleCache(self)
         self._patchcore_predictor = PatchCorePredictorPool()
+        self._classifier_cache: dict[str, object] = {}
+        self._flywheel_collector: object | None = None
+        self._flywheel_buffer: object | None = None
 
     def resolve_context(self, seat_model_id: str | None) -> ResolvedInspectionContext:
         resolved_seat_model_id, cameras = self._resolve_active_cameras(seat_model_id)
@@ -230,6 +233,59 @@ class InspectionService:
         """Predict PatchCore results, batching full-backend items with matching features."""
         return self._patchcore_predictor.predict_batch(items)
 
+    def get_classifier_service(self, camera: CameraConfig):
+        """获取或创建指定机位的缺陷分类器（懒加载）。"""
+        if not camera.classification.enabled or camera.classification.model_path is None:
+            return None
+        cache_key = camera.classification.model_path
+        if cache_key not in self._classifier_cache:
+            from ..classifier import DefectClassifierService
+
+            classifier = DefectClassifierService(camera.classification)
+            # 模型在首次 predict() 调用时懒加载，避免此处同步阻塞
+            self._classifier_cache[cache_key] = classifier
+        return self._classifier_cache[cache_key]
+
+    def get_flywheel_collector(self):
+        """获取飞轮数据采集器（懒加载）。"""
+        if self._flywheel_collector is None:
+            flywheel_cfg = getattr(self.config, "flywheel", None)
+            if flywheel_cfg is None or not flywheel_cfg.enabled:
+                return None
+            from ..flywheel import DataCollectorService
+
+            self._flywheel_collector = DataCollectorService(flywheel_cfg)
+        return self._flywheel_collector
+
+    def get_flywheel_buffer(self):
+        """获取飞轮缓冲区管理器（懒加载）。"""
+        if self._flywheel_buffer is None:
+            flywheel_cfg = getattr(self.config, "flywheel", None)
+            if flywheel_cfg is None or not flywheel_cfg.enabled:
+                return None
+            from ..flywheel import BufferManager
+
+            self._flywheel_buffer = BufferManager(flywheel_cfg)
+        return self._flywheel_buffer
+
+    def collect_flywheel_sample(
+        self,
+        result: object,
+        camera_results: list[object],
+        roi_images: dict[str, object] | None = None,
+        heatmaps: dict[str, object] | None = None,
+    ) -> dict[str, int]:
+        """采集飞轮样本（在检测完成后调用）。"""
+        collector = self.get_flywheel_collector()
+        if collector is None:
+            return {}
+        return collector.collect(
+            result,
+            camera_results,
+            roi_images=roi_images,
+            heatmaps=heatmaps,
+        )
+
     def warmup(self, seat_model_id: str | None = None) -> None:
         """Preload active YOLO, PatchCore bundles, and full-backend backbones."""
         context = self.resolve_context(seat_model_id)
@@ -267,6 +323,16 @@ class InspectionService:
 
         if patchcore_items:
             self.predict_patchcore_batch(patchcore_items)
+
+        # 预加载缺陷分类器模型（避免首次异常检测时的加载延迟）
+        for camera in context.cameras:
+            if camera.classification.enabled and camera.classification.model_path:
+                try:
+                    classifier = self.get_classifier_service(camera)
+                    if classifier is not None and not classifier.is_loaded:
+                        classifier.load()
+                except Exception:
+                    pass  # 分类器预加载失败不影响主流程
 
 
 class ModelBundleCache:

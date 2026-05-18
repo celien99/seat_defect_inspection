@@ -7,11 +7,12 @@ from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
 from ..artifacts import save_debug_artifacts
-from ..config import CameraConfig
+from ..classifier import apply_veto
+from ..config import CameraConfig, ClassificationConfig, FalsePositiveVetoConfig
 from ..cvops import split_roi_regions
 from ..cvops.regions import RegionRoiSample
 from ..patchcore import ColorConsistencyService
-from ..types import BoundingBox, CameraInspectionResult, FramePacket, InspectionError, RegionPatchCoreResult
+from ..types import BoundingBox, CameraInspectionResult, DefectClassificationResult, DefectType, FramePacket, InspectionError, RegionPatchCoreResult, TextureAnomalyResult
 from ..util import select_patchcore_input
 
 if TYPE_CHECKING:
@@ -152,6 +153,15 @@ def inspect_prepared_camera(
     color_result = _predict_color_branch(camera, model_bundle, prepared)
     camera_timer.mark("color")
 
+    _apply_defect_classification(
+        texture_result,
+        prepared.roi.aligned_roi_image,
+        veto_config=camera.veto,
+        classifier_service=service.get_classifier_service(camera),
+        classification_config=camera.classification,
+    )
+    camera_timer.mark("classification")
+
     if texture_result.is_anomaly and color_result is not None and color_result.is_anomaly:
         status = "NG"
         reason = (
@@ -267,6 +277,14 @@ def finish_region_patchcore_plan(
         else 0.0
     )
     for (region, region_sample, patchcore_config), texture_result in zip(plan.runnable_regions, texture_results):
+        _apply_defect_classification(
+            texture_result,
+            region_sample.image,
+            veto_config=plan.camera.veto,
+            classifier_service=service.get_classifier_service(plan.camera),
+            classification_config=plan.camera.classification,
+        )
+
         if texture_result.valid_patch_ratio < patchcore_config.min_valid_patch_ratio:
             status = "REJECT"
             reason = "low_valid_patch_ratio"
@@ -346,6 +364,81 @@ def finish_region_patchcore_plan(
         region_results=region_results,
     )
     return result
+
+
+def _apply_defect_classification(
+    texture_result: TextureAnomalyResult,
+    roi_image: "np.ndarray",
+    *,
+    veto_config: FalsePositiveVetoConfig | None,
+    classifier_service: object | None,
+    classification_config: ClassificationConfig | None = None,
+) -> None:
+    """对 PatchCore 异常结果执行误报过滤和缺陷分类。
+
+    修改 texture_result 的 is_anomaly 和 classification_results 字段。
+    所有异常被捕获并静默降级——分类器/过滤器失败不阻断主检测流程。
+    分类器推理有超时保护，超时后降级为 PatchCore 原结果。
+    """
+    import logging
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+
+    import numpy as np
+
+    _logger = logging.getLogger(__name__)
+
+    if not texture_result.is_anomaly:
+        return
+
+    heatmap = getattr(texture_result, "heatmap", None)
+    if heatmap is None:
+        return
+
+    # 1) 误报过滤（纯数值运算，无需超时保护）
+    if veto_config is not None and veto_config.enabled:
+        try:
+            veto = apply_veto(np.asarray(heatmap), config=veto_config)
+            if veto.vetoed:
+                texture_result.is_anomaly = False
+                texture_result.classification_results = [
+                    DefectClassificationResult(
+                        defect_type=DefectType.NONE,
+                        confidence=0.0,
+                        veto_applied=True,
+                    )
+                ]
+                return
+        except Exception:
+            _logger.warning(
+                "误报过滤器执行失败，降级跳过 veto",
+                exc_info=True,
+            )
+
+    # 2) 缺陷分类（含超时保护）
+    if classifier_service is not None and classification_config is not None:
+        timeout_s = classification_config.inference_timeout_ms / 1000.0
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(
+                    classifier_service.predict,
+                    np.asarray(heatmap),
+                    np.asarray(roi_image),
+                )
+                try:
+                    results = future.result(timeout=timeout_s)
+                except FutureTimeoutError:
+                    _logger.warning(
+                        "缺陷分类器推理超时 (%.0fms)，降级跳过 classification",
+                        classification_config.inference_timeout_ms,
+                    )
+                    future.cancel()
+                    return
+            texture_result.classification_results = results
+        except Exception:
+            _logger.warning(
+                "缺陷分类器执行失败，降级跳过 classification",
+                exc_info=True,
+            )
 
 
 class _StageTimer:

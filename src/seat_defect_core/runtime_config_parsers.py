@@ -10,8 +10,11 @@ from typing import Any
 from .config import (
     AlignmentConfig,
     CameraConfig,
+    ClassificationConfig,
     ColorBranchConfig,
     DetectionConfig,
+    FalsePositiveVetoConfig,
+    FlywheelConfig,
     FusionConfig,
     InspectionConfig,
     PatchCoreConfig,
@@ -85,6 +88,14 @@ def _parse_inspection_config(payload: dict[str, Any], config_dir: Path) -> Inspe
             payload.get("fusion"),
             scope=f"{scope}.fusion",
         ),
+        flywheel=_parse_flywheel_config(
+            payload.get("flywheel"),
+            config_dir,
+            scope=f"{scope}.flywheel",
+        ),
+        model_registry_dir=(_resolve_local_path(config_dir, str(value), force=True)
+            if (value := payload.get("model_registry_dir")) and not _is_missing(value)
+            else None),
     )
 
 
@@ -169,6 +180,15 @@ def _parse_camera_config(payload: dict[str, Any], config_dir: Path, *, scope: st
             payload.get("regions"),
             config_dir,
             scope=f"{scope}.regions",
+        ),
+        classification=_parse_classification_config(
+            payload.get("classification"),
+            config_dir,
+            scope=f"{scope}.classification",
+        ),
+        veto=_parse_false_positive_veto_config(
+            payload.get("veto"),
+            scope=f"{scope}.veto",
         ),
     )
 
@@ -415,6 +435,128 @@ def _parse_color_branch_config(payload: Any, *, scope: str) -> ColorBranchConfig
             defaults.training_threshold_upper_quantile,
         ),
     )
+
+
+def _parse_classification_config(
+    payload: Any,
+    config_dir: Path,
+    *,
+    scope: str,
+) -> ClassificationConfig:
+    defaults = ClassificationConfig()
+    if payload is None:
+        return defaults
+    payload = _expect_dict(payload, scope)
+    _reject_unknown_keys(payload, _field_names(ClassificationConfig), scope)
+    return ClassificationConfig(
+        enabled=_bool_or_default(payload.get("enabled"), defaults.enabled),
+        model_path=_resolve_optional_model_path(
+            config_dir,
+            _optional_string(payload.get("model_path")),
+        ),
+        confidence_threshold=_float_or_default(
+            payload.get("confidence_threshold"),
+            defaults.confidence_threshold,
+        ),
+        inference_timeout_ms=_float_or_default(
+            payload.get("inference_timeout_ms"),
+            defaults.inference_timeout_ms,
+        ),
+        sam_refinement_enabled=_bool_or_default(
+            payload.get("sam_refinement_enabled"),
+            defaults.sam_refinement_enabled,
+        ),
+        enable_zero_shot_fallback=_bool_or_default(
+            payload.get("enable_zero_shot_fallback"),
+            defaults.enable_zero_shot_fallback,
+        ),
+        zero_shot_prompts=_zero_shot_prompts_or_default(
+            payload.get("zero_shot_prompts"),
+        ),
+    )
+
+
+def _parse_false_positive_veto_config(payload: Any, *, scope: str) -> FalsePositiveVetoConfig:
+    defaults = FalsePositiveVetoConfig()
+    if payload is None:
+        return defaults
+    payload = _expect_dict(payload, scope)
+    _reject_unknown_keys(payload, _field_names(FalsePositiveVetoConfig), scope)
+    return FalsePositiveVetoConfig(
+        enabled=_bool_or_default(payload.get("enabled"), defaults.enabled),
+        min_defect_area_ratio=_float_or_default(
+            payload.get("min_defect_area_ratio"),
+            defaults.min_defect_area_ratio,
+        ),
+        max_defect_aspect_ratio=_float_or_default(
+            payload.get("max_defect_aspect_ratio"),
+            defaults.max_defect_aspect_ratio,
+        ),
+        edge_proximity_ratio=_float_or_default(
+            payload.get("edge_proximity_ratio"),
+            defaults.edge_proximity_ratio,
+        ),
+    )
+
+
+def _parse_flywheel_config(
+    payload: Any,
+    config_dir: Path,
+    *,
+    scope: str,
+) -> FlywheelConfig:
+    defaults = FlywheelConfig()
+    if payload is None:
+        return defaults
+    payload = _expect_dict(payload, scope)
+    _reject_unknown_keys(payload, _field_names(FlywheelConfig), scope)
+    return FlywheelConfig(
+        enabled=_bool_or_default(payload.get("enabled"), defaults.enabled),
+        buffer_dir=_resolve_local_path(
+            config_dir,
+            _string_or_default(payload.get("buffer_dir"), defaults.buffer_dir),
+            force=True,
+        ),
+        auto_label_threshold=_float_or_default(
+            payload.get("auto_label_threshold"),
+            defaults.auto_label_threshold,
+        ),
+        human_validation_threshold=_float_or_default(
+            payload.get("human_validation_threshold"),
+            defaults.human_validation_threshold,
+        ),
+        min_samples_before_retrain=_int_or_default(
+            payload.get("min_samples_before_retrain"),
+            defaults.min_samples_before_retrain,
+        ),
+        retrain_cooldown_hours=_int_or_default(
+            payload.get("retrain_cooldown_hours"),
+            defaults.retrain_cooldown_hours,
+        ),
+        sampling_rate_ok=_float_or_default(
+            payload.get("sampling_rate_ok"),
+            defaults.sampling_rate_ok,
+        ),
+        incremental_patchcore_enabled=_bool_or_default(
+            payload.get("incremental_patchcore_enabled"),
+            defaults.incremental_patchcore_enabled,
+        ),
+        max_samples_per_class=_int_or_default(
+            payload.get("max_samples_per_class"),
+            defaults.max_samples_per_class,
+        ),
+        retrain_trigger_mode=_string_or_default(
+            payload.get("retrain_trigger_mode"),
+            defaults.retrain_trigger_mode,
+        ),
+    )
+
+
+def _zero_shot_prompts_or_default(value: Any) -> dict[str, str]:
+    if value is None:
+        return {}
+    result = _expect_dict(value, "zero_shot_prompts")
+    return {str(k): str(v) for k, v in result.items()}
 
 
 def _parse_region_configs(
