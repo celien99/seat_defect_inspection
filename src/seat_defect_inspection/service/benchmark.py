@@ -16,8 +16,18 @@ BENCHMARK_DATA_DIR = Path(__file__).resolve().parents[4] / "benchmark_data"
 ROUNDS = ("good", "defect", "mixed")
 
 
-def run_benchmark(service: "InspectionService") -> Dict[str, dict]:
-    """Run three-round benchmark inspection and report metrics."""
+def run_benchmark(
+    service: "InspectionService",
+    rounds: tuple[str, ...] = ROUNDS,
+) -> Dict[str, dict]:
+    """Run benchmark inspection on selected rounds and report metrics.
+
+    Parameters
+    ----------
+    rounds:
+        Which rounds to run, e.g. ``("good",)`` or ``("good", "defect")``.
+        Defaults to all three.
+    """
     if not BENCHMARK_DATA_DIR.is_dir():
         raise FileNotFoundError(
             f"Benchmark data directory not found: {BENCHMARK_DATA_DIR}\n"
@@ -43,7 +53,7 @@ def run_benchmark(service: "InspectionService") -> Dict[str, dict]:
     original_sources = {c.camera_id: c.source for c in context.cameras}
 
     results: Dict[str, dict] = {}
-    for round_name in ROUNDS:
+    for round_name in rounds:
         round_dir = BENCHMARK_DATA_DIR / round_name
         if not round_dir.is_dir():
             print(f"[benchmark] Skipping '{round_name}' — directory not found: {round_dir}")
@@ -58,7 +68,7 @@ def run_benchmark(service: "InspectionService") -> Dict[str, dict]:
 
     _restore_sources(context.cameras, original_sources)
 
-    _print_summary(results, camera_ids)
+    _print_summary(results, camera_ids, rounds)
     return results
 
 
@@ -147,7 +157,7 @@ def _restore_sources(cameras, original_sources: Dict[str, str]) -> None:
         camera.source = original_sources[camera.camera_id]
 
 
-def _print_summary(results: dict, camera_ids: List[str]) -> None:
+def _print_summary(results: dict, camera_ids: List[str], rounds: tuple[str, ...]) -> None:
     """Print final benchmark summary with combined metrics."""
     print(f"\n{'='*60}")
     print("  BENCHMARK SUMMARY")
@@ -156,10 +166,9 @@ def _print_summary(results: dict, camera_ids: List[str]) -> None:
 
     good = results.get("good")
     defect = results.get("defect")
-    mixed = results.get("mixed")
 
     # ---- per-round detail ----
-    for round_name in ROUNDS:
+    for round_name in rounds:
         r = results.get(round_name)
         if r is None:
             continue

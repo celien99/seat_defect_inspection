@@ -20,13 +20,20 @@ def register_benchmark_command(subparsers) -> None:
         default=DEFAULT_CONFIG_PATH,
         help="Inspection config JSON/INI path",
     )
+    parser.add_argument(
+        "--round",
+        choices=["good", "defect", "mixed", "all"],
+        default="all",
+        help="Which round to run (default: all)",
+    )
 
 
 def run_benchmark_command(args: argparse.Namespace) -> None:
-    """Run three-round benchmark inspection."""
+    """Run benchmark inspection."""
     from ..service.benchmark import run_benchmark
     from ..service.core import InspectionService
 
     config = load_config(args.config)
     service = InspectionService(config)
-    run_benchmark(service)
+    rounds = ("good", "defect", "mixed") if args.round == "all" else (args.round,)
+    run_benchmark(service, rounds=rounds)
