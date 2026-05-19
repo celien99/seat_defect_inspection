@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from .geometry import BoundingBox
 from .pipeline import DetectionResult, ImageQualityDecision
@@ -81,7 +81,7 @@ class ColorAnomalyResult:
     is_anomaly: bool
     """是否判定为颜色异常。"""
 
-    diagnostics: dict[str, float]
+    diagnostics: Dict[str, float]
     """颜色分支诊断指标。"""
 
 
@@ -115,22 +115,22 @@ class RegionPatchCoreResult:
     box: BoundingBox
     """标准 ROI 坐标系下的区域矩形框。"""
 
-    texture_result: TextureAnomalyResult | None = None
+    texture_result: Optional[TextureAnomalyResult] = None
     """该区域的纹理异常结果。"""
 
-    patchcore_model_path: str | None = None
+    patchcore_model_path: Optional[str] = None
     """该区域使用的 PatchCore 模型路径。"""
 
-    artifact_paths: dict[str, str] = field(default_factory=dict)
+    artifact_paths: Dict[str, str] = field(default_factory=dict)
     """该区域关联的调试产物路径。"""
 
-    timings_ms: dict[str, float] = field(default_factory=dict)
+    timings_ms: Dict[str, float] = field(default_factory=dict)
     """该区域各阶段耗时，单位毫秒。"""
 
-    error: InspectionError | None = None
+    error: Optional[InspectionError] = None
     """该区域结构化错误。"""
 
-    sample: Any | None = field(default=None, repr=False, compare=False)
+    sample: Optional[Any] = field(default=None, repr=False, compare=False)
     """运行时复用的区域 ROI 样本，不参与公开序列化。"""
 
 
@@ -156,37 +156,37 @@ class CameraInspectionResult:
     reason: str
     """单机位状态原因。"""
 
-    seat_model_id: str | None = None
+    seat_model_id: Optional[str] = None
     """本次检测使用的座椅型号 ID。"""
 
-    quality: ImageQualityDecision | None = None
+    quality: Optional[ImageQualityDecision] = None
     """图像质量判定结果。"""
 
-    detection: DetectionResult | None = None
+    detection: Optional[DetectionResult] = None
     """YOLO 检测结果。"""
 
-    texture_result: TextureAnomalyResult | None = None
+    texture_result: Optional[TextureAnomalyResult] = None
     """完整 ROI 模式下的纹理异常结果。"""
 
-    region_results: list[RegionPatchCoreResult] = field(default_factory=list)
+    region_results: List[RegionPatchCoreResult] = field(default_factory=list)
     """regions 模式下的区域检测结果。"""
 
-    color_result: ColorAnomalyResult | None = None
+    color_result: Optional[ColorAnomalyResult] = None
     """颜色一致性分支结果。"""
 
-    crop_box: BoundingBox | None = None
+    crop_box: Optional[BoundingBox] = None
     """原图坐标系下最终使用的 ROI 裁剪框。"""
 
-    artifact_paths: dict[str, str] = field(default_factory=dict)
+    artifact_paths: Dict[str, str] = field(default_factory=dict)
     """该机位关联的调试产物路径。"""
 
-    timings_ms: dict[str, float] = field(default_factory=dict)
+    timings_ms: Dict[str, float] = field(default_factory=dict)
     """该机位各阶段耗时，单位毫秒。"""
 
-    error: InspectionError | None = None
+    error: Optional[InspectionError] = None
     """该机位结构化错误。"""
 
-    overlay_image: Any | None = field(default=None, repr=False, compare=False)
+    overlay_image: Optional[Any] = field(default=None, repr=False, compare=False)
     """叠加了异常热力图的 BGR 调试图片，供调用方直接消费。"""
 
 
@@ -209,13 +209,13 @@ class InspectionResult:
     decision_reason: str
     """整件融合判定原因。"""
 
-    seat_model_id: str | None = None
+    seat_model_id: Optional[str] = None
     """本次检测使用的座椅型号 ID。"""
 
-    camera_results: list[CameraInspectionResult] = field(default_factory=list)
+    camera_results: List[CameraInspectionResult] = field(default_factory=list)
     """所有机位检测结果。"""
 
-    timings_ms: dict[str, float] = field(default_factory=dict)
+    timings_ms: Dict[str, float] = field(default_factory=dict)
     """整件检测各阶段耗时，单位毫秒。"""
 
 
@@ -229,7 +229,7 @@ class InspectionResponse:
     report_path: str
     """最新检测报告 JSON 路径。"""
 
-    artifact_paths: dict[str, dict[str, str]]
+    artifact_paths: Dict[str, Dict[str, str]]
     """按机位聚合的调试产物路径。"""
 
     @property
@@ -248,11 +248,11 @@ class InspectionResponse:
         return self.result.part_id
 
     @property
-    def seat_model_id(self) -> str | None:
+    def seat_model_id(self) -> Optional[str]:
         """座椅型号 ID 快捷访问。"""
         return self.result.seat_model_id
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         """转换为适合外部系统序列化的字典。"""
         from ..serialization import inspection_result_to_dict
 

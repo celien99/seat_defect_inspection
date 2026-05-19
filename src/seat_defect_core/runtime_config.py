@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import List, Set
+
 from .config import CameraConfig, InspectionConfig, PatchCoreConfig
 from .config_file import load_inspection_payload
 from .runtime_config_parsers import _parse_inspection_config
@@ -39,10 +41,10 @@ def validate_inspection_config(config: InspectionConfig) -> None:
 _validate_inspection_config = validate_inspection_config
 
 
-def _validate_camera_configs(cameras: list[CameraConfig], *, scope: str) -> None:
+def _validate_camera_configs(cameras: List[CameraConfig], *, scope: str) -> None:
     """检查机位 ID 冲突，并校验 PatchCore 后端约束。"""
-    duplicates: set[str] = set()
-    seen: set[str] = set()
+    duplicates: Set[str] = set()
+    seen: Set[str] = set()
     for camera in cameras:
         if camera.camera_id in seen:
             duplicates.add(camera.camera_id)
@@ -67,8 +69,8 @@ def _validate_patchcore_config(camera: CameraConfig, *, scope: str) -> None:
 
 def _validate_region_configs(camera: CameraConfig, *, scope: str) -> None:
     """校验单机位内局部区域配置。"""
-    duplicates: set[str] = set()
-    seen: set[str] = set()
+    duplicates: Set[str] = set()
+    seen: Set[str] = set()
     for region in camera.regions:
         if region.region_id in seen:
             duplicates.add(region.region_id)

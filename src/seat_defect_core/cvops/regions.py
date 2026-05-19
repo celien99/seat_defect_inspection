@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import List, Optional, Tuple
 
 import numpy as np
 
@@ -26,10 +27,10 @@ class RegionRoiSample:
 
 def split_roi_regions(
     roi: RoiRefineResult,
-    regions: list[RegionConfig],
-) -> list[RegionRoiSample]:
+    regions: List[RegionConfig],
+) -> List[RegionRoiSample]:
     """按配置从标准 ROI 中切出局部区域。"""
-    samples: list[RegionRoiSample] = []
+    samples: List[RegionRoiSample] = []
     for region in regions:
         if not region.enabled:
             continue
@@ -42,7 +43,7 @@ def split_roi_regions(
 def build_region_roi_sample(
     roi: RoiRefineResult,
     region: RegionConfig,
-) -> RegionRoiSample | None:
+) -> Optional[RegionRoiSample]:
     """从一个标准 ROI 中切出一个局部 PatchCore 样本。"""
     return build_region_roi_sample_from_box(
         roi,
@@ -55,8 +56,8 @@ def build_region_roi_sample_from_box(
     roi: RoiRefineResult,
     *,
     region_id: str,
-    box: list[float],
-) -> RegionRoiSample | None:
+    box: List[float],
+) -> Optional[RegionRoiSample]:
     """按区域 ID 和归一化框从标准 ROI 中切出一个 PatchCore 样本。"""
     patchcore_input = select_patchcore_input(roi)
     height, width = patchcore_input.shape[:2]
@@ -89,10 +90,10 @@ def build_region_roi_sample_from_box(
 
 
 def _normalized_box_to_pixels(
-    box: list[float],
+    box: List[float],
     width: int,
     height: int,
-) -> tuple[int, int, int, int]:
+) -> Tuple[int, int, int, int]:
     x1 = int(round(float(box[0]) * width))
     y1 = int(round(float(box[1]) * height))
     x2 = int(round(float(box[2]) * width))

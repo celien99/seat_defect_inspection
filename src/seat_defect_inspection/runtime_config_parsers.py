@@ -9,7 +9,7 @@ from __future__ import annotations
 import dataclasses
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union
 
 from seat_defect_core.config import (
     AlignmentConfig,
@@ -43,7 +43,7 @@ _LOCAL_PATH_SUFFIXES = {
 
 
 # 主配置与座椅型号配置。
-def _parse_inspection_config(payload: dict[str, Any], config_dir: Path) -> InspectionConfig:
+def _parse_inspection_config(payload: Dict[str, Any], config_dir: Path) -> InspectionConfig:
     scope = "InspectionConfig"
     _reject_unknown_keys(payload, _field_names(InspectionConfig), scope)
 
@@ -111,7 +111,7 @@ def _parse_inspection_config(payload: dict[str, Any], config_dir: Path) -> Inspe
 
 
 def _parse_seat_model_config(
-    payload: dict[str, Any],
+    payload: Dict[str, Any],
     config_dir: Path,
     *,
     scope: str,
@@ -144,7 +144,7 @@ def _parse_camera_list(
     config_dir: Path,
     *,
     scope: str,
-) -> list[CameraConfig]:
+) -> List[CameraConfig]:
     items = _ensure_list(payload or [], scope)
     return [
         _parse_camera_config(item, config_dir, scope=f"{scope}[{index}]")
@@ -153,7 +153,7 @@ def _parse_camera_list(
 
 
 # 单机位及其子配置。
-def _parse_camera_config(payload: dict[str, Any], config_dir: Path, *, scope: str) -> CameraConfig:
+def _parse_camera_config(payload: Dict[str, Any], config_dir: Path, *, scope: str) -> CameraConfig:
     payload = _expect_dict(payload, scope)
     config_scope = f"CameraConfig {scope}"
     _reject_unknown_keys(payload, _field_names(CameraConfig), config_scope)
@@ -454,7 +454,7 @@ def _parse_region_configs(
     config_dir: Path,
     *,
     scope: str,
-) -> list[RegionConfig]:
+) -> List[RegionConfig]:
     if payload is None:
         return []
     return [
@@ -492,7 +492,7 @@ def _parse_region_config(
     )
 
 
-def _region_box(value: Any, *, scope: str) -> list[float]:
+def _region_box(value: Any, *, scope: str) -> List[float]:
     items = [float(item) for item in _ensure_list(value, scope)]
     if len(items) != 4:
         raise ValueError(f"{scope} 必须包含 4 个归一化坐标")
@@ -508,8 +508,8 @@ def _parse_optional_yolo_training(
     config_dir: Path,
     *,
     scope: str,
-    seat_model_id: str | None = None,
-) -> YoloTrainingConfig | None:
+    seat_model_id: Optional[str] = None,
+) -> Optional[YoloTrainingConfig]:
     if payload is None:
         return None
     return _parse_yolo_training_config(
@@ -521,11 +521,11 @@ def _parse_optional_yolo_training(
 
 
 def _parse_yolo_training_config(
-    payload: dict[str, Any],
+    payload: Dict[str, Any],
     config_dir: Path,
     *,
     scope: str,
-    seat_model_id: str | None = None,
+    seat_model_id: Optional[str] = None,
 ) -> YoloTrainingConfig:
     defaults = YoloTrainingConfig()
     payload = _expect_dict(payload, scope)
@@ -583,9 +583,9 @@ def _parse_yolo_training_config(
 
 
 def _select_seat_model_payload(
-    seat_models: list[dict[str, Any]],
-    seat_model_id: str | None,
-) -> dict[str, Any] | None:
+    seat_models: List[Dict[str, Any]],
+    seat_model_id: Optional[str],
+) -> Optional[Dict[str, Any]]:
     if not seat_models:
         return None
     if seat_model_id is None:
@@ -598,9 +598,9 @@ def _select_seat_model_payload(
 
 
 def _resolve_yolo_training_payload(
-    inspection_payload: dict[str, Any],
-    seat_model_id: str | None,
-) -> tuple[dict[str, Any] | None, str | None]:
+    inspection_payload: Dict[str, Any],
+    seat_model_id: Optional[str],
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     top_level_training = inspection_payload.get("yolo_training")
     seat_models = _ensure_list(
         inspection_payload.get("seat_models") or [],
@@ -625,11 +625,11 @@ def _is_missing(value: Any) -> bool:
     return value is None or value == ""
 
 
-def _field_names(cls: type[Any]) -> set[str]:
+def _field_names(cls: Type[Any]) -> Set[str]:
     return {field.name for field in dataclasses.fields(cls)}
 
 
-def _reject_unknown_keys(payload: dict[str, Any], allowed_keys: set[str], scope: str) -> None:
+def _reject_unknown_keys(payload: Dict[str, Any], allowed_keys: Set[str], scope: str) -> None:
     unexpected = sorted(key for key in payload if key not in allowed_keys)
     if not unexpected:
         return
@@ -637,36 +637,36 @@ def _reject_unknown_keys(payload: dict[str, Any], allowed_keys: set[str], scope:
     raise ValueError(f"{scope} 包含未知字段: {formatted}")
 
 
-def _expect_dict(value: Any, scope: str) -> dict[str, Any]:
+def _expect_dict(value: Any, scope: str) -> Dict[str, Any]:
     if not isinstance(value, dict):
         raise TypeError(f"{scope} 必须是对象")
     return value
 
 
-def _optional_dict(value: Any, scope: str) -> dict[str, Any] | None:
+def _optional_dict(value: Any, scope: str) -> Optional[Dict[str, Any]]:
     if value is None:
         return None
     return _expect_dict(value, scope)
 
 
-def _ensure_list(value: Any, scope: str) -> list[Any]:
+def _ensure_list(value: Any, scope: str) -> List[Any]:
     if not isinstance(value, list):
         raise TypeError(f"{scope} 必须是数组")
     return value
 
 
-def _require_key(payload: dict[str, Any], key: str, scope: str) -> Any:
+def _require_key(payload: Dict[str, Any], key: str, scope: str) -> Any:
     value = payload.get(key)
     if _is_missing(value):
         raise ValueError(f"{scope} 缺少 `{key}`")
     return value
 
 
-def _require_string(payload: dict[str, Any], key: str, scope: str) -> str:
+def _require_string(payload: Dict[str, Any], key: str, scope: str) -> str:
     return str(_require_key(payload, key, scope))
 
 
-def _optional_string(value: Any) -> str | None:
+def _optional_string(value: Any) -> Optional[str]:
     if _is_missing(value):
         return None
     return str(value)
@@ -720,7 +720,7 @@ def _float_or_default(value: Any, default: float) -> float:
     return float(value)
 
 
-def _optional_float(value: Any) -> float | None:
+def _optional_float(value: Any) -> Optional[float]:
     if _is_missing(value):
         return None
     return float(value)
@@ -730,13 +730,13 @@ def _has_path_separator(value: str) -> bool:
     return os.sep in value or (os.altsep is not None and os.altsep in value)
 
 
-def _string_list(value: Any, *, scope: str, default: list[str]) -> list[str]:
+def _string_list(value: Any, *, scope: str, default: List[str]) -> List[str]:
     if value is None:
         return list(default)
     return [str(item) for item in _ensure_list(value, scope)]
 
 
-def _debug_artifact_names_or_default(value: Any, default: list[str]) -> list[str]:
+def _debug_artifact_names_or_default(value: Any, default: List[str]) -> List[str]:
     if value is None:
         return list(default)
     if isinstance(value, str):
@@ -758,13 +758,13 @@ def _resolve_source_path(config_dir: Path, value: str) -> str:
     return _resolve_local_path(config_dir, value, force=True)
 
 
-def _resolve_optional_model_path(config_dir: Path, value: str | None) -> str | None:
+def _resolve_optional_model_path(config_dir: Path, value: Optional[str]) -> Optional[str]:
     if value is None:
         return None
     return _resolve_local_path(config_dir, value, force=False)
 
 
-def _resolve_optional_local_path(config_dir: Path, value: str | None) -> str | None:
+def _resolve_optional_local_path(config_dir: Path, value: Optional[str]) -> Optional[str]:
     if _is_missing(value):
         return None
     return _resolve_local_path(config_dir, value, force=True)

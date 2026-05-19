@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -31,10 +31,10 @@ if TYPE_CHECKING:
 
 def train_patchcore_models(
     service: "InspectionService",
-    seat_model_id: str | None = None,
-) -> list[dict[str, Any]]:
+    seat_model_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     """按机位训练 PatchCore 模型。"""
-    summaries: list[dict[str, Any]] = []
+    summaries: List[Dict[str, Any]] = []
     for candidate_model_id in _resolve_training_scope(service, seat_model_id):
         context = service.resolve_context(candidate_model_id)
         for camera in context.cameras:
@@ -52,10 +52,10 @@ def train_patchcore_models(
 def _train_one_camera(
     service: InspectionService,
     *,
-    seat_model_id: str | None,
+    seat_model_id: Optional[str],
     camera: CameraConfig,
     pipeline: "CameraPipeline",
-) -> dict[str, Any]:
+) -> Dict[str, Any]:
     """训练单个机位的 PatchCore 模型，并按需补充颜色分支。"""
     active_regions = [region for region in camera.regions if region.enabled]
     if active_regions:
@@ -74,16 +74,16 @@ def _train_one_camera(
     if not image_paths:
         raise FileNotFoundError(f"训练目录中没有图像：{train_dir}")
 
-    patchcore_samples: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
-    color_samples: list[tuple[np.ndarray, np.ndarray]] = []
-    skipped_images: list[str] = []
+    patchcore_samples: List[Tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+    color_samples: List[Tuple[np.ndarray, np.ndarray]] = []
+    skipped_images: List[str] = []
     skipped_reason_counter: Counter[str] = Counter()
 
     yolo_batch_size = 64
     for start in range(0, len(image_paths), yolo_batch_size):
         chunk_paths = image_paths[start : start + yolo_batch_size]
-        chunk_images: list[np.ndarray] = []
-        path_by_index: list[Path] = []
+        chunk_images: List[np.ndarray] = []
+        path_by_index: List[Path] = []
         for path in chunk_paths:
             image = cv2.imread(str(path))
             if image is None:
@@ -150,7 +150,7 @@ def _train_one_camera(
         ) from exc
 
     color_profile = None
-    color_summary: dict[str, Any] | None = None
+    color_summary: Optional[Dict[str, Any]] = None
     if camera.color_branch.enabled and not camera.color_insensitive_mode:
         color_service = ColorConsistencyService(camera.color_branch)
         color_summary = color_service.fit(color_samples)
@@ -183,10 +183,10 @@ def _train_one_camera(
 def _train_one_camera_regions(
     service: InspectionService,
     *,
-    seat_model_id: str | None,
+    seat_model_id: Optional[str],
     camera: CameraConfig,
     pipeline: "CameraPipeline",
-) -> dict[str, Any]:
+) -> Dict[str, Any]:
     """按配置区域分别训练一个机位下的多个 PatchCore 模型。"""
     if not camera.train_good_dir:
         raise ValueError(f"机位 `{camera.camera_id}` 缺少 `train_good_dir` 配置")
@@ -197,19 +197,19 @@ def _train_one_camera_regions(
         raise FileNotFoundError(f"训练目录中没有图像：{train_dir}")
 
     active_regions = [region for region in camera.regions if region.enabled]
-    patchcore_samples_by_region: dict[str, list[tuple[np.ndarray, np.ndarray, np.ndarray]]] = {
+    patchcore_samples_by_region: Dict[str, List[Tuple[np.ndarray, np.ndarray, np.ndarray]]] = {
         region.region_id: []
         for region in active_regions
     }
-    skipped_images: list[str] = []
+    skipped_images: List[str] = []
     skipped_reason_counter: Counter[str] = Counter()
     accepted_image_count = 0
 
     yolo_batch_size = 64
     for start in range(0, len(image_paths), yolo_batch_size):
         chunk_paths = image_paths[start : start + yolo_batch_size]
-        chunk_images: list[np.ndarray] = []
-        path_by_index: list[Path] = []
+        chunk_images: List[np.ndarray] = []
+        path_by_index: List[Path] = []
         for path in chunk_paths:
             image = cv2.imread(str(path))
             if image is None:
@@ -319,26 +319,26 @@ def _train_one_camera_regions(
 def _train_regions_with_shared_extractor(
     service: InspectionService,
     *,
-    seat_model_id: str | None,
+    seat_model_id: Optional[str],
     camera: CameraConfig,
-    active_regions: list[RegionConfig],
-    patchcore_samples_by_region: dict[str, list[tuple[np.ndarray, np.ndarray, np.ndarray]]],
+    active_regions: List[RegionConfig],
+    patchcore_samples_by_region: Dict[str, List[Tuple[np.ndarray, np.ndarray, np.ndarray]]],
     sample_config: PatchCoreConfig,
     train_dir: Path,
-    image_paths: list[Path],
+    image_paths: List[Path],
     skipped_reason_counter: Counter[str],
-) -> list[dict[str, Any]]:
+) -> List[Dict[str, Any]]:
     """跨区域共享特征提取器：同一机位的所有区域共享 backbone 前向。"""
     extractor: "_TorchPatchFeatureExtractor | None" = None
     if sample_config.backend.strip().lower() == "full":
         extractor = _TorchPatchFeatureExtractor(sample_config)
 
-    tagged_samples: list[tuple[str, tuple[np.ndarray, np.ndarray, np.ndarray]]] = []
+    tagged_samples: List[Tuple[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]] = []
     for region in active_regions:
         for sample in patchcore_samples_by_region[region.region_id]:
             tagged_samples.append((region.region_id, sample))
 
-    embeddings_by_region: dict[str, list[np.ndarray]] = {
+    embeddings_by_region: Dict[str, List[np.ndarray]] = {
         region.region_id: [] for region in active_regions
     }
     extraction_batch_size = max(1, min(32, 128 // len(active_regions)))
@@ -359,7 +359,7 @@ def _train_regions_with_shared_extractor(
             if len(embeddings) > 0:
                 embeddings_by_region[region_id].append(embeddings.astype(np.float32))
 
-    region_summaries: list[dict[str, Any]] = []
+    region_summaries: List[Dict[str, Any]] = []
     for region in active_regions:
         raw_embeddings = embeddings_by_region[region.region_id]
         if not raw_embeddings:
@@ -404,16 +404,16 @@ def _train_regions_with_shared_extractor(
 def _train_regions_independent(
     service: InspectionService,
     *,
-    seat_model_id: str | None,
+    seat_model_id: Optional[str],
     camera: CameraConfig,
-    active_regions: list[RegionConfig],
-    patchcore_samples_by_region: dict[str, list[tuple[np.ndarray, np.ndarray, np.ndarray]]],
+    active_regions: List[RegionConfig],
+    patchcore_samples_by_region: Dict[str, List[Tuple[np.ndarray, np.ndarray, np.ndarray]]],
     train_dir: Path,
-    image_paths: list[Path],
+    image_paths: List[Path],
     skipped_reason_counter: Counter[str],
-) -> list[dict[str, Any]]:
+) -> List[Dict[str, Any]]:
     """按区域独立训练，用于区域间特征提取配置不一致时的回退路径。"""
-    region_summaries: list[dict[str, Any]] = []
+    region_summaries: List[Dict[str, Any]] = []
     for region in active_regions:
         samples = patchcore_samples_by_region[region.region_id]
         if not samples:
@@ -457,9 +457,9 @@ def _save_region_model(
     service: InspectionService,
     camera: CameraConfig,
     region: "RegionConfig",
-    seat_model_id: str | None,
+    seat_model_id: Optional[str],
     patchcore: "PatchCoreTrainer",
-    patchcore_summary: dict[str, Any],
+    patchcore_summary: Dict[str, Any],
     accepted_region_sample_count: int,
 ) -> None:
     """保存单个区域的 PatchCore 模型并写入训练摘要。"""
@@ -477,15 +477,15 @@ def _save_region_model(
     _write_training_summary(region.patchcore_model_path, region_summary)
 
 
-def _write_training_summary(model_path: str, summary: dict[str, Any]) -> None:
+def _write_training_summary(model_path: str, summary: Dict[str, Any]) -> None:
     """把训练摘要写到模型文件旁边，便于现场排查。"""
     write_json(Path(model_path).with_suffix(".summary.json"), summary)
 
 
 def _resolve_training_scope(
     service: "InspectionService",
-    seat_model_id: str | None,
-) -> list[str | None]:
+    seat_model_id: Optional[str],
+) -> List[Optional[str]]:
     """Resolve the seat-model routes that should be trained."""
     if seat_model_id is not None:
         return [seat_model_id]

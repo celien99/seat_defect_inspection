@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 
 @dataclass(slots=True)
@@ -16,11 +17,11 @@ class ConversionSummary:
 
 
 def convert_labelme_split(
-    image_dir: str | Path,
-    label_dir: str | Path,
+    image_dir: Union[str, Path],
+    label_dir: Union[str, Path],
     *,
-    class_name_to_id: dict[str, int],
-    allowed_shape_types: set[str] | None = None,
+    class_name_to_id: Dict[str, int],
+    allowed_shape_types: Optional[Set[str]] = None,
 ) -> ConversionSummary:
     image_root = Path(image_dir)
     label_root = Path(label_dir)
@@ -57,16 +58,16 @@ def convert_labelme_split(
 def _convert_one_labelme_file(
     json_path: Path,
     *,
-    class_name_to_id: dict[str, int],
-    allowed_shape_types: set[str],
-) -> list[str]:
+    class_name_to_id: Dict[str, int],
+    allowed_shape_types: Set[str],
+) -> List[str]:
     payload = json.loads(json_path.read_text(encoding="utf-8"))
     image_width = float(payload["imageWidth"])
     image_height = float(payload["imageHeight"])
     if image_width <= 0 or image_height <= 0:
         raise ValueError(f"Invalid image size in {json_path}")
 
-    rows: list[str] = []
+    rows: List[str] = []
     for shape in payload.get("shapes", []):
         label_name = str(shape.get("label", "")).strip()
         if not label_name:
@@ -79,7 +80,7 @@ def _convert_one_labelme_file(
             continue
 
         polygon = _shape_to_polygon(shape.get("points") or [], json_path=json_path)
-        normalized_points: list[str] = []
+        normalized_points: List[str] = []
         for x, y in polygon:
             normalized_x = min(max(float(x) / image_width, 0.0), 1.0)
             normalized_y = min(max(float(y) / image_height, 0.0), 1.0)
@@ -90,7 +91,7 @@ def _convert_one_labelme_file(
     return rows
 
 
-def _shape_to_polygon(points: list[list[float]], *, json_path: Path) -> list[tuple[float, float]]:
+def _shape_to_polygon(points: List[List[float]], *, json_path: Path) -> List[Tuple[float, float]]:
     if len(points) < 3:
         raise ValueError(f"Shape has fewer than 3 points in {json_path}")
 

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Dict, Optional, Union
 
 from .types import BoundingBox, CameraInspectionResult, InspectionError, InspectionResult
 
 
-def inspection_result_to_dict(result: InspectionResult) -> dict[str, Any]:
+def inspection_result_to_dict(result: InspectionResult) -> Dict[str, Any]:
     """Convert an inspection result to the public/report JSON payload."""
     return {
         "part_id": result.part_id,
@@ -24,7 +24,7 @@ def inspection_result_to_dict(result: InspectionResult) -> dict[str, Any]:
     }
 
 
-def camera_result_to_dict(result: CameraInspectionResult) -> dict[str, Any]:
+def camera_result_to_dict(result: CameraInspectionResult) -> Dict[str, Any]:
     """Convert one camera result to a JSON-safe payload."""
     return {
         "camera_id": result.camera_id,
@@ -59,7 +59,7 @@ def camera_result_to_dict(result: CameraInspectionResult) -> dict[str, Any]:
     }
 
 
-def quality_to_dict(quality) -> dict[str, Any] | None:
+def quality_to_dict(quality) -> Optional[Dict[str, Any]]:
     if quality is None:
         return None
     return {
@@ -76,7 +76,7 @@ def quality_to_dict(quality) -> dict[str, Any] | None:
     }
 
 
-def texture_result_to_dict(texture_result) -> dict[str, Any] | None:
+def texture_result_to_dict(texture_result) -> Optional[Dict[str, Any]]:
     if texture_result is None:
         return None
     return {
@@ -104,7 +104,7 @@ def texture_result_to_dict(texture_result) -> dict[str, Any] | None:
     }
 
 
-def color_result_to_dict(color_result) -> dict[str, Any] | None:
+def color_result_to_dict(color_result) -> Optional[Dict[str, Any]]:
     if color_result is None:
         return None
     return {
@@ -115,7 +115,7 @@ def color_result_to_dict(color_result) -> dict[str, Any] | None:
     }
 
 
-def error_to_dict(error: InspectionError | None) -> dict[str, str] | None:
+def error_to_dict(error: Optional[InspectionError]) -> Optional[Dict[str, str]]:
     if error is None:
         return None
     return {
@@ -125,7 +125,7 @@ def error_to_dict(error: InspectionError | None) -> dict[str, str] | None:
     }
 
 
-def box_to_dict(box: BoundingBox | None) -> dict[str, float] | None:
+def box_to_dict(box: Optional[BoundingBox]) -> Optional[Dict[str, float]]:
     if box is None:
         return None
     return {
@@ -136,7 +136,7 @@ def box_to_dict(box: BoundingBox | None) -> dict[str, float] | None:
     }
 
 
-def resolve_target_box(result: CameraInspectionResult) -> dict[str, float] | None:
+def resolve_target_box(result: CameraInspectionResult) -> Optional[Dict[str, float]]:
     detection = result.detection
     if detection is None or detection.target is None:
         return None

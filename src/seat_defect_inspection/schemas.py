@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import List, Optional
 
 
 @dataclass(slots=True)
@@ -16,10 +17,10 @@ class CaptureRecord:
     source_kind: str
     timestamp: str
     status: str
-    seat_model_id: str | None = None
-    reason: str | None = None
-    output_path: str | None = None
-    train_good_path: str | None = None
+    seat_model_id: Optional[str] = None
+    reason: Optional[str] = None
+    output_path: Optional[str] = None
+    train_good_path: Optional[str] = None
 
 
 @dataclass(slots=True)
@@ -30,8 +31,8 @@ class CaptureSummary:
     run_id: str
     output_dir: str
     manifest_path: str
-    seat_model_id: str | None = None
-    records: list[CaptureRecord] = field(default_factory=list)
+    seat_model_id: Optional[str] = None
+    records: List[CaptureRecord] = field(default_factory=list)
 
 
 __all__ = [

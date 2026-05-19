@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Dict, Tuple, Union
 
 import cv2
 import numpy as np
@@ -93,7 +94,7 @@ class PatchCoreService:
     def predict_from_embeddings(
         self,
         *,
-        image_shape: tuple[int, int],
+        image_shape: Tuple[int, int],
         target_mask: np.ndarray,
         embeddings: np.ndarray,
         batch: _PatchBatch,
@@ -196,7 +197,7 @@ class PatchCoreService:
         self,
         embeddings: np.ndarray,
         memory_bank: np.ndarray | None = None,
-    ) -> tuple[float, np.ndarray]:
+    ) -> Tuple[float, np.ndarray]:
         """Score an embedding batch against the active memory bank."""
         active_bank = self.memory_bank if memory_bank is None else memory_bank
         if active_bank is None or len(active_bank) == 0:
@@ -337,7 +338,7 @@ def _apply_runtime_patchcore_overrides(
             "Please retrain the PatchCore model.",
         )
 
-    overrides: dict[str, float | int] = {
+    overrides: Dict[str, Union[float, int]] = {
         # Runtime may tighten patch validity constraints, but should not loosen them
         # beyond the structure used to build the memory bank.
         "min_target_coverage": max(
@@ -358,7 +359,7 @@ def _apply_runtime_patchcore_overrides(
     return replace(trained_config, **overrides)
 
 
-def _as_binary_mask(mask: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
+def _as_binary_mask(mask: np.ndarray, shape: Tuple[int, int]) -> np.ndarray:
     """Normalize a binary mask or BGRA transparent mask to the requested shape."""
     array = np.asarray(mask)
     if array.ndim == 3:

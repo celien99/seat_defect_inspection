@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Dict, Optional
 
 from seat_defect_core.util import write_json
 
@@ -26,7 +27,7 @@ def export_capture_manifest(summary: CaptureSummary) -> Path:
     return path
 
 
-def _capture_record_to_dict(record: CaptureRecord) -> dict[str, str | None]:
+def _capture_record_to_dict(record: CaptureRecord) -> Dict[str, Optional[str]]:
     return {
         "camera_id": record.camera_id,
         "frame_id": record.frame_id,

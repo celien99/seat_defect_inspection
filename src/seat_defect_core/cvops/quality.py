@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Tuple
+
 import cv2
 
 from ..config import QualityGuardConfig
@@ -61,7 +63,7 @@ class ImageQualityGuard:
         return ImageQualityDecision(True, None, metrics)
 
 
-def _normalize_quality_mask(valid_mask, image_shape: tuple[int, int]):
+def _normalize_quality_mask(valid_mask, image_shape: Tuple[int, int]):
     if valid_mask is None:
         return None
 

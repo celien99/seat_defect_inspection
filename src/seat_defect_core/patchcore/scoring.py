@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Dict, Optional, Tuple, Union
+
 import cv2
 import numpy as np
 
@@ -134,7 +136,7 @@ def min_distance_to_bank_torch(
     return torch.cat(scores).numpy().astype(np.float32)
 
 
-def _score_embeddings_leave_one_out(embeddings: np.ndarray) -> tuple[float, np.ndarray]:
+def _score_embeddings_leave_one_out(embeddings: np.ndarray) -> Tuple[float, np.ndarray]:
     """Fallback leave-one-out scoring when no external bank is available."""
     if len(embeddings) <= 1:
         patch_scores = np.zeros((len(embeddings),), dtype=np.float32)
@@ -150,7 +152,7 @@ def _score_embeddings_leave_one_out(embeddings: np.ndarray) -> tuple[float, np.n
 def normalize_map(
     heatmap: np.ndarray,
     *,
-    mask: np.ndarray | None = None,
+    mask: Optional[np.ndarray] = None,
 ) -> np.ndarray:
     """Normalize a heatmap to [0, 1] within the active region."""
     normalized = np.zeros_like(heatmap, dtype=np.float32)
@@ -177,7 +179,7 @@ def normalize_map_against_threshold(
     heatmap: np.ndarray,
     *,
     threshold: float,
-    mask: np.ndarray | None = None,
+    mask: Optional[np.ndarray] = None,
     floor_ratio: float = 0.5,
 ) -> np.ndarray:
     """Normalize a heatmap against an absolute decision threshold."""
@@ -212,9 +214,9 @@ def _decide_patchcore_anomaly(
     *,
     score: float,
     threshold: float,
-    evidence: dict[str, float | int],
+    evidence: Dict[str, Union[float, int]],
     config: PatchCoreConfig,
-) -> tuple[bool, str]:
+) -> Tuple[bool, str]:
     """Combine normal and small-defect rules into one final anomaly decision."""
     decision_threshold = float(threshold) * _threshold_margin(config.decision_score_margin)
     critical_score_threshold = float(threshold) * _threshold_margin(config.critical_score_margin)
@@ -265,7 +267,7 @@ def _analyze_patch_evidence(
     threshold: float,
     valid_patch_count: int,
     config: PatchCoreConfig,
-) -> dict[str, float | int]:
+) -> Dict[str, Union[float, int]]:
     """Extract patch statistics consumed by the final anomaly decision."""
     peak_patch_score = float(patch_map.max()) if patch_map.size > 0 else 0.0
     if patch_map.size == 0 or valid_patch_count <= 0:
@@ -306,7 +308,7 @@ def _analyze_patch_evidence(
     }
 
 
-def _measure_patch_components(binary_mask: np.ndarray) -> tuple[int, int]:
+def _measure_patch_components(binary_mask: np.ndarray) -> Tuple[int, int]:
     """Return active patch count and largest connected component size."""
     patch_count = int(binary_mask.sum())
     if patch_count == 0:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Set, Tuple
 
 import yaml
 
@@ -17,7 +17,7 @@ YOLO_SEGMENT_TASK = "segment"
 def _prepare_training_dataset(
     data_config_path: Path,
     project_root: Path,
-) -> tuple[Path, Path]:
+) -> Tuple[Path, Path]:
     """解析数据集配置，补齐绝对路径，并在训练前做一次轻量预检。"""
     loaded = yaml.safe_load(data_config_path.read_text(encoding="utf-8")) or {}
     if not isinstance(loaded, dict):
@@ -66,14 +66,14 @@ def _prepare_training_dataset(
     return dataset_root, target_path
 
 
-def _extract_valid_class_ids(raw_names: Any, data_config_path: Path) -> set[int]:
+def _extract_valid_class_ids(raw_names: Any, data_config_path: Path) -> Set[int]:
     """从 names 配置中提取合法类别 ID。"""
     if isinstance(raw_names, list):
         return set(range(len(raw_names)))
     if not isinstance(raw_names, dict):
         raise ValueError(f"YOLO 数据集配置缺少有效的 `names`：{data_config_path}")
 
-    valid_class_ids: set[int] = set()
+    valid_class_ids: Set[int] = set()
     for raw_key in raw_names:
         try:
             class_id = int(raw_key)
@@ -100,7 +100,7 @@ def _validate_dataset_split(
     image_dir: Path,
     dataset_root: Path,
     *,
-    valid_class_ids: set[int],
+    valid_class_ids: Set[int],
 ) -> None:
     """检查数据集切分目录、图片和标签是否齐全。"""
     if not image_dir.exists():
@@ -137,7 +137,7 @@ def _infer_label_dir(image_dir: Path, dataset_root: Path) -> Path:
     return image_dir.parent / "labels" / image_dir.name
 
 
-def _has_supported_file(folder: Path, suffixes: set[str]) -> bool:
+def _has_supported_file(folder: Path, suffixes: Set[str]) -> bool:
     """判断目录中是否至少有一张受支持的图片。"""
     for path in folder.rglob("*"):
         if path.is_file() and path.suffix.lower() in suffixes:
@@ -146,10 +146,10 @@ def _has_supported_file(folder: Path, suffixes: set[str]) -> bool:
 
 
 def _validate_label_files(
-    label_files: list[Path],
+    label_files: List[Path],
     *,
     split_name: str,
-    valid_class_ids: set[int],
+    valid_class_ids: Set[int],
 ) -> None:
     """抽样检查一批标签文件格式，尽量在训练前就暴露坏数据。"""
     inspected = 0
@@ -180,7 +180,7 @@ def _validate_label_line(
     *,
     label_file: Path,
     split_name: str,
-    valid_class_ids: set[int],
+    valid_class_ids: Set[int],
 ) -> None:
     """校验单行标签是否满足当前项目固定使用的分割格式。"""
     tokens = line.split()

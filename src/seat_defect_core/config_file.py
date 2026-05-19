@@ -5,7 +5,7 @@ from __future__ import annotations
 import configparser
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 _INI_SUFFIXES = {".ini", ".cfg"}
 _LIST_KEYS = {"box", "debug_artifact_names", "feature_layers"}
@@ -23,7 +23,7 @@ _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
 
 
-def load_inspection_payload(path: str) -> tuple[Path, dict[str, Any]]:
+def load_inspection_payload(path: str) -> Tuple[Path, Dict[str, Any]]:
     """Read a JSON or INI config file and return the inspection payload."""
     config_path = Path(path).resolve()
     if config_path.suffix.lower() in _INI_SUFFIXES:
@@ -38,13 +38,13 @@ def load_inspection_payload(path: str) -> tuple[Path, dict[str, Any]]:
     return config_path.parent, inspection_payload
 
 
-def _load_ini_inspection_payload(config_path: Path) -> dict[str, Any]:
+def _load_ini_inspection_payload(config_path: Path) -> Dict[str, Any]:
     parser = configparser.ConfigParser(interpolation=None)
     read_files = parser.read(config_path, encoding="utf-8")
     if not read_files:
         raise FileNotFoundError(f"配置文件不存在或无法读取：{config_path}")
 
-    payload: dict[str, Any] = {}
+    payload: Dict[str, Any] = {}
     for section_name in parser.sections():
         normalized_section = _normalize_section_name(section_name)
         items = _section_items(parser, section_name)
@@ -64,7 +64,7 @@ def _normalize_section_name(section_name: str) -> str:
 def _section_items(
     parser: configparser.ConfigParser,
     section_name: str,
-) -> dict[str, Any]:
+) -> Dict[str, Any]:
     return {
         key: _parse_ini_value(key, value)
         for key, value in parser.items(section_name)
@@ -72,9 +72,9 @@ def _section_items(
 
 
 def _apply_ini_section(
-    payload: dict[str, Any],
+    payload: Dict[str, Any],
     section_name: str,
-    items: dict[str, Any],
+    items: Dict[str, Any],
     config_path: Path,
 ) -> None:
     if section_name in {"seat_defect_inspection", "inspection"}:
@@ -96,9 +96,9 @@ def _apply_ini_section(
 
 
 def _apply_seat_model_section(
-    payload: dict[str, Any],
-    parts: list[str],
-    items: dict[str, Any],
+    payload: Dict[str, Any],
+    parts: List[str],
+    items: Dict[str, Any],
     config_path: Path,
 ) -> None:
     if len(parts) < 2 or not parts[1]:
@@ -132,9 +132,9 @@ def _apply_seat_model_section(
 
 
 def _apply_camera_section(
-    container: dict[str, Any],
-    parts: list[str],
-    items: dict[str, Any],
+    container: Dict[str, Any],
+    parts: List[str],
+    items: Dict[str, Any],
     config_path: Path,
 ) -> None:
     if len(parts) < 2 or not parts[1]:
@@ -152,10 +152,10 @@ def _apply_camera_section(
 
 
 def _apply_camera_rest(
-    camera: dict[str, Any],
+    camera: Dict[str, Any],
     camera_id: str,
-    rest: list[str],
-    items: dict[str, Any],
+    rest: List[str],
+    items: Dict[str, Any],
     config_path: Path,
 ) -> None:
     if not rest:
@@ -181,9 +181,9 @@ def _apply_camera_rest(
 
 
 def _apply_roi_section(
-    camera: dict[str, Any],
-    rest: list[str],
-    items: dict[str, Any],
+    camera: Dict[str, Any],
+    rest: List[str],
+    items: Dict[str, Any],
     config_path: Path,
 ) -> None:
     roi = camera.setdefault("roi", {})
@@ -197,9 +197,9 @@ def _apply_roi_section(
 
 
 def _apply_region_section(
-    camera: dict[str, Any],
-    rest: list[str],
-    items: dict[str, Any],
+    camera: Dict[str, Any],
+    rest: List[str],
+    items: Dict[str, Any],
     config_path: Path,
 ) -> None:
     if not rest or not rest[0]:
@@ -230,13 +230,13 @@ def _apply_region_section(
 
 
 def _ensure_named_item(
-    collection: list[dict[str, Any]],
+    collection: List[Dict[str, Any]],
     *,
     id_key: str,
     expected_id: str,
-    section_items: dict[str, Any],
+    section_items: Dict[str, Any],
     config_path: Path,
-) -> dict[str, Any]:
+) -> Dict[str, Any]:
     payload = _with_required_id(
         section_items,
         id_key=id_key,
@@ -252,12 +252,12 @@ def _ensure_named_item(
 
 
 def _with_required_id(
-    items: dict[str, Any],
+    items: Dict[str, Any],
     *,
     id_key: str,
     expected_id: str,
     config_path: Path,
-) -> dict[str, Any]:
+) -> Dict[str, Any]:
     current_id = items.get(id_key)
     if current_id is not None and str(current_id) != expected_id:
         raise ValueError(
@@ -277,7 +277,7 @@ def _parse_ini_value(key: str, value: str) -> Any:
     return stripped
 
 
-def _parse_ini_list(value: str) -> list[str]:
+def _parse_ini_list(value: str) -> List[str]:
     stripped = value.strip()
     if stripped.startswith("[") and stripped.endswith("]"):
         stripped = stripped[1:-1].strip()
@@ -286,7 +286,7 @@ def _parse_ini_list(value: str) -> list[str]:
     return [_strip_quotes(item.strip()) for item in stripped.split(",")]
 
 
-def _parse_ini_bool(value: str) -> bool | str:
+def _parse_ini_bool(value: str) -> Union[bool, str]:
     normalized = value.strip().lower()
     if normalized in _TRUE_VALUES:
         return True

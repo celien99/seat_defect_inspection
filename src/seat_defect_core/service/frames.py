@@ -3,25 +3,25 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Dict, List, Optional, Set, Union
 
 from ..config import CameraConfig
 from ..types import FramePacket, InspectionFrame
 
 
 def normalize_inspection_frames(
-    frames: list[InspectionFrame | dict[str, Any]],
-) -> list[InspectionFrame]:
+    frames: List[Union[InspectionFrame, Dict[str, Any]]],
+) -> List[InspectionFrame]:
     """Normalize external input frames into core InspectionFrame objects."""
     normalized = [_normalize_frame(frame) for frame in frames]
     build_frame_map(normalized)
     return normalized
 
 
-def build_frame_map(frames: list[InspectionFrame]) -> dict[str, InspectionFrame]:
+def build_frame_map(frames: List[InspectionFrame]) -> Dict[str, InspectionFrame]:
     """Index frames by camera_id and reject duplicate camera inputs."""
-    frame_map: dict[str, InspectionFrame] = {}
-    duplicates: set[str] = set()
+    frame_map: Dict[str, InspectionFrame] = {}
+    duplicates: Set[str] = set()
     for frame in frames:
         if frame.camera_id in frame_map:
             duplicates.add(frame.camera_id)
@@ -33,8 +33,8 @@ def build_frame_map(frames: list[InspectionFrame]) -> dict[str, InspectionFrame]
 
 
 def validate_frame_camera_ids(
-    frame_map: dict[str, InspectionFrame],
-    active_camera_ids: list[str],
+    frame_map: Dict[str, InspectionFrame],
+    active_camera_ids: List[str],
 ) -> None:
     """Reject frames for cameras that are not configured or not enabled."""
     active_id_set = set(active_camera_ids)
@@ -69,7 +69,7 @@ def build_frame_packet(
     )
 
 
-def resolve_run_frame_id(frames: list[InspectionFrame]) -> str:
+def resolve_run_frame_id(frames: List[InspectionFrame]) -> str:
     """Resolve a run-level frame id from input metadata or current time."""
     for frame in frames:
         if frame.frame_id:
@@ -77,7 +77,7 @@ def resolve_run_frame_id(frames: list[InspectionFrame]) -> str:
     return datetime.now().astimezone().strftime("%Y%m%d_%H%M%S_%f")
 
 
-def resolve_run_timestamp(frames: list[InspectionFrame]) -> str:
+def resolve_run_timestamp(frames: List[InspectionFrame]) -> str:
     """Resolve a run-level timestamp from input metadata or current time."""
     for frame in frames:
         if frame.timestamp:
@@ -85,7 +85,7 @@ def resolve_run_timestamp(frames: list[InspectionFrame]) -> str:
     return datetime.now().astimezone().isoformat()
 
 
-def _normalize_frame(frame: InspectionFrame | dict[str, Any]) -> InspectionFrame:
+def _normalize_frame(frame: Union[InspectionFrame, Dict[str, Any]]) -> InspectionFrame:
     if isinstance(frame, InspectionFrame):
         return frame
     try:

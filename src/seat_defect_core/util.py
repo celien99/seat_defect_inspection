@@ -5,12 +5,12 @@ from __future__ import annotations
 from collections import Counter
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import cv2
 
 
-def build_model_scoped_root(base_dir: Path, seat_model_id: str | None) -> Path:
+def build_model_scoped_root(base_dir: Path, seat_model_id: Optional[str]) -> Path:
     """按型号构造输出根目录；单型号场景直接复用原目录。"""
     if seat_model_id is None:
         return base_dir

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -21,19 +21,19 @@ from ..yolo import DetectionService
 class PreparedCameraSample:
     """Shared intermediate data for one camera."""
 
-    quality: ImageQualityDecision | None
-    detection: DetectionResult | None = None
-    roi: RoiRefineResult | None = None
-    rejection_reason: str | None = None
+    quality: Optional[ImageQualityDecision]
+    detection: Optional[DetectionResult] = None
+    roi: Optional[RoiRefineResult] = None
+    rejection_reason: Optional[str] = None
 
 
 @dataclass
 class ResolvedInspectionContext:
     """Resolved camera set and pipelines for a model route."""
 
-    seat_model_id: str | None
-    cameras: list[CameraConfig]
-    pipelines: dict[str, "CameraPipeline"]
+    seat_model_id: Optional[str]
+    cameras: List[CameraConfig]
+    pipelines: Dict[str, "CameraPipeline"]
 
 
 class CameraPipeline:
@@ -101,11 +101,11 @@ class InspectionService:
 
     def __init__(self, config: InspectionConfig) -> None:
         self.config = config
-        self._pipeline_cache: dict[str, dict[str, CameraPipeline]] = {}
+        self._pipeline_cache: Dict[str, Dict[str, CameraPipeline]] = {}
         self._model_cache = ModelBundleCache(self)
         self._patchcore_predictor = PatchCorePredictorPool()
 
-    def resolve_context(self, seat_model_id: str | None) -> ResolvedInspectionContext:
+    def resolve_context(self, seat_model_id: Optional[str]) -> ResolvedInspectionContext:
         resolved_seat_model_id, cameras = self._resolve_active_cameras(seat_model_id)
         cache_key = resolved_seat_model_id or "__default__"
         pipelines = self._pipeline_cache.get(cache_key)
@@ -121,7 +121,7 @@ class InspectionService:
             pipelines=pipelines,
         )
 
-    def _resolve_active_cameras(self, seat_model_id: str | None) -> tuple[str | None, list[CameraConfig]]:
+    def _resolve_active_cameras(self, seat_model_id: Optional[str]) -> Tuple[Optional[str], List[CameraConfig]]:
         if self.config.seat_models:
             resolved_seat_model_id = (
                 seat_model_id
@@ -143,7 +143,7 @@ class InspectionService:
     def resolve_patchcore_config(
         self,
         camera: CameraConfig,
-        region: RegionConfig | None = None,
+        region: Optional[RegionConfig] = None,
     ) -> PatchCoreConfig:
         patchcore_config = region.patchcore if region is not None and region.patchcore is not None else camera.patchcore
         if (
@@ -156,7 +156,7 @@ class InspectionService:
     def load_model_bundle(
         self,
         camera: CameraConfig,
-        seat_model_id: str | None,
+        seat_model_id: Optional[str],
     ) -> LoadedModelBundle:
         return self._model_cache.load_camera_bundle(camera, seat_model_id)
 
@@ -164,7 +164,7 @@ class InspectionService:
         self,
         camera: CameraConfig,
         region: RegionConfig,
-        seat_model_id: str | None,
+        seat_model_id: Optional[str],
     ) -> LoadedModelBundle:
         return self._model_cache.load_region_bundle(camera, region, seat_model_id)
 
@@ -174,15 +174,15 @@ class InspectionService:
 
     def predict_patchcore_batch(
         self,
-        items: list[tuple[PatchCoreService, Any, Any, Any]],
-    ) -> list[TextureAnomalyResult]:
+        items: List[Tuple[PatchCoreService, Any, Any, Any]],
+    ) -> List[TextureAnomalyResult]:
         """Predict PatchCore results, batching full-backend items with matching features."""
         return self._patchcore_predictor.predict_batch(items)
 
-    def warmup(self, seat_model_id: str | None = None) -> None:
+    def warmup(self, seat_model_id: Optional[str] = None) -> None:
         """Preload active YOLO, PatchCore bundles, and full-backend backbones."""
         context = self.resolve_context(seat_model_id)
-        patchcore_items: list[tuple[PatchCoreService, Any, Any, Any]] = []
+        patchcore_items: List[Tuple[PatchCoreService, Any, Any, Any]] = []
         for camera in context.cameras:
             pipeline = context.pipelines[camera.camera_id]
             pipeline.detection_service.warmup()
@@ -223,12 +223,12 @@ class ModelBundleCache:
 
     def __init__(self, service: InspectionService) -> None:
         self._service = service
-        self._cache: dict[tuple[str, str, str, int], LoadedModelBundle] = {}
+        self._cache: Dict[Tuple[str, str, str, int], LoadedModelBundle] = {}
 
     def load_camera_bundle(
         self,
         camera: CameraConfig,
-        seat_model_id: str | None,
+        seat_model_id: Optional[str],
     ) -> LoadedModelBundle:
         cache_key = self._cache_key(
             seat_model_id=seat_model_id,
@@ -260,7 +260,7 @@ class ModelBundleCache:
         self,
         camera: CameraConfig,
         region: RegionConfig,
-        seat_model_id: str | None,
+        seat_model_id: Optional[str],
     ) -> LoadedModelBundle:
         cache_key = self._cache_key(
             seat_model_id=seat_model_id,
@@ -282,11 +282,11 @@ class ModelBundleCache:
     @staticmethod
     def _cache_key(
         *,
-        seat_model_id: str | None,
+        seat_model_id: Optional[str],
         camera_id: str,
         model_id: str,
         model_path: str,
-    ) -> tuple[str, str, str, int]:
+    ) -> Tuple[str, str, str, int]:
         model_mtime_ns = Path(model_path).stat().st_mtime_ns
         return (
             seat_model_id or "__default__",
@@ -300,7 +300,7 @@ class PatchCorePredictorPool:
     """Share full-backend feature extractors and batch compatible predictions."""
 
     def __init__(self) -> None:
-        self._feature_extractor_cache: dict[str, _TorchPatchFeatureExtractor] = {}
+        self._feature_extractor_cache: Dict[str, _TorchPatchFeatureExtractor] = {}
 
     def prepare(self, patchcore: Any) -> None:
         if not isinstance(patchcore, PatchCoreService):
@@ -309,10 +309,10 @@ class PatchCorePredictorPool:
 
     def predict_batch(
         self,
-        items: list[tuple[PatchCoreService, Any, Any, Any]],
-    ) -> list[TextureAnomalyResult]:
-        results: list[TextureAnomalyResult | None] = [None] * len(items)
-        batch_groups: dict[str, list[tuple[int, PatchCoreService, Any, Any, Any]]] = {}
+        items: List[Tuple[PatchCoreService, Any, Any, Any]],
+    ) -> List[TextureAnomalyResult]:
+        results: List[Optional[TextureAnomalyResult]] = [None] * len(items)
+        batch_groups: Dict[str, List[Tuple[int, PatchCoreService, Any, Any, Any]]] = {}
         for index, (patchcore, image, target_mask, ignore_mask) in enumerate(items):
             if not isinstance(patchcore, PatchCoreService):
                 results[index] = patchcore.predict(image, target_mask, ignore_mask)
@@ -392,7 +392,7 @@ def _feature_extractor_cache_key(config: PatchCoreConfig) -> str:
     )
 
 
-def _dummy_patchcore_sample(config: PatchCoreConfig) -> tuple[Any, Any, Any]:
+def _dummy_patchcore_sample(config: PatchCoreConfig) -> Tuple[Any, Any, Any]:
     image_size = max(1, int(config.image_size))
     image = np.zeros((image_size, image_size, 4), dtype=np.uint8)
     image[:, :, 3] = 255

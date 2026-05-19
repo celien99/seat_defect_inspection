@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -12,7 +12,7 @@ from ..types import BoundingBox, DetectionObject
 
 def _expand_box(
     box: BoundingBox,
-    image_shape: tuple[int, int],
+    image_shape: Tuple[int, int],
     *,
     expand_ratio: float,
     shrink_ratio: float,
@@ -35,7 +35,7 @@ def _expand_box(
 
 def _resolve_crop_source_box(
     target: DetectionObject,
-    image_shape: tuple[int, int],
+    image_shape: Tuple[int, int],
 ) -> BoundingBox:
     """优先使用分割掩膜外接框，否则回退到检测框。"""
     if target.segmentation_mask is not None:
@@ -45,7 +45,7 @@ def _resolve_crop_source_box(
     return target.bounding_box
 
 
-def _mask_to_box(mask: Any, image_shape: tuple[int, int]) -> BoundingBox | None:
+def _mask_to_box(mask: Any, image_shape: Tuple[int, int]) -> Optional[BoundingBox]:
     """把掩膜转换成最小外接矩形。"""
     if mask is None:
         return None
@@ -71,7 +71,7 @@ def _mask_to_box(mask: Any, image_shape: tuple[int, int]) -> BoundingBox | None:
     return BoundingBox(x1=x1, y1=y1, x2=x2, y2=y2)
 
 
-def _box_to_ints(box: BoundingBox) -> tuple[int, int, int, int]:
+def _box_to_ints(box: BoundingBox) -> Tuple[int, int, int, int]:
     """把浮点框稳定转换成整数裁剪坐标。"""
     return (
         max(0, int(round(box.x1))),
@@ -81,7 +81,7 @@ def _box_to_ints(box: BoundingBox) -> tuple[int, int, int, int]:
     )
 
 
-def _crop_shape(box: BoundingBox) -> tuple[int, int]:
+def _crop_shape(box: BoundingBox) -> Tuple[int, int]:
     """返回裁剪框对应的高宽。"""
     x1, y1, x2, y2 = _box_to_ints(box)
     return max(1, y2 - y1), max(1, x2 - x1)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from os import PathLike
-from typing import Any, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2
 
@@ -11,7 +11,7 @@ from .config import InspectionConfig
 from .runtime_config import load_config
 from .types import InspectionFrame, InspectionResponse
 
-ConfigSource = Union[str, PathLike[str], InspectionConfig]
+ConfigSource = Union[str, PathLike, InspectionConfig]
 
 
 class SeatDefectInspector:
@@ -25,11 +25,11 @@ class SeatDefectInspector:
 
     def inspect(
         self,
-        frames: list[InspectionFrame | dict[str, Any]],
+        frames: List[Union[InspectionFrame, Dict[str, Any]]],
         *,
-        part_id: str | None = None,
-        seat_model_id: str | None = None,
-    ) -> tuple[InspectionResponse, dict[str, Any]]:
+        part_id: Optional[str] = None,
+        seat_model_id: Optional[str] = None,
+    ) -> Tuple[InspectionResponse, Dict[str, Any]]:
         """Run one full inspection from externally supplied camera frames.
 
         Returns a tuple of ``(response, camera_images)`` where *camera_images*
@@ -50,13 +50,13 @@ class SeatDefectInspector:
 
     def inspect_paths(
         self,
-        image_paths: dict[str, str | PathLike[str]],
+        image_paths: Dict[str, Union[str, "PathLike[str]"]],
         *,
-        part_id: str | None = None,
-        seat_model_id: str | None = None,
-        frame_id: str | None = None,
-        timestamp: str | None = None,
-    ) -> tuple[InspectionResponse, dict[str, Any]]:
+        part_id: Optional[str] = None,
+        seat_model_id: Optional[str] = None,
+        frame_id: Optional[str] = None,
+        timestamp: Optional[str] = None,
+    ) -> Tuple[InspectionResponse, Dict[str, Any]]:
         """Run one inspection from externally supplied image paths.
 
         Returns a tuple of ``(response, camera_images)``.
@@ -71,18 +71,18 @@ class SeatDefectInspector:
             seat_model_id=seat_model_id,
         )
 
-    def warmup(self, *, seat_model_id: str | None = None) -> None:
+    def warmup(self, *, seat_model_id: Optional[str] = None) -> None:
         """Preload active runtime models and run a lightweight PatchCore warmup."""
         self._service.warmup(seat_model_id=seat_model_id)
 
 
 def inspect_once(
     config: ConfigSource,
-    frames: list[InspectionFrame | dict[str, Any]],
+    frames: List[Union[InspectionFrame, Dict[str, Any]]],
     *,
-    part_id: str | None = None,
-    seat_model_id: str | None = None,
-) -> tuple[InspectionResponse, dict[str, Any]]:
+    part_id: Optional[str] = None,
+    seat_model_id: Optional[str] = None,
+) -> Tuple[InspectionResponse, Dict[str, Any]]:
     """Load config and run one inspection from externally supplied frames.
 
     Returns a tuple of ``(response, camera_images)``.
@@ -96,13 +96,13 @@ def inspect_once(
 
 def inspect_paths_once(
     config: ConfigSource,
-    image_paths: dict[str, str | PathLike[str]],
+    image_paths: Dict[str, Union[str, "PathLike[str]"]],
     *,
-    part_id: str | None = None,
-    seat_model_id: str | None = None,
-    frame_id: str | None = None,
-    timestamp: str | None = None,
-) -> tuple[InspectionResponse, dict[str, Any]]:
+    part_id: Optional[str] = None,
+    seat_model_id: Optional[str] = None,
+    frame_id: Optional[str] = None,
+    timestamp: Optional[str] = None,
+) -> Tuple[InspectionResponse, Dict[str, Any]]:
     """Load config and run one inspection from image paths.
 
     Returns a tuple of ``(response, camera_images)``.
@@ -117,13 +117,13 @@ def inspect_paths_once(
 
 
 def frames_from_paths(
-    image_paths: dict[str, str | PathLike[str]],
+    image_paths: Dict[str, Union[str, "PathLike[str]"]],
     *,
-    frame_id: str | None = None,
-    timestamp: str | None = None,
-) -> list[InspectionFrame]:
+    frame_id: Optional[str] = None,
+    timestamp: Optional[str] = None,
+) -> List[InspectionFrame]:
     """Build InspectionFrame objects from a camera_id to image_path mapping."""
-    frames: list[InspectionFrame] = []
+    frames: List[InspectionFrame] = []
     for camera_id, image_path in image_paths.items():
         path = str(image_path)
         image = cv2.imread(path, cv2.IMREAD_COLOR)

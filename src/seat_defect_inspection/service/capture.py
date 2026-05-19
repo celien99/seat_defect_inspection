@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 
 from media_inputs import infer_source_kind
 from seat_defect_core.types import FramePacket
@@ -42,7 +42,7 @@ def capture_samples(
     )
     capture_root.mkdir(parents=True, exist_ok=True)
 
-    records: list[CaptureRecord] = []
+    records: List[CaptureRecord] = []
     for camera in context.cameras:
         for sample_index in range(sample_count):
             sample_number = sample_index + 1

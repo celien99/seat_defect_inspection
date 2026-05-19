@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, FrozenSet, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
 
 from ..util import build_model_scoped_root, select_patchcore_input, write_image
 
-DEFAULT_DEBUG_ARTIFACT_NAMES: frozenset[str] = frozenset(
+DEFAULT_DEBUG_ARTIFACT_NAMES: FrozenSet[str] = frozenset(
     {
         "overlay",
     }
@@ -20,9 +20,9 @@ DEFAULT_DEBUG_ARTIFACT_NAMES: frozenset[str] = frozenset(
 def generate_overlay_image(
     frame_packet: Any,
     prepared: Any,
-    texture_result: Any | None = None,
-    region_results: Any | None = None,
-) -> np.ndarray | None:
+    texture_result: Optional[Any] = None,
+    region_results: Optional[Any] = None,
+) -> Optional[np.ndarray]:
     """Generate the BGR overlay image for one camera result.
 
     Returns None when no heatmap data is available (e.g. REJECT/error paths).
@@ -42,13 +42,13 @@ def generate_overlay_image(
 def save_debug_artifacts(
     *,
     debug_dir: str,
-    artifact_names: list[str] | tuple[str, ...] | frozenset[str] | None = None,
+    artifact_names: Union[List[str], Tuple[str, ...], FrozenSet[str], None] = None,
     frame_packet: Any,
     prepared: Any,
-    texture_result: Any | None,
-    seat_model_id: str | None,
-    region_results: Any | None = None,
-) -> dict[str, str]:
+    texture_result: Optional[Any],
+    seat_model_id: Optional[str],
+    region_results: Optional[Any] = None,
+) -> Dict[str, str]:
     """Persist the selected debug artifacts for one camera result."""
     selected_artifacts = _normalize_artifact_names(artifact_names)
     if not selected_artifacts:
@@ -61,7 +61,7 @@ def save_debug_artifacts(
         / frame_packet.frame_id
     )
     camera_dir.mkdir(parents=True, exist_ok=True)
-    artifact_paths: dict[str, str] = {}
+    artifact_paths: Dict[str, str] = {}
 
     if prepared.roi is not None and (
         texture_result is not None or region_results
@@ -84,8 +84,8 @@ def save_debug_artifacts(
 
 
 def _normalize_artifact_names(
-    artifact_names: list[str] | tuple[str, ...] | frozenset[str] | None,
-) -> frozenset[str]:
+    artifact_names: Union[List[str], Tuple[str, ...], FrozenSet[str], None],
+) -> FrozenSet[str]:
     if artifact_names is None:
         return DEFAULT_DEBUG_ARTIFACT_NAMES
     requested = [str(name).strip() for name in artifact_names if str(name).strip()]
@@ -125,7 +125,7 @@ def _stitch_region_heatmap(roi, region_results) -> np.ndarray:
     return stitched
 
 
-def _region_box_to_pixels(box, width: int, height: int) -> tuple[int, int, int, int]:
+def _region_box_to_pixels(box, width: int, height: int) -> Tuple[int, int, int, int]:
     x1 = int(round(float(box.x1)))
     y1 = int(round(float(box.y1)))
     x2 = int(round(float(box.x2)))
@@ -139,10 +139,10 @@ def _region_box_to_pixels(box, width: int, height: int) -> tuple[int, int, int, 
 
 
 def _save_artifact_image(
-    artifact_paths: dict[str, str],
+    artifact_paths: Dict[str, str],
     key: str,
     path: Path,
-    image: Any | None,
+    image: Optional[Any],
 ) -> None:
     """Write one final per-camera artifact."""
     if image is None:
@@ -172,7 +172,7 @@ def _overlay_heatmap_on_frame(
 def _restore_heatmap_to_crop(
     roi,
     heatmap: np.ndarray,
-    crop_shape: tuple[int, int],
+    crop_shape: Tuple[int, int],
 ) -> np.ndarray:
     canonical_shape = select_patchcore_input(roi).shape[:2]
     clipped = np.clip(np.asarray(heatmap, dtype=np.float32), 0.0, 1.0)
@@ -210,7 +210,7 @@ def _restore_heatmap_to_crop(
     )
 
 
-def _box_to_frame_pixels(box, frame_shape: tuple[int, int]) -> tuple[int, int, int, int]:
+def _box_to_frame_pixels(box, frame_shape: Tuple[int, int]) -> Tuple[int, int, int, int]:
     height, width = frame_shape
     x1 = int(round(float(box.x1)))
     y1 = int(round(float(box.y1)))
@@ -243,7 +243,7 @@ def _overlay_heatmap(
 def _prepare_heatmap_layers(
     image: Any,
     heatmap: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray]:
     """Normalize heatmap geometry and value range for visualization helpers."""
     base_image = _ensure_color_image(image)
     clipped = np.clip(np.asarray(heatmap, dtype=np.float32), 0.0, 1.0)

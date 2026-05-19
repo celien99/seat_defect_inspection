@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 from .config import FusionConfig
 from .types import CameraInspectionResult, InspectionResult
 
@@ -11,7 +13,7 @@ def fuse_camera_results(
     part_id: str,
     frame_id: str,
     timestamp: str,
-    camera_results: list[CameraInspectionResult],
+    camera_results: List[CameraInspectionResult],
     fusion_config: FusionConfig,
 ) -> InspectionResult:
     """将多个机位结果融合成最终 OK/NG/REJECT 结论。"""
@@ -96,8 +98,8 @@ def _apply_ng_strategy(ng_count: int, total_count: int, strategy: str) -> bool:
 
 
 def _build_ng_decision_reason(
-    ng_results: list[CameraInspectionResult],
-    rejects: list[CameraInspectionResult],
+    ng_results: List[CameraInspectionResult],
+    rejects: List[CameraInspectionResult],
 ) -> str:
     ng_cameras = ",".join(result.camera_id for result in ng_results)
     if rejects:

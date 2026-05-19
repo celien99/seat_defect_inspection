@@ -6,7 +6,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from seat_defect_core.util import write_json
 
@@ -24,17 +24,17 @@ class _OfflineSample:
     """单个离线样本对应的机位图片集合。"""
 
     part_id: str
-    source_map: dict[str, str]
+    source_map: Dict[str, str]
 
 
 def inspect_image_folder(
     service: "InspectionService",
     input_dir: str,
     *,
-    seat_model_id: str | None = None,
-    output_dir: str | None = None,
-    part_id: str | None = None,
-) -> dict[str, Any]:
+    seat_model_id: Optional[str] = None,
+    output_dir: Optional[str] = None,
+    part_id: Optional[str] = None,
+) -> Dict[str, Any]:
     """从图片文件夹批量执行离线检测。"""
     input_root = Path(input_dir)
     if not input_root.is_dir():
@@ -69,7 +69,7 @@ def inspect_image_folder(
     service.config.debug_dir = str(debug_dir)
 
     try:
-        records: list[dict[str, Any]] = []
+        records: List[Dict[str, Any]] = []
         for sample in samples:
             _apply_sample_sources(context.cameras, sample.source_map)
             result = run_inspection(
@@ -113,10 +113,10 @@ def inspect_image_folder(
 
 def _discover_offline_samples(
     input_root: Path,
-    camera_ids: list[str],
+    camera_ids: List[str],
     *,
-    part_id: str | None,
-) -> list[_OfflineSample]:
+    part_id: Optional[str],
+) -> List[_OfflineSample]:
     """同时支持单样本、按样本分目录、按机位分目录三种离线输入布局。"""
     if _looks_like_camera_layout(input_root, camera_ids):
         return _discover_camera_layout_samples(
@@ -149,7 +149,7 @@ def _discover_offline_samples(
     ]
 
 
-def _looks_like_camera_layout(input_root: Path, camera_ids: list[str]) -> bool:
+def _looks_like_camera_layout(input_root: Path, camera_ids: List[str]) -> bool:
     """判断根目录是否采用“每个机位一个子目录”的布局。"""
     child_dir_names = {path.name for path in input_root.iterdir() if path.is_dir()}
     return bool(camera_ids) and set(camera_ids).issubset(child_dir_names)
@@ -157,10 +157,10 @@ def _looks_like_camera_layout(input_root: Path, camera_ids: list[str]) -> bool:
 
 def _discover_camera_layout_samples(
     input_root: Path,
-    camera_ids: list[str],
+    camera_ids: List[str],
     *,
-    part_id: str | None,
-) -> list[_OfflineSample]:
+    part_id: Optional[str],
+) -> List[_OfflineSample]:
     """解析按机位分目录的批量图片布局。"""
     indexed_images = {
         camera_id: _index_camera_dir(input_root / camera_id, camera_id)
@@ -209,12 +209,12 @@ def _discover_camera_layout_samples(
     ]
 
 
-def _index_camera_dir(camera_dir: Path, camera_id: str) -> dict[str, Path]:
+def _index_camera_dir(camera_dir: Path, camera_id: str) -> Dict[str, Path]:
     """把单机位目录索引成 part_id -> image_path。"""
     if not camera_dir.is_dir():
         raise NotADirectoryError(f"离线检测缺少机位目录：{camera_dir}")
 
-    indexed: dict[str, Path] = {}
+    indexed: Dict[str, Path] = {}
     for image_path in sorted(_iter_image_files(camera_dir)):
         part_id = image_path.relative_to(camera_dir).with_suffix("").as_posix()
         if part_id in indexed:
@@ -228,9 +228,9 @@ def _index_camera_dir(camera_dir: Path, camera_id: str) -> dict[str, Path]:
 
 def _try_build_single_sample(
     input_root: Path,
-    camera_ids: list[str],
+    camera_ids: List[str],
     *,
-    part_id: str | None,
+    part_id: Optional[str],
 ) -> _OfflineSample | None:
     """根目录本身就能凑齐所有机位图片时，直接当作单样本。"""
     try:
@@ -245,13 +245,13 @@ def _try_build_single_sample(
 
 def _resolve_sample_source_map(
     sample_dir: Path,
-    camera_ids: list[str],
-) -> dict[str, str]:
+    camera_ids: List[str],
+) -> Dict[str, str]:
     """在一个样本目录内查找每个机位对应的图片。"""
     if not sample_dir.is_dir():
         raise NotADirectoryError(f"样本目录不存在：{sample_dir}")
 
-    source_map: dict[str, str] = {}
+    source_map: Dict[str, str] = {}
     for camera_id in camera_ids:
         image_path = _find_camera_image(sample_dir, camera_id)
         if image_path is None:
@@ -274,7 +274,7 @@ def _find_camera_image(sample_dir: Path, camera_id: str) -> Path | None:
         and path.stem == camera_id
     )
 
-    nested_candidates: list[Path] = []
+    nested_candidates: List[Path] = []
     camera_dir = sample_dir / camera_id
     if camera_dir.is_dir():
         nested_candidates = sorted(_iter_image_files(camera_dir))
@@ -301,7 +301,7 @@ def _iter_image_files(folder: Path):
 
 def _build_run_root(
     service: "InspectionService",
-    output_dir: str | None,
+    output_dir: Optional[str],
     run_id: str,
 ) -> Path:
     """为一次离线批测构造独立输出目录。"""
@@ -315,15 +315,15 @@ def _build_run_root(
 
 
 def _restore_camera_sources(
-    cameras: list["CameraConfig"],
-    original_sources: dict[str, str],
+    cameras: List["CameraConfig"],
+    original_sources: Dict[str, str],
 ) -> None:
     """Restore camera sources after offline inspection so the caller can reuse the service."""
     for camera in cameras:
         camera.source = original_sources[camera.camera_id]
 
 
-def _apply_sample_sources(cameras: list["CameraConfig"], source_map: dict[str, str]) -> None:
+def _apply_sample_sources(cameras: List["CameraConfig"], source_map: Dict[str, str]) -> None:
     """把当前样本的图片路径写回机位 source，复用原始检测主流程。"""
     for camera in cameras:
         camera.source = source_map[camera.camera_id]

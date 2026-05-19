@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -41,7 +41,7 @@ IMAGENET_STD = np.asarray([0.229, 0.224, 0.225], dtype=np.float32)
 class _PatchBatch:
     """记录当前图像 patch 网格与有效 patch 统计。"""
 
-    grid_shape: tuple[int, int]
+    grid_shape: Tuple[int, int]
     valid_indices: np.ndarray
     valid_patch_count: int
     total_patch_count: int
@@ -51,10 +51,10 @@ def extract_patch_embeddings(
     image: np.ndarray,
     config: PatchCoreConfig,
     *,
-    target_mask: np.ndarray | None = None,
-    ignore_mask: np.ndarray | None = None,
+    target_mask: Optional[np.ndarray] = None,
+    ignore_mask: Optional[np.ndarray] = None,
     feature_extractor: "_TorchPatchFeatureExtractor | None" = None,
-) -> tuple[np.ndarray, _PatchBatch]:
+) -> Tuple[np.ndarray, _PatchBatch]:
     """按配置后端提取有效 patch embedding。"""
     backend = config.backend.strip().lower()
     if backend == "full":
@@ -78,9 +78,9 @@ def extract_handcrafted_patch_embeddings(
     image: np.ndarray,
     config: PatchCoreConfig,
     *,
-    target_mask: np.ndarray | None = None,
-    ignore_mask: np.ndarray | None = None,
-) -> tuple[np.ndarray, _PatchBatch]:
+    target_mask: Optional[np.ndarray] = None,
+    ignore_mask: Optional[np.ndarray] = None,
+) -> Tuple[np.ndarray, _PatchBatch]:
     """用掩膜筛出有效 patch，并提取轻量手工纹理特征。"""
     feature_image = _prepare_feature_image(image, target_mask=target_mask)
     resized_image = cv2.resize(
@@ -91,8 +91,8 @@ def extract_handcrafted_patch_embeddings(
     resized_target = _resize_mask(target_mask, config.image_size)
     resized_ignore = _resize_mask(ignore_mask, config.image_size)
 
-    features: list[np.ndarray] = []
-    valid_indices: list[int] = []
+    features: List[np.ndarray] = []
+    valid_indices: List[int] = []
     grid_rows = 0
     grid_cols = 0
     patch_index = 0
@@ -225,7 +225,7 @@ class _TorchPatchFeatureExtractor:
         self.layer_names = [layer.strip() for layer in config.feature_layers if layer.strip()]
         if not self.layer_names:
             raise ValueError("完整 PatchCore 至少需要一个 feature_layers")
-        self._features: dict[str, Any] = {}
+        self._features: Dict[str, Any] = {}
         self._lock = threading.Lock()
         self._handles = [
             _resolve_submodule(self.model, layer_name).register_forward_hook(self._make_hook(layer_name))
@@ -236,9 +236,9 @@ class _TorchPatchFeatureExtractor:
         self,
         image: np.ndarray,
         *,
-        target_mask: np.ndarray | None = None,
-        ignore_mask: np.ndarray | None = None,
-    ) -> tuple[np.ndarray, _PatchBatch]:
+        target_mask: Optional[np.ndarray] = None,
+        ignore_mask: Optional[np.ndarray] = None,
+    ) -> Tuple[np.ndarray, _PatchBatch]:
         """提取完整 PatchCore 使用的深度 embedding。"""
         with self._lock:
             feature_image = _prepare_feature_image(image, target_mask=target_mask)
@@ -291,13 +291,13 @@ class _TorchPatchFeatureExtractor:
 
     def extract_many(
         self,
-        samples: list[tuple[np.ndarray, np.ndarray | None, np.ndarray | None]],
-    ) -> list[tuple[np.ndarray, _PatchBatch]]:
+        samples: List[Tuple[np.ndarray, Optional[np.ndarray], Optional[np.ndarray]]],
+    ) -> List[Tuple[np.ndarray, _PatchBatch]]:
         """提取同配置的多张 PatchCore 输入，复用一次 batch backbone 前向。"""
         if not samples:
             return []
         with self._lock:
-            resized_images: list[np.ndarray] = []
+            resized_images: List[np.ndarray] = []
             for image, target_mask, _ignore_mask in samples:
                 feature_image = _prepare_feature_image(image, target_mask=target_mask)
                 resized_images.append(
@@ -327,7 +327,7 @@ class _TorchPatchFeatureExtractor:
         _, _, grid_rows, grid_cols = embedding_map.shape
         embedding_array = embedding_map.detach().cpu().numpy()
 
-        results: list[tuple[np.ndarray, _PatchBatch]] = []
+        results: List[Tuple[np.ndarray, _PatchBatch]] = []
         for index, (_image, target_mask, ignore_mask) in enumerate(samples):
             target_grid = _resize_mask_to_grid(
                 target_mask,
@@ -365,7 +365,7 @@ class _TorchPatchFeatureExtractor:
     def _make_hook(self, layer_name: str):
         """保存中间层输出，供 embedding 拼接使用。"""
 
-        def _hook(_module: Any, _inputs: tuple[Any, ...], output: Any) -> None:
+        def _hook(_module: Any, _inputs: Tuple[Any, ...], output: Any) -> None:
             if torch.is_tensor(output):
                 self._features[layer_name] = output.detach()
                 return
@@ -392,12 +392,12 @@ def _prepare_torch_input(image: np.ndarray, config: PatchCoreConfig) -> Any:
     return tensor
 
 
-def _generate_deep_embedding_map(feature_maps: list[Any], config: PatchCoreConfig) -> Any:
+def _generate_deep_embedding_map(feature_maps: List[Any], config: PatchCoreConfig) -> Any:
     """对多层特征图做池化、对齐并拼成统一 embedding map。"""
     if torch_f is None:
         raise RuntimeError("torch.nn.functional 不可用，无法生成完整 PatchCore embedding")
 
-    pooled_features: list[Any] = []
+    pooled_features: List[Any] = []
     kernel_size = max(1, int(config.feature_pool_kernel_size))
     padding = kernel_size // 2
     for feature_map in feature_maps:
@@ -479,7 +479,7 @@ def _load_torch_backbone(config: PatchCoreConfig) -> Any:
         ) from exc
 
 
-def _resolve_backbone_builder(backbone_name: str) -> tuple[Any, Any]:
+def _resolve_backbone_builder(backbone_name: str) -> Tuple[Any, Any]:
     """根据 backbone 名称返回构造器和默认权重枚举。"""
     normalized = backbone_name.strip().lower()
     builders = {
@@ -497,7 +497,7 @@ def _resolve_backbone_builder(backbone_name: str) -> tuple[Any, Any]:
     return builder
 
 
-def _unwrap_state_dict(payload: Any) -> dict[str, Any]:
+def _unwrap_state_dict(payload: Any) -> Dict[str, Any]:
     """Extract state_dict from common training-framework checkpoint wrappers."""
     if not isinstance(payload, dict):
         raise TypeError("backbone_weights_path 必须加载到 state_dict 字典")
@@ -508,10 +508,10 @@ def _unwrap_state_dict(payload: Any) -> dict[str, Any]:
     return payload
 
 
-def _normalize_state_dict_keys(state_dict: dict[str, Any]) -> dict[str, Any]:
+def _normalize_state_dict_keys(state_dict: Dict[str, Any]) -> Dict[str, Any]:
     """去掉常见包装前缀，尽量把权重键名压平。"""
     prefixes = ("module.", "model.", "backbone.", "network.")
-    normalized: dict[str, Any] = {}
+    normalized: Dict[str, Any] = {}
     for key, value in state_dict.items():
         normalized_key = key
         changed = True
@@ -535,7 +535,7 @@ def _resolve_submodule(model: Any, layer_name: str) -> Any:
     return current
 
 
-def _resize_mask(mask: np.ndarray | None, image_size: int) -> np.ndarray:
+def _resize_mask(mask: Optional[np.ndarray], image_size: int) -> np.ndarray:
     """把原始掩膜缩放到 PatchCore 输入尺寸。"""
     if mask is None:
         return np.ones((image_size, image_size), dtype=np.float32)
@@ -549,7 +549,7 @@ def _resize_mask(mask: np.ndarray | None, image_size: int) -> np.ndarray:
 
 
 def _resize_mask_to_grid(
-    mask: np.ndarray | None,
+    mask: Optional[np.ndarray],
     grid_rows: int,
     grid_cols: int,
     *,
@@ -570,7 +570,7 @@ def _resize_mask_to_grid(
 def _prepare_feature_image(
     image: np.ndarray,
     *,
-    target_mask: np.ndarray | None = None,
+    target_mask: Optional[np.ndarray] = None,
 ) -> np.ndarray:
     """Convert transparent PatchCore inputs to BGR without treating alpha-0 pixels as black."""
     array = np.asarray(image)
@@ -602,7 +602,7 @@ def _prepare_feature_image(
 def _mask_to_binary(
     mask: np.ndarray,
     *,
-    output_shape: tuple[int, int] | None = None,
+    output_shape: Optional[Tuple[int, int]] = None,
 ) -> np.ndarray:
     """Normalize a binary mask or transparent image mask to a float 0/1 array."""
     array = np.asarray(mask)

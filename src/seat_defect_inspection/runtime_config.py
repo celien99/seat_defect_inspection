@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 from seat_defect_core.config_file import load_inspection_payload
 from seat_defect_core.runtime_config import validate_inspection_config
 
@@ -21,7 +23,7 @@ def load_config(path: str) -> InspectionConfig:
     return config
 
 
-def load_yolo_training_config(path: str, seat_model_id: str | None = None) -> YoloTrainingConfig:
+def load_yolo_training_config(path: str, seat_model_id: Optional[str] = None) -> YoloTrainingConfig:
     """加载 YOLO 训练配置。"""
     config_dir, inspection_payload = load_inspection_payload(path)
     training_payload, selected_seat_model_id = _resolve_yolo_training_payload(

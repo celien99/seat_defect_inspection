@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Union
 
 
 @dataclass
@@ -44,7 +45,7 @@ class RoiRefineConfig:
 class DetectionConfig:
     """单机位 YOLO 检测配置。"""
 
-    model_path: str | None = None
+    model_path: Optional[str] = None
     target_class: str = "seat"
     # 保持与历史版本一致，避免结构重构时悄悄改变 YOLO 检测策略。
     confidence: float = 0.25
@@ -95,9 +96,9 @@ class PatchCoreConfig:
 
     # full 后端的骨干网络参数。
     backbone_name: str = "wide_resnet50_2"
-    feature_layers: list[str] = field(default_factory=lambda: ["layer2", "layer3"])
+    feature_layers: List[str] = field(default_factory=lambda: ["layer2", "layer3"])
     backbone_pretrained: bool = False
-    backbone_weights_path: str | None = None
+    backbone_weights_path: Optional[str] = None
     backbone_device: str = "cpu"
     feature_pool_kernel_size: int = 3
     coreset_sampling_ratio: float = 0.1
@@ -109,7 +110,7 @@ class ColorBranchConfig:
 
     enabled: bool = False
     threshold_quantile: float = 0.99
-    threshold: float | None = None
+    threshold: Optional[float] = None
     min_valid_pixel_ratio: float = 0.4
     training_threshold_upper_quantile: float = 0.995
 
@@ -120,10 +121,10 @@ class RegionConfig:
 
     region_id: str
     # 标准 ROI 内的归一化矩形：[x1, y1, x2, y2]，取值范围 0-1。
-    box: list[float]
+    box: List[float]
     patchcore_model_path: str
     enabled: bool = True
-    patchcore: PatchCoreConfig | None = None
+    patchcore: Optional[PatchCoreConfig] = None
 
 
 @dataclass
@@ -140,7 +141,7 @@ class CameraConfig:
     roi: RoiRefineConfig = field(default_factory=RoiRefineConfig)
     patchcore: PatchCoreConfig = field(default_factory=PatchCoreConfig)
     color_branch: ColorBranchConfig = field(default_factory=ColorBranchConfig)
-    regions: list[RegionConfig] = field(default_factory=list)
+    regions: List[RegionConfig] = field(default_factory=list)
 
 
 @dataclass
@@ -157,21 +158,21 @@ class SeatModelConfig:
     """按座椅型号组织的多机位配置。"""
 
     seat_model_id: str
-    cameras: list[CameraConfig] = field(default_factory=list)
-    display_name: str | None = None
+    cameras: List[CameraConfig] = field(default_factory=list)
+    display_name: Optional[str] = None
 
 
 @dataclass
 class InspectionConfig:
     """core 顶层 inspect runtime 配置。"""
 
-    cameras: list[CameraConfig] = field(default_factory=list)
-    seat_models: list[SeatModelConfig] = field(default_factory=list)
-    default_seat_model_id: str | None = None
+    cameras: List[CameraConfig] = field(default_factory=list)
+    seat_models: List[SeatModelConfig] = field(default_factory=list)
+    default_seat_model_id: Optional[str] = None
     output_json_path: str = "outputs/seat_defect_inspection/results.json"
     debug_dir: str = "outputs/seat_defect_inspection/debug"
     debug_artifacts_enabled: bool = True
-    debug_artifact_names: list[str] = field(
+    debug_artifact_names: List[str] = field(
         default_factory=lambda: ["overlay"],
     )
     part_id: str = "seat_demo"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Dict, Iterable, Tuple, Union
 
 import cv2
 import numpy as np
@@ -51,7 +51,7 @@ class ColorConsistencyService:
         self.config = config
         self.profile = profile
 
-    def fit(self, samples: Iterable[tuple[np.ndarray, np.ndarray]]) -> dict[str, float | int]:
+    def fit(self, samples: Iterable[Tuple[np.ndarray, np.ndarray]]) -> Dict[str, Union[float, int]]:
         """从正常 ROI 样本中拟合颜色统计量。"""
         features = [
             _extract_color_feature(image, valid_mask)

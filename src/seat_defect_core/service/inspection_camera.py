@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from time import perf_counter
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 from ..artifacts import generate_overlay_image, save_debug_artifacts
 from ..config import CameraConfig
@@ -25,13 +25,13 @@ class RegionPatchCorePlan:
     frame_packet: FramePacket
     camera: CameraConfig
     prepared: Any
-    seat_model_id: str | None
+    seat_model_id: Optional[str]
     shared_result_fields: dict
     quality_rejected: bool
     camera_timer: "_StageTimer"
-    region_results: list[RegionPatchCoreResult]
-    patchcore_items: list[tuple[Any, Any, Any, Any]]
-    runnable_regions: list[tuple[Any, RegionRoiSample, Any]]
+    region_results: List[RegionPatchCoreResult]
+    patchcore_items: List[Tuple[Any, Any, Any, Any]]
+    runnable_regions: List[Tuple[Any, RegionRoiSample, Any]]
 
 
 def inspect_one_camera(
@@ -39,7 +39,7 @@ def inspect_one_camera(
     frame_packet: FramePacket,
     camera: CameraConfig,
     pipeline: "CameraPipeline",
-    seat_model_id: str | None,
+    seat_model_id: Optional[str],
 ) -> CameraInspectionResult:
     """Run one camera through detection, ROI, PatchCore and artifacts."""
     camera_timer = _StageTimer()
@@ -70,9 +70,9 @@ def inspect_prepared_camera(
     frame_packet: FramePacket,
     camera: CameraConfig,
     prepared,
-    seat_model_id: str | None,
+    seat_model_id: Optional[str],
     camera_timer: "_StageTimer",
-) -> CameraInspectionResult | RegionPatchCorePlan:
+) -> Union[CameraInspectionResult, RegionPatchCorePlan]:
     """Finish one camera after prepare, optionally deferring region PatchCore."""
     shared_result_fields = {
         "camera_id": frame_packet.camera_id,
@@ -196,17 +196,17 @@ def build_region_patchcore_plan(
     frame_packet: FramePacket,
     camera: CameraConfig,
     prepared,
-    seat_model_id: str | None,
+    seat_model_id: Optional[str],
     shared_result_fields: dict,
     quality_rejected: bool,
     camera_timer: "_StageTimer",
 ) -> RegionPatchCorePlan:
-    region_samples: dict[str, RegionRoiSample] = {
+    region_samples: Dict[str, RegionRoiSample] = {
         sample.region_id: sample
         for sample in split_roi_regions(prepared.roi, camera.regions)
     }
     camera_timer.mark("split_regions")
-    region_results: list[RegionPatchCoreResult] = []
+    region_results: List[RegionPatchCoreResult] = []
     patchcore_items = []
     runnable_regions = []
     for region in camera.regions:
@@ -354,7 +354,7 @@ class _StageTimer:
     def __init__(self) -> None:
         self._started_at = perf_counter()
         self._last_at = self._started_at
-        self.timings_ms: dict[str, float] = {}
+        self.timings_ms: Dict[str, float] = {}
 
     def mark(self, name: str) -> float:
         now = perf_counter()
@@ -367,18 +367,18 @@ class _StageTimer:
         self.timings_ms[name] = elapsed_ms
         self._last_at = perf_counter()
 
-    def finish(self) -> dict[str, float]:
+    def finish(self) -> Dict[str, float]:
         total_ms = (perf_counter() - self._started_at) * 1000.0
         self.timings_ms["total"] = total_ms
         return dict(self.timings_ms)
 
 
 def _merge_region_status(
-    region_results: list[RegionPatchCoreResult],
+    region_results: List[RegionPatchCoreResult],
     color_result,
     quality_rejected: bool,
     prepared,
-) -> tuple[str, str]:
+) -> Tuple[str, str]:
     ng_regions = [item for item in region_results if item.status == "NG"]
     reject_regions = [item for item in region_results if item.status == "REJECT"]
     if ng_regions and color_result is not None and color_result.is_anomaly:
@@ -438,8 +438,8 @@ def _predict_color_branch(
 
 
 def _region_config_box_to_roi_box(
-    box: list[float],
-    roi_shape: tuple[int, int],
+    box: List[float],
+    roi_shape: Tuple[int, int],
 ) -> BoundingBox:
     height, width = roi_shape
     return BoundingBox(
@@ -454,7 +454,7 @@ def _attach_debug_artifacts(
     service: "InspectionService",
     frame_packet: FramePacket,
     prepared,
-    seat_model_id: str | None,
+    seat_model_id: Optional[str],
     result: CameraInspectionResult,
     texture_result=None,
     region_results=None,
@@ -478,7 +478,7 @@ def _finish_camera_result(
     service: "InspectionService",
     frame_packet: FramePacket,
     prepared,
-    seat_model_id: str | None,
+    seat_model_id: Optional[str],
     result: CameraInspectionResult,
     timer: _StageTimer,
     texture_result=None,

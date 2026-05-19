@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Tuple
 
 from ..config import YoloTrainingConfig
 from .dataset_validation import (
@@ -31,7 +31,7 @@ MODEL_INIT_NETWORK_ERROR_TOKENS = (
 )
 
 
-def train_yolo_model(config: YoloTrainingConfig) -> dict[str, Any]:
+def train_yolo_model(config: YoloTrainingConfig) -> Dict[str, Any]:
     """Train a YOLO segmentation model and return a summary."""
     YOLO = _import_ultralytics_yolo()
 
@@ -103,7 +103,7 @@ def train_yolo_model(config: YoloTrainingConfig) -> dict[str, Any]:
     return summary
 
 
-def _load_yolo_model(config: YoloTrainingConfig, yolo_cls) -> tuple[Any, str, bool]:
+def _load_yolo_model(config: YoloTrainingConfig, yolo_cls) -> Tuple[Any, str, bool]:
     """Load the constrained segmentation model, with an offline-safe fallback."""
     requested_model_path = str(config.model_path)
     candidate = Path(requested_model_path)
@@ -172,9 +172,9 @@ def _is_model_download_error(exc: Exception) -> bool:
     return False
 
 
-def _iter_exception_chain(exc: BaseException) -> list[BaseException]:
+def _iter_exception_chain(exc: BaseException) -> List[BaseException]:
     """Flatten an exception and its causes/contexts for error classification."""
-    chain: list[BaseException] = []
+    chain: List[BaseException] = []
     current: BaseException | None = exc
     while current is not None and current not in chain:
         chain.append(current)

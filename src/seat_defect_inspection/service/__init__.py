@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from importlib import import_module
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from seat_defect_core.types import InspectionResult
 
@@ -49,8 +49,8 @@ def _create_service(config: InspectionConfig) -> "InspectionService":
 
 def train_patchcore_models(
     config: InspectionConfig,
-    seat_model_id: str | None = None,
-) -> list[dict[str, Any]]:
+    seat_model_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     """训练全部机位的 PatchCore 模型。"""
     # 入口层只做轻量路由，真正逻辑仍在具体模块里。
     from .training import train_patchcore_models as _train_patchcore_models
@@ -63,10 +63,10 @@ def train_patchcore_models(
 
 def capture_samples(
     config: InspectionConfig,
-    part_id: str | None = None,
+    part_id: Optional[str] = None,
     *,
-    output_dir: str | None = None,
-    seat_model_id: str | None = None,
+    output_dir: Optional[str] = None,
+    seat_model_id: Optional[str] = None,
     save_to_train_good_dir: bool = False,
     count: int = 1,
     interval_ms: int = 0,
@@ -88,9 +88,9 @@ def capture_samples(
 
 def run_inspection(
     config: InspectionConfig,
-    part_id: str | None = None,
+    part_id: Optional[str] = None,
     *,
-    seat_model_id: str | None = None,
+    seat_model_id: Optional[str] = None,
 ) -> InspectionResult:
     """执行一次完整检测。"""
     # 入口层只做轻量路由，真正逻辑仍在具体模块里。
@@ -107,10 +107,10 @@ def inspect_image_folder(
     config: InspectionConfig,
     input_dir: str,
     *,
-    seat_model_id: str | None = None,
-    output_dir: str | None = None,
-    part_id: str | None = None,
-) -> dict[str, Any]:
+    seat_model_id: Optional[str] = None,
+    output_dir: Optional[str] = None,
+    part_id: Optional[str] = None,
+) -> Dict[str, Any]:
     """从本地图片文件夹批量执行离线检测。"""
     # 离线批测复用同一套服务骨架，只是把机位输入换成本地图片。
     from .offline_inspection import inspect_image_folder as _inspect_image_folder

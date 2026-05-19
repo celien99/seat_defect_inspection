@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, List, Optional
 
 from .geometry import BoundingBox
 
@@ -38,7 +38,7 @@ class ImageQualityDecision:
     accepted: bool
     """是否通过质量门控。"""
 
-    reason: str | None
+    reason: Optional[str]
     """未通过时的原因；通过时为 None。"""
 
     metrics: ImageQualityMetrics
@@ -58,7 +58,7 @@ class DetectionObject:
     bounding_box: BoundingBox
     """目标检测框。"""
 
-    segmentation_mask: Any | None = None
+    segmentation_mask: Optional[Any] = None
     """目标分割掩膜；检测模型无 mask 时为空。"""
 
 
@@ -66,10 +66,10 @@ class DetectionObject:
 class DetectionResult:
     """YOLO 检测结果。"""
 
-    target: DetectionObject | None
+    target: Optional[DetectionObject]
     """主目标对象，一般为座椅；未找到时为 None。"""
 
-    all_objects: list[DetectionObject] = field(default_factory=list)
+    all_objects: List[DetectionObject] = field(default_factory=list)
     """YOLO 输出的全部目标，主要用于调试。"""
 
 
@@ -86,7 +86,7 @@ class RoiRefineResult:
     aligned_roi_image: Any
     """对齐和缩放后的标准 ROI 图。"""
 
-    texture_ready_image: Any | None
+    texture_ready_image: Optional[Any]
     """为 PatchCore 准备的纹理输入图；未启用时为空。"""
 
     target_mask: Any
@@ -98,7 +98,7 @@ class RoiRefineResult:
     ignore_mask: Any
     """需要忽略的区域 mask。"""
 
-    foreground_weight: Any | None
+    foreground_weight: Optional[Any]
     """前景羽化权重图；未生成时为空。"""
 
     alignment_applied: bool = False

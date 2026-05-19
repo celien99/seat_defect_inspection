@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Dict, List, Tuple
 
 import cv2
 import numpy as np
@@ -16,7 +16,7 @@ from ..types import BoundingBox, DetectionObject, DetectionResult
 class DetectionService:
     """检测主座椅区域以及需要忽略的干扰区域。"""
 
-    _model_cache: dict[tuple[str, str], Any] = {}
+    _model_cache: Dict[Tuple[str, str], Any] = {}
 
     def __init__(self, config: DetectionConfig) -> None:
         self.config = config
@@ -43,7 +43,7 @@ class DetectionService:
             all_objects=detections,
         )
 
-    def detect_many(self, images: list[Any]) -> list[DetectionResult]:
+    def detect_many(self, images: List[Any]) -> List[DetectionResult]:
         """Run one shared YOLO model on a batch of camera images."""
         if self.config.model_path is None:
             return [
@@ -51,7 +51,7 @@ class DetectionService:
                 for _image in images
             ]
         raw_results = self.predict_raw(images)
-        results: list[DetectionResult] = []
+        results: List[DetectionResult] = []
         for image, raw_result in zip(images, raw_results):
             detections = self._extract_detections(raw_result, image.shape[:2])
             target_candidates = [
@@ -68,7 +68,7 @@ class DetectionService:
             )
         return results
 
-    def predict_raw(self, images: list[Any]) -> list[Results]:
+    def predict_raw(self, images: List[Any]) -> List[Results]:
         """Run YOLO and return raw Ultralytics result objects."""
         if not images:
             return []
@@ -132,8 +132,8 @@ class DetectionService:
     def _extract_detections(
         self,
         result: Results,
-        image_shape: tuple[int, int],
-    ) -> list[DetectionObject]:
+        image_shape: Tuple[int, int],
+    ) -> List[DetectionObject]:
         boxes = getattr(result, "boxes", None)
         if boxes is None or getattr(boxes, "xyxy", None) is None:
             return []
@@ -152,7 +152,7 @@ class DetectionService:
         names = getattr(result, "names", {}) or {}
         masks = self._extract_masks(result, image_shape)
 
-        detections: list[DetectionObject] = []
+        detections: List[DetectionObject] = []
         for index, box in enumerate(xyxy):
             class_id = int(classes[index])
             if isinstance(names, dict):
@@ -179,15 +179,15 @@ class DetectionService:
     def _extract_masks(
         self,
         result: Results,
-        image_shape: tuple[int, int],
-    ) -> list[np.ndarray]:
+        image_shape: Tuple[int, int],
+    ) -> List[np.ndarray]:
         mask_data = getattr(getattr(result, "masks", None), "data", None)
         if mask_data is None:
             return []
 
         height, width = image_shape
         scaled_masks = _scale_yolo_masks_to_image(mask_data, (height, width))
-        masks: list[np.ndarray] = []
+        masks: List[np.ndarray] = []
         for item in scaled_masks:
             mask = (item > 0.5).astype(np.uint8)
             if self.config.fill_segmentation_holes:
@@ -199,7 +199,7 @@ class DetectionService:
         return masks
 
 
-def _scale_yolo_masks_to_image(mask_data: Any, image_shape: tuple[int, int]) -> np.ndarray:
+def _scale_yolo_masks_to_image(mask_data: Any, image_shape: Tuple[int, int]) -> np.ndarray:
     """Map Ultralytics letterboxed segmentation masks back to original image space."""
     height, width = image_shape
     try:

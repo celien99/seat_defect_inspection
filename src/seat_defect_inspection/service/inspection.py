@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict, List
 
 from seat_defect_core.service.inspection import inspect_frames
 from seat_defect_core.types import FramePacket, InspectionFrame, InspectionResult
@@ -38,14 +38,14 @@ def run_inspection(
 
 def _capture_inspection_frames(
     service: "InspectionService",
-    cameras: list[CameraConfig],
+    cameras: List[CameraConfig],
     part_id: str,
-) -> list[InspectionFrame]:
+) -> List[InspectionFrame]:
     """并发采集机位图片，并转换成 core 主流程输入。"""
     if not cameras:
         return []
 
-    indexed_frames: dict[int, InspectionFrame] = {}
+    indexed_frames: Dict[int, InspectionFrame] = {}
     max_workers = max(1, len(cameras))
     with ThreadPoolExecutor(
         max_workers=max_workers,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Tuple
 
 import cv2
 import numpy as np
@@ -100,7 +100,7 @@ class RoiRefineEngine:
         self,
         roi_image: np.ndarray,
         target_mask: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray, bool]:
+    ) -> Tuple[np.ndarray, np.ndarray, bool]:
         output_width = max(1, int(self.config.alignment.output_width or roi_image.shape[1]))
         output_height = max(1, int(self.config.alignment.output_height or roi_image.shape[0]))
         return _letterbox_bundle(
@@ -157,7 +157,7 @@ def _letterbox_bundle(
     *,
     output_width: int,
     output_height: int,
-) -> tuple[np.ndarray, np.ndarray, bool]:
+) -> Tuple[np.ndarray, np.ndarray, bool]:
     """Preserve ROI aspect ratio when mapping to the canonical PatchCore canvas."""
     src_height, src_width = roi_image.shape[:2]
     scale = min(float(output_width) / float(src_width), float(output_height) / float(src_height))

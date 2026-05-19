@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from time import perf_counter
+from typing import Dict, List, Optional, Tuple
 
 from ..fusion import fuse_camera_results
 from ..types import CameraInspectionResult, InspectionError, InspectionFrame, InspectionResult
@@ -30,10 +31,10 @@ from .response import (
 
 def inspect_frames(
     service: InspectionService,
-    frames: list[InspectionFrame],
+    frames: List[InspectionFrame],
     *,
-    part_id: str | None = None,
-    seat_model_id: str | None = None,
+    part_id: Optional[str] = None,
+    seat_model_id: Optional[str] = None,
 ) -> InspectionResult:
     """Run the clean inspect pipeline against a prepared core service."""
     started_at = perf_counter()
@@ -64,7 +65,7 @@ def inspect_frames(
     run_timestamp = resolve_run_timestamp(frames)
     frames_ms = _elapsed_ms(frame_started_at)
     camera_loop_started_at = perf_counter()
-    camera_results_by_index: dict[int, CameraInspectionResult] = {}
+    camera_results_by_index: Dict[int, CameraInspectionResult] = {}
     pending_cameras = []
     for index, camera in enumerate(context.cameras):
         external_frame = frame_map.get(camera.camera_id)
@@ -148,14 +149,14 @@ def _finish_result_timing(result: InspectionResult, started_at: float) -> None:
 def _inspect_pending_cameras(
     service: InspectionService,
     pending_cameras,
-    pipelines: dict[str, object],
-    seat_model_id: str | None,
-) -> dict[int, CameraInspectionResult]:
+    pipelines: Dict[str, object],
+    seat_model_id: Optional[str],
+) -> Dict[int, CameraInspectionResult]:
     if not pending_cameras:
         return {}
 
     prepared_by_index = {}
-    prepared_errors: dict[int, CameraInspectionResult] = {}
+    prepared_errors: Dict[int, CameraInspectionResult] = {}
     for group in _group_pending_by_detection(pending_cameras, pipelines).values():
         timers = {
             index: _StageTimer()
@@ -198,8 +199,8 @@ def _inspect_pending_cameras(
                         exc,
                     )
 
-    ordered_outputs: dict[int, CameraInspectionResult] = dict(prepared_errors)
-    plans: list[tuple[int, RegionPatchCorePlan]] = []
+    ordered_outputs: Dict[int, CameraInspectionResult] = dict(prepared_errors)
+    plans: List[Tuple[int, RegionPatchCorePlan]] = []
     for index, (frame_packet, camera, prepared, camera_timer) in prepared_by_index.items():
         try:
             output = inspect_prepared_camera(
@@ -225,8 +226,8 @@ def _inspect_pending_cameras(
     return ordered_outputs
 
 
-def _group_pending_by_detection(pending_cameras, pipelines) -> dict[tuple, list[tuple]]:
-    groups: dict[tuple, list[tuple]] = defaultdict(list)
+def _group_pending_by_detection(pending_cameras, pipelines) -> Dict[tuple, List[tuple]]:
+    groups: Dict[tuple, List[tuple]] = defaultdict(list)
     for index, camera, frame_packet in pending_cameras:
         pipeline = pipelines[camera.camera_id]
         detection_config = camera.detection
@@ -244,8 +245,8 @@ def _group_pending_by_detection(pending_cameras, pipelines) -> dict[tuple, list[
 
 def _finish_region_plans(
     service: InspectionService,
-    plans: list[tuple[int, RegionPatchCorePlan]],
-    ordered_outputs: dict[int, CameraInspectionResult],
+    plans: List[Tuple[int, RegionPatchCorePlan]],
+    ordered_outputs: Dict[int, CameraInspectionResult],
 ) -> None:
     if not plans:
         return
@@ -292,7 +293,7 @@ def _finish_region_plans(
 
 def _pipeline_failed_result(
     frame_packet,
-    seat_model_id: str | None,
+    seat_model_id: Optional[str],
     exc: Exception,
 ) -> CameraInspectionResult:
     return build_reject_result(

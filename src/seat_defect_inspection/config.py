@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import List, Optional, Union
 
 from seat_defect_core.config import (
     CameraConfig as CoreCameraConfig,
@@ -17,7 +18,7 @@ from seat_defect_core.config import (
 class CameraConfig(CoreCameraConfig):
     """工程层单机位配置，额外携带 PatchCore 正常样本目录。"""
 
-    train_good_dir: str | None = None
+    train_good_dir: Optional[str] = None
 
 
 @dataclass(slots=True)
@@ -34,7 +35,7 @@ class YoloTrainingConfig:
     name: str = "seat_defect"
     workers: int = 4
     patience: int = 20
-    cache: bool | str = False
+    cache: Union[bool, str] = False
     pretrained: bool = True
     amp: bool = True
     optimizer: str = "auto"
@@ -55,14 +56,14 @@ class YoloTrainingConfig:
     flipud: float = 0.0
     fliplr: float = 0.5
     rect: bool = False
-    seat_model_id: str | None = None
+    seat_model_id: Optional[str] = None
 
 
 @dataclass(slots=True)
 class SeatModelConfig(CoreSeatModelConfig):
     """工程层座椅型号配置，额外携带 YOLO 训练块。"""
 
-    yolo_training: YoloTrainingConfig | None = None
+    yolo_training: Optional[YoloTrainingConfig] = None
 
 
 @dataclass(slots=True)
@@ -71,8 +72,8 @@ class InspectionConfig(CoreInspectionConfig):
 
     capture_dir: str = "outputs/seat_defect_inspection/capture"
     capture_retries: int = 3
-    yolo_training: YoloTrainingConfig | None = None
-    seat_models: list[SeatModelConfig] = field(default_factory=list)
+    yolo_training: Optional[YoloTrainingConfig] = None
+    seat_models: List[SeatModelConfig] = field(default_factory=list)
 
 
 __all__ = [

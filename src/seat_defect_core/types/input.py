@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 
 @dataclass
@@ -31,7 +31,7 @@ class FramePacket:
     image: Any
     """BGR 图像数据。"""
 
-    image_path: str | None = None
+    image_path: Optional[str] = None
     """当输入来自图片文件时保留原始路径。"""
 
 
@@ -45,19 +45,19 @@ class InspectionFrame:
     image: Any
     """外部已经采集好的 BGR 图像数据。"""
 
-    source: str | None = None
+    source: Optional[str] = None
     """可选来源标识，仅用于报告和调试追踪。"""
 
-    frame_id: str | None = None
+    frame_id: Optional[str] = None
     """可选帧编号；为空时主流程自动生成。"""
 
-    timestamp: str | None = None
+    timestamp: Optional[str] = None
     """可选时间戳；为空时主流程自动生成。"""
 
     source_kind: str = "external_image"
     """来源类型，默认表示外部传入图片。"""
 
-    error_reason: str | None = None
+    error_reason: Optional[str] = None
     """上游采图或输入准备失败原因；存在时 core 直接生成 REJECT。"""
 
 

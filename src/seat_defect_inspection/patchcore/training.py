@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Iterable
+from typing import Dict, Iterable, List, Tuple, Union
 
 import numpy as np
 
@@ -27,18 +27,18 @@ class PatchCoreTrainer(PatchCoreService):
 
     def fit(
         self,
-        samples: Iterable[tuple[np.ndarray, np.ndarray, np.ndarray]],
+        samples: Iterable[Tuple[np.ndarray, np.ndarray, np.ndarray]],
         batch_size: int = 16,
-    ) -> dict[str, float | int | str]:
+    ) -> Dict[str, Union[float, int, str]]:
         """从正常 ROI 样本训练 memory bank 和异常阈值。"""
-        raw_embeddings: list[np.ndarray] = []
+        raw_embeddings: List[np.ndarray] = []
         sample_count = 0
         samples_list = list(samples)
         extractor = self._get_torch_feature_extractor()
 
         if extractor is not None and batch_size > 1:
             for start in range(0, len(samples_list), batch_size):
-                chunk = samples_list[start : start + batch_size]
+                chunk = samples_List[start : start + batch_size]
                 for embeddings, __ in extractor.extract_many(chunk):
                     if len(embeddings) == 0:
                         continue
@@ -62,8 +62,8 @@ class PatchCoreTrainer(PatchCoreService):
 
     def fit_from_embeddings(
         self,
-        raw_embeddings: list[np.ndarray],
-    ) -> dict[str, float | int | str]:
+        raw_embeddings: List[np.ndarray],
+    ) -> Dict[str, Union[float, int, str]]:
         """从预提取的 embedding 构建 memory bank 并计算异常阈值。"""
         if not raw_embeddings:
             raise ValueError("PatchCore 没有可用的有效训练样本")
@@ -78,7 +78,7 @@ class PatchCoreTrainer(PatchCoreService):
         selected_indices = coreset_subsample_indices(normalized, target_bank_size)
         self.memory_bank = normalized[selected_indices]
 
-        image_scores: list[float] = []
+        image_scores: List[float] = []
         sample_start = 0
         for embeddings in normalized_samples:
             sample_end = sample_start + len(embeddings)
@@ -146,7 +146,7 @@ class PatchCoreTrainer(PatchCoreService):
         )
 
 
-def list_images(folder: Path) -> list[Path]:
+def list_images(folder: Path) -> List[Path]:
     """递归收集目录中的图片文件。"""
     return sorted(path for path in folder.rglob("*") if path.suffix.lower() in IMAGE_SUFFIXES)
 
@@ -155,7 +155,7 @@ def _build_model_meta(
     config: PatchCoreConfig,
     *,
     threshold: float,
-) -> dict[str, object]:
+) -> Dict[str, object]:
     """构造运行时模型包 metadata。"""
     return {
         "backend": config.backend,
