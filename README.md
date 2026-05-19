@@ -58,6 +58,7 @@ seat-defect-inspection train-patchcore --config configs/seat_defect_inspection.m
 seat-defect-inspection train-yolo --config configs/seat_defect_inspection.mvs.json
 seat-defect-inspection inspect --config configs/seat_defect_inspection.mvs.json --part-id seat_000001
 seat-defect-inspection inspect-folder --config configs/seat_defect_inspection.mvs.json --input-dir offline_samples
+seat-defect-inspection benchmark --config configs/seat_defect_inspection.mvs.json
 ```
 
 ## Python Runtime API

@@ -56,7 +56,135 @@ seat-defect-inspection train-patchcore --config configs/seat_defect_inspection.m
 seat-defect-inspection train-yolo --config configs/seat_defect_inspection.mvs.json
 seat-defect-inspection inspect --config configs/seat_defect_inspection.mvs.json --part-id seat_000001
 seat-defect-inspection inspect-folder --config configs/seat_defect_inspection.mvs.json --input-dir offline_samples
+seat-defect-inspection benchmark --config configs/seat_defect_inspection.mvs.json
 ```
+
+## Benchmark — 检测流程量化评估
+
+`benchmark` 命令通过三轮标准化测试，对当前检测流程和模型产出可量化的性能指标。
+
+### 三轮测试设计
+
+| 轮次 | 目录 | 样本真值 | 考察指标 |
+|------|------|----------|----------|
+| Good | `benchmark_data/good/` | 全部为 OK（无缺陷） | 误报率（False Positive Rate） |
+| Defect | `benchmark_data/defect/` | 全部为 NG（有缺陷） | 漏检率（Miss Rate）、检出率（Detection Rate） |
+| Mixed | `benchmark_data/mixed/` | OK / NG 随机混合 | 真实分布下的 OK/NG 分布 |
+
+Good 轮和 Defect 轮的结果会合并计算 **精准率（Precision）、召回率（Recall）、F1 值、准确率（Accuracy）**，作为流程的综合评价指标。
+
+### 准备数据
+
+在项目根目录创建 `benchmark_data/`，按机位分目录存放图片。每个机位目录下的图片数量必须一致（命名不限，按文件名排序后一一配对）：
+
+```text
+benchmark_data/
+├── good/                # 全部正确样本
+│   ├── cam_0/           # 机位 cam_0 的图片
+│   │   ├── img_001.jpg
+│   │   ├── img_002.jpg
+│   │   └── ...
+│   ├── cam_1/           # 机位 cam_1 的图片（数量与 cam_0 一致）
+│   │   ├── img_001.jpg
+│   │   ├── img_002.jpg
+│   │   └── ...
+│   └── ...
+├── defect/              # 全部缺陷样本
+│   ├── cam_0/
+│   │   └── ...
+│   ├── cam_1/
+│   │   └── ...
+│   └── ...
+└── mixed/               # OK/NG 杂糅随机样本
+    ├── cam_0/
+    │   └── ...
+    ├── cam_1/
+    │   └── ...
+    └── ...
+```
+
+每个机位目录下的图片**按文件名排序**后按索引一一配对，不同机位之间**不要求文件名一致**。例如 `good/cam_0/a.jpg` 会与 `good/cam_1/b.jpg` 配对，只要两者在各机位目录中的排序位置相同。
+
+### 运行评估
+
+```bash
+# 使用默认配置
+seat-defect-inspection benchmark
+
+# 指定配置文件
+seat-defect-inspection benchmark --config configs/my_custom_config.json
+```
+
+命令会遍历三轮数据集，每个样本逐一检测并实时输出进度和判定结果。三轮跑完后打印汇总报告。
+
+### 量化指标说明
+
+输出示例：
+
+```text
+============================================================
+  BENCHMARK SUMMARY
+============================================================
+  Cameras: cam_0, cam_1
+
+  [Good (all OK)]
+    Samples: 100
+    OK: 95  |  NG: 3  |  REJECT: 2
+    False positive rate: 5.0%
+
+  [Defect (all NG)]
+    Samples: 100
+    OK: 8  |  NG: 90  |  REJECT: 2
+    Miss rate: 8.0%  |  Detection rate: 90.0%
+
+  [Mixed]
+    Samples: 200
+    OK: 104  |  NG: 93  |  REJECT: 3
+    OK rate: 52.0%  |  NG rate: 46.5%
+
+  [Combined Metrics (Good + Defect)]
+    TP=90  TN=95  FP=5  FN=8
+    Precision (精准率): 94.7%
+    Recall    (召回率): 91.8%
+    F1 Score  (F1 值):  93.2%
+    Accuracy  (准确率): 92.5%
+============================================================
+```
+
+#### 各轮次指标
+
+| 指标 | 含义 | 计算方式 | 来源 |
+|------|------|----------|------|
+| **False positive rate（误报率）** | 无缺陷样本被误判为 NG/REJECT 的比例 | `(NG + REJECT) / total × 100%` | Good 轮 |
+| **Miss rate（漏检率）** | 有缺陷样本被漏判为 OK 的比例 | `OK / total × 100%` | Defect 轮 |
+| **Detection rate（检出率）** | 有缺陷样本被正确判定为 NG 的比例 | `NG / total × 100%` | Defect 轮 |
+
+#### 综合指标（Good + Defect 合并计算）
+
+将 Good 轮作为负样本集（真值 = OK）、Defect 轮作为正样本集（真值 = NG），构建混淆矩阵：
+
+```
+               预测 OK    预测 NG/REJECT
+真值 OK         TN           FP
+真值 NG         FN           TP
+```
+
+| 指标 | 含义 | 计算方式 |
+|------|------|----------|
+| **Precision（精准率）** | 被判为 NG 的样本中有多少确实是 NG | `TP / (TP + FP) × 100%` |
+| **Recall（召回率）** | 真实 NG 样本中有多少被正确检出 | `TP / (TP + FN) × 100%` |
+| **F1 Score（F1 值）** | 精准率与召回率的调和平均，综合评价模型 | `2 × P × R / (P + R)` |
+| **Accuracy（准确率）** | 所有样本中判定正确的比例 | `(TP + TN) / (TP + TN + FP + FN) × 100%` |
+
+#### 判读指南
+
+- **Good 轮误报率高** → 模型对正常纹理变化过于敏感，考虑适当放宽 PatchCore 阈值或补充更多正常样本参与训练。
+- **Defect 轮漏检率高 / 召回率低** → 模型对当前缺陷类型不敏感，需要补充对应类型的缺陷样本重新训练。
+- **精准率低** → 误报多，正常件被频繁打回，影响生产效率。
+- **召回率低** → 漏检多，缺陷件可能流出，影响出货质量。
+- **F1 值**是精准率和召回率的综合指标，迭代模型时以 F1 提升为主要优化方向。
+- **Mixed 轮**反映接近真实产线分布下的 OK/NG 比例，辅助判断产线直通率。
+- **REJECT** 表示图片质量不达标（模糊、过曝、欠曝等），流程拒绝检测，不计入分类判定。若 REJECT 比例异常高，应检查采图质量或调整质量门禁阈值。
 
 也可以给 LabVIEW 或现场工具使用 INI 配置，JSON 主格式不变：
 
