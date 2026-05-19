@@ -186,6 +186,9 @@ class CameraInspectionResult:
     error: InspectionError | None = None
     """该机位结构化错误。"""
 
+    overlay_image: Any | None = field(default=None, repr=False, compare=False)
+    """叠加了异常热力图的 BGR 调试图片，供调用方直接消费。"""
+
 
 @dataclass
 class InspectionResult:

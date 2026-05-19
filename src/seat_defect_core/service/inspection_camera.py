@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
-from ..artifacts import save_debug_artifacts
+from ..artifacts import generate_overlay_image, save_debug_artifacts
 from ..config import CameraConfig
 from ..cvops import split_roi_regions
 from ..cvops.regions import RegionRoiSample
@@ -485,6 +485,12 @@ def _finish_camera_result(
     region_results=None,
 ) -> CameraInspectionResult:
     before_artifacts = perf_counter()
+    result.overlay_image = generate_overlay_image(
+        frame_packet,
+        prepared,
+        texture_result=texture_result,
+        region_results=region_results,
+    )
     result = _attach_debug_artifacts(
         service,
         frame_packet,

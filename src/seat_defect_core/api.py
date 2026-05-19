@@ -29,11 +29,15 @@ class SeatDefectInspector:
         *,
         part_id: str | None = None,
         seat_model_id: str | None = None,
-    ) -> InspectionResponse:
-        """Run one full inspection from externally supplied camera frames."""
+    ) -> tuple[InspectionResponse, dict[str, Any]]:
+        """Run one full inspection from externally supplied camera frames.
+
+        Returns a tuple of ``(response, camera_images)`` where *camera_images*
+        maps ``camera_id`` to the BGR overlay image (frame + anomaly heatmap).
+        """
         from .service.frames import normalize_inspection_frames
         from .service.inspection import inspect_frames
-        from .service.response import build_inspection_response
+        from .service.response import build_inspection_response, collect_camera_images
 
         result = inspect_frames(
             self._service,
@@ -41,7 +45,8 @@ class SeatDefectInspector:
             part_id=part_id,
             seat_model_id=seat_model_id,
         )
-        return build_inspection_response(self.config, result)
+        response = build_inspection_response(self.config, result)
+        return response, collect_camera_images(result)
 
     def inspect_paths(
         self,
@@ -51,8 +56,11 @@ class SeatDefectInspector:
         seat_model_id: str | None = None,
         frame_id: str | None = None,
         timestamp: str | None = None,
-    ) -> InspectionResponse:
-        """Run one inspection from externally supplied image paths."""
+    ) -> tuple[InspectionResponse, dict[str, Any]]:
+        """Run one inspection from externally supplied image paths.
+
+        Returns a tuple of ``(response, camera_images)``.
+        """
         return self.inspect(
             frames_from_paths(
                 image_paths,
@@ -74,8 +82,11 @@ def inspect_once(
     *,
     part_id: str | None = None,
     seat_model_id: str | None = None,
-) -> InspectionResponse:
-    """Load config and run one inspection from externally supplied frames."""
+) -> tuple[InspectionResponse, dict[str, Any]]:
+    """Load config and run one inspection from externally supplied frames.
+
+    Returns a tuple of ``(response, camera_images)``.
+    """
     return SeatDefectInspector(config).inspect(
         frames,
         part_id=part_id,
@@ -91,8 +102,11 @@ def inspect_paths_once(
     seat_model_id: str | None = None,
     frame_id: str | None = None,
     timestamp: str | None = None,
-) -> InspectionResponse:
-    """Load config and run one inspection from image paths."""
+) -> tuple[InspectionResponse, dict[str, Any]]:
+    """Load config and run one inspection from image paths.
+
+    Returns a tuple of ``(response, camera_images)``.
+    """
     return SeatDefectInspector(config).inspect_paths(
         image_paths,
         part_id=part_id,

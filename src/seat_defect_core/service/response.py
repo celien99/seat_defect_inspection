@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from ..config import CameraConfig, InspectionConfig
 from ..reporting import export_inspection_report
 from ..types import CameraInspectionResult, InspectionError, InspectionResponse, InspectionResult
@@ -70,6 +72,15 @@ def build_inspection_response(
     )
 
 
+def collect_camera_images(result: InspectionResult) -> dict[str, Any]:
+    """Collect per-camera overlay images from the inspection result."""
+    return {
+        camera_result.camera_id: camera_result.overlay_image
+        for camera_result in result.camera_results
+        if camera_result.overlay_image is not None
+    }
+
+
 def collect_artifact_paths(result: InspectionResult) -> dict[str, dict[str, str]]:
     """Collect per-camera artifact paths into the public response shape."""
     return {
@@ -84,5 +95,6 @@ __all__ = [
     "build_missing_frame_result",
     "build_reject_result",
     "collect_artifact_paths",
+    "collect_camera_images",
     "export_result",
 ]

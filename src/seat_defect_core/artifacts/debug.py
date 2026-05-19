@@ -17,6 +17,28 @@ DEFAULT_DEBUG_ARTIFACT_NAMES: frozenset[str] = frozenset(
 )
 
 
+def generate_overlay_image(
+    frame_packet: Any,
+    prepared: Any,
+    texture_result: Any | None = None,
+    region_results: Any | None = None,
+) -> np.ndarray | None:
+    """Generate the BGR overlay image for one camera result.
+
+    Returns None when no heatmap data is available (e.g. REJECT/error paths).
+    """
+    if prepared.roi is None:
+        return None
+    if texture_result is None and not region_results:
+        return None
+    heatmap = (
+        texture_result.heatmap
+        if texture_result is not None
+        else _stitch_region_heatmap(prepared.roi, region_results)
+    )
+    return _overlay_heatmap_on_frame(frame_packet.image, prepared.roi, heatmap)
+
+
 def save_debug_artifacts(
     *,
     debug_dir: str,
@@ -44,17 +66,18 @@ def save_debug_artifacts(
     if prepared.roi is not None and (
         texture_result is not None or region_results
     ):
-        heatmap = (
-            texture_result.heatmap
-            if texture_result is not None
-            else _stitch_region_heatmap(prepared.roi, region_results)
+        overlay = generate_overlay_image(
+            frame_packet,
+            prepared,
+            texture_result=texture_result,
+            region_results=region_results,
         )
-        if "overlay" in selected_artifacts:
+        if overlay is not None and "overlay" in selected_artifacts:
             _save_artifact_image(
                 artifact_paths,
                 "overlay",
                 camera_dir / "overlay.png",
-                _overlay_heatmap_on_frame(frame_packet.image, prepared.roi, heatmap),
+                overlay,
             )
 
     return artifact_paths
