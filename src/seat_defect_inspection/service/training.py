@@ -161,19 +161,14 @@ def _train_one_camera(
             "reason": "color_insensitive_mode",
         }
 
-    patchcore_pipeline_context = service.build_patchcore_pipeline_context(camera)
-    patchcore_pipeline_signature = service.build_patchcore_pipeline_signature(camera)
     patchcore.save(
         camera.patchcore_model_path,
         color_profile=color_profile,
-        pipeline_signature=patchcore_pipeline_signature,
-        pipeline_context=patchcore_pipeline_context,
     )
     summary = {
         "seat_model_id": seat_model_id,
         "camera_id": camera.camera_id,
         "model_path": camera.patchcore_model_path,
-        "pipeline_signature": patchcore_pipeline_signature,
         "patchcore": patchcore_summary,
         "color_branch": color_summary,
         "train_image_count": len(image_paths),
@@ -399,7 +394,6 @@ def _train_regions_with_shared_extractor(
                 "region_id": region.region_id,
                 "model_path": region.patchcore_model_path,
                 "box": [float(value) for value in region.box],
-                "pipeline_signature": service.build_region_patchcore_pipeline_signature(camera, region),
                 "patchcore": patchcore_summary,
                 "accepted_region_sample_count": len(raw_embeddings),
             }
@@ -452,7 +446,6 @@ def _train_regions_independent(
                 "region_id": region.region_id,
                 "model_path": region.patchcore_model_path,
                 "box": [float(value) for value in region.box],
-                "pipeline_signature": service.build_region_patchcore_pipeline_signature(camera, region),
                 "patchcore": patchcore_summary,
                 "accepted_region_sample_count": len(samples),
             }
@@ -470,19 +463,14 @@ def _save_region_model(
     accepted_region_sample_count: int,
 ) -> None:
     """保存单个区域的 PatchCore 模型并写入训练摘要。"""
-    patchcore_pipeline_context = service.build_region_patchcore_pipeline_context(camera, region)
-    patchcore_pipeline_signature = service.build_region_patchcore_pipeline_signature(camera, region)
     patchcore.save(
         region.patchcore_model_path,
         color_profile=None,
-        pipeline_signature=patchcore_pipeline_signature,
-        pipeline_context=patchcore_pipeline_context,
     )
     region_summary = {
         "region_id": region.region_id,
         "model_path": region.patchcore_model_path,
         "box": [float(value) for value in region.box],
-        "pipeline_signature": patchcore_pipeline_signature,
         "patchcore": patchcore_summary,
         "accepted_region_sample_count": accepted_region_sample_count,
     }

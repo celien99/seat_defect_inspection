@@ -118,9 +118,6 @@ class PatchCoreTrainer(PatchCoreService):
         self,
         model_path: str | Path,
         color_profile: ColorReferenceProfile | None = None,
-        *,
-        pipeline_signature: str | None = None,
-        pipeline_context: dict[str, object] | None = None,
     ) -> None:
         """保存 PatchCore 模型和可选颜色参考分布。"""
         if (
@@ -136,8 +133,6 @@ class PatchCoreTrainer(PatchCoreService):
         meta = _build_model_meta(
             self.config,
             threshold=float(self.threshold),
-            pipeline_signature=pipeline_signature,
-            pipeline_context=pipeline_context,
         )
         np.savez_compressed(
             path,
@@ -160,11 +155,9 @@ def _build_model_meta(
     config: PatchCoreConfig,
     *,
     threshold: float,
-    pipeline_signature: str | None,
-    pipeline_context: dict[str, object] | None,
 ) -> dict[str, object]:
     """构造运行时模型包 metadata。"""
-    meta: dict[str, object] = {
+    return {
         "backend": config.backend,
         "image_size": config.image_size,
         "patch_size": config.patch_size,
@@ -195,8 +188,3 @@ def _build_model_meta(
         "coreset_sampling_ratio": config.coreset_sampling_ratio,
         "threshold": threshold,
     }
-    if pipeline_signature is not None:
-        meta["pipeline_signature"] = pipeline_signature
-    if pipeline_context is not None:
-        meta["pipeline_context"] = pipeline_context
-    return meta
