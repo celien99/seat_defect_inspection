@@ -117,6 +117,16 @@ seat-defect-inspection benchmark --config configs/my_custom_config.json
 
 命令会遍历三轮数据集，每个样本逐一检测并实时输出进度和判定结果。三轮跑完后打印汇总报告。
 
+### 执行逻辑说明
+
+检测过程**不会重复检测同一张图片**，执行流程如下：
+
+1. **图片收集**：对每个机位目录，按文件名 `sorted()` 排序后得到有序列表，每个位置只有一张图片，不重不漏。
+2. **样本配对**：按索引 `idx = 0 → N-1` 依次取各机位的第 `idx` 张图片组合成一个样本，每个索引只被使用一次。
+3. **采图链路**：通过 `camera.source` 替换为图片路径，`AcquisitionService.capture` 识别为 `image` 类型后从磁盘读取，检测完成后 `camera.source` 被下一轮迭代覆盖，无残留。
+4. **跨轮次隔离**：`good` / `defect` / `mixed` 三个目录完全独立，互不干扰。
+5. **机位筛选**：指定 `--cameras` 时，未选中机位的 `enabled` 被置为 `False`，采图和 Pipeline 均不涉及。
+
 ### 量化指标说明
 
 输出示例：
