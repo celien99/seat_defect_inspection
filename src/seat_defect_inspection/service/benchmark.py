@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from collections import Counter
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 if TYPE_CHECKING:
+    from ..config import CameraConfig
     from .core import InspectionService
 
 
@@ -19,6 +20,7 @@ ROUNDS = ("good", "defect", "mixed")
 def run_benchmark(
     service: "InspectionService",
     rounds: tuple[str, ...] = ROUNDS,
+    camera_ids: Optional[List[str]] = None,
 ) -> Dict[str, dict]:
     """Run benchmark inspection on selected rounds and report metrics.
 
@@ -27,6 +29,8 @@ def run_benchmark(
     rounds:
         Which rounds to run, e.g. ``("good",)`` or ``("good", "defect")``.
         Defaults to all three.
+    camera_ids:
+        Which cameras to benchmark. Defaults to all enabled cameras.
     """
     if not BENCHMARK_DATA_DIR.is_dir():
         raise FileNotFoundError(
@@ -48,28 +52,57 @@ def run_benchmark(
     if not context.cameras:
         raise ValueError("No cameras configured")
 
-    camera_ids = [c.camera_id for c in context.cameras]
+    all_camera_ids = [c.camera_id for c in context.cameras]
 
+    if camera_ids is not None:
+        for cid in camera_ids:
+            if cid not in all_camera_ids:
+                raise ValueError(
+                    f"Unknown camera '{cid}'. Available: {', '.join(all_camera_ids)}"
+                )
+    else:
+        camera_ids = list(all_camera_ids)
+
+    original_enabled = {c.camera_id: c.enabled for c in context.cameras}
     original_sources = {c.camera_id: c.source for c in context.cameras}
 
-    results: Dict[str, dict] = {}
-    for round_name in rounds:
-        round_dir = BENCHMARK_DATA_DIR / round_name
-        if not round_dir.is_dir():
-            print(f"[benchmark] Skipping '{round_name}' — directory not found: {round_dir}")
-            continue
+    _filter_enabled_cameras(context.cameras, camera_ids)
 
-        print(f"\n{'='*60}")
-        print(f"  Benchmark round: {round_name}")
-        print(f"{'='*60}")
+    try:
+        results: Dict[str, dict] = {}
+        for round_name in rounds:
+            round_dir = BENCHMARK_DATA_DIR / round_name
+            if not round_dir.is_dir():
+                print(f"[benchmark] Skipping '{round_name}' — directory not found: {round_dir}")
+                continue
 
-        counts = _run_single_round(service, context.cameras, round_dir, camera_ids)
-        results[round_name] = counts
+            print(f"\n{'='*60}")
+            print(f"  Benchmark round: {round_name}")
+            print(f"{'='*60}")
 
-    _restore_sources(context.cameras, original_sources)
+            round_result = _run_single_round(service, context.cameras, round_dir, camera_ids)
+            results[round_name] = round_result
 
-    _print_summary(results, camera_ids, rounds)
-    return results
+        _print_summary(results, camera_ids, rounds)
+        return results
+    finally:
+        _restore_camera_state(context.cameras, original_enabled, original_sources)
+
+
+def _filter_enabled_cameras(cameras: List["CameraConfig"], selected: List[str]) -> None:
+    for camera in cameras:
+        if camera.camera_id not in selected:
+            camera.enabled = False
+
+
+def _restore_camera_state(
+    cameras: List["CameraConfig"],
+    original_enabled: Dict[str, bool],
+    original_sources: Dict[str, str],
+) -> None:
+    for camera in cameras:
+        camera.enabled = original_enabled[camera.camera_id]
+        camera.source = original_sources[camera.camera_id]
 
 
 def _run_single_round(
@@ -85,7 +118,7 @@ def _run_single_round(
     sample_count = len(next(iter(camera_images.values())))
 
     status_counter: Counter = Counter()
-    stats = {"total": sample_count, "ok": 0, "ng": 0, "reject": 0}
+    records: List[dict] = []
 
     for idx in range(sample_count):
         source_map = {
@@ -93,15 +126,28 @@ def _run_single_round(
         }
         _apply_sample_sources(cameras, source_map)
 
-        result = run_inspection(service, part_id=f"{round_dir.name}_{idx:04d}")
+        part_id = f"{round_dir.name}_{idx:04d}"
+        result = run_inspection(service, part_id=part_id)
         status_counter[result.status] += 1
 
         marker = "✓" if result.status == "OK" else "✗"
-        print(f"  [{idx+1:04d}/{sample_count}] {marker} {result.status}")
+        print(f"  [{idx+1:04d}/{sample_count}] {marker} {result.status}  part_id={part_id}")
 
-    stats["ok"] = status_counter.get("OK", 0)
-    stats["ng"] = status_counter.get("NG", 0)
-    stats["reject"] = status_counter.get("REJECT", 0)
+        records.append({
+            "index": idx,
+            "part_id": part_id,
+            "status": result.status,
+            "decision_reason": result.decision_reason,
+            "source_map": {cid: str(p) for cid, p in source_map.items()},
+        })
+
+    stats = {
+        "total": sample_count,
+        "ok": status_counter.get("OK", 0),
+        "ng": status_counter.get("NG", 0),
+        "reject": status_counter.get("REJECT", 0),
+        "records": records,
+    }
 
     ok_rate = stats["ok"] / stats["total"] * 100 if stats["total"] else 0
     ng_rate = stats["ng"] / stats["total"] * 100 if stats["total"] else 0
@@ -111,7 +157,23 @@ def _run_single_round(
           f"NG={stats['ng']} ({ng_rate:.1f}%), "
           f"REJECT={stats['reject']} ({reject_rate:.1f}%)")
 
+    _print_round_details(records)
+
     return stats
+
+
+def _print_round_details(records: List[dict]) -> None:
+    """Print per-sample detail: list every NG/REJECT sample with image paths."""
+    ng_records = [r for r in records if r["status"] in ("NG", "REJECT")]
+    if not ng_records:
+        return
+
+    print(f"\n  NG/REJECT samples ({len(ng_records)}):")
+    for r in ng_records:
+        print(f"    [{r['index']:04d}] {r['status']}  part_id={r['part_id']}")
+        print(f"           reason: {r['decision_reason']}")
+        for cid, path in r["source_map"].items():
+            print(f"           {cid}: {path}")
 
 
 def _collect_camera_images(
@@ -149,12 +211,8 @@ def _collect_camera_images(
 
 def _apply_sample_sources(cameras, source_map: Dict[str, str]) -> None:
     for camera in cameras:
-        camera.source = source_map[camera.camera_id]
-
-
-def _restore_sources(cameras, original_sources: Dict[str, str]) -> None:
-    for camera in cameras:
-        camera.source = original_sources[camera.camera_id]
+        if camera.camera_id in source_map:
+            camera.source = source_map[camera.camera_id]
 
 
 def _print_summary(results: dict, camera_ids: List[str], rounds: tuple[str, ...]) -> None:
@@ -167,7 +225,6 @@ def _print_summary(results: dict, camera_ids: List[str], rounds: tuple[str, ...]
     good = results.get("good")
     defect = results.get("defect")
 
-    # ---- per-round detail ----
     for round_name in rounds:
         r = results.get(round_name)
         if r is None:
@@ -199,12 +256,9 @@ def _print_summary(results: dict, camera_ids: List[str], rounds: tuple[str, ...]
             print(f"    OK: {ok}  |  NG: {ng}  |  REJECT: {reject}")
             print(f"    OK rate: {ok/total*100:.1f}%  |  NG rate: {ng/total*100:.1f}%")
 
-    # ---- combined metrics from Good + Defect ----
     if good is not None and defect is not None:
-        # Good round: all expected OK → TN = OK, FP = NG + REJECT
         TN = good["ok"]
         FP = good["ng"] + good["reject"]
-        # Defect round: all expected NG → TP = NG, FN = OK
         TP = defect["ng"]
         FN = defect["ok"]
 

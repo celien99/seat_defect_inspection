@@ -26,6 +26,10 @@ def register_benchmark_command(subparsers) -> None:
         default="all",
         help="Which round to run (default: all)",
     )
+    parser.add_argument(
+        "--cameras",
+        help="Comma-separated camera IDs to benchmark (default: all enabled cameras)",
+    )
 
 
 def run_benchmark_command(args: argparse.Namespace) -> None:
@@ -36,4 +40,5 @@ def run_benchmark_command(args: argparse.Namespace) -> None:
     config = load_config(args.config)
     service = InspectionService(config)
     rounds = ("good", "defect", "mixed") if args.round == "all" else (args.round,)
-    run_benchmark(service, rounds=rounds)
+    camera_ids = [c.strip() for c in args.cameras.split(",")] if args.cameras else None
+    run_benchmark(service, rounds=rounds, camera_ids=camera_ids)
