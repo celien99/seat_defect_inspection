@@ -61,17 +61,23 @@ seat-defect-inspection benchmark --config configs/seat_defect_inspection.mvs.jso
 
 ## Benchmark — 检测流程量化评估
 
-`benchmark` 命令通过三轮标准化测试，对当前检测流程和模型产出可量化的性能指标。
+`benchmark` 命令通过标准化测试集对当前检测流程和模型产出可量化的性能指标，支持两项核心能力：
 
-### 三轮测试设计
+1. **隐式标注**（向后兼容）：按目录名推断真值（good=OK, defect=NG），无需额外标注即可快速跑分
+2. **显式标注**（推荐）：通过 `ground_truth.json` 为每张图片标注真实标签, 解锁按机位 / 按缺陷类型 / 置信区间等完整评估能力
 
-| 轮次 | 目录 | 样本真值 | 考察指标 |
-|------|------|----------|----------|
-| Good | `benchmark_data/good/` | 全部为 OK（无缺陷） | 误报率（False Positive Rate） |
-| Defect | `benchmark_data/defect/` | 全部为 NG（有缺陷） | 漏检率（Miss Rate）、检出率（Detection Rate） |
-| Mixed | `benchmark_data/mixed/` | OK / NG 随机混合 | 真实分布下的 OK/NG 分布 |
+### 新版核心收益（v.s 旧版隐式标注）
 
-Good 轮和 Defect 轮的结果会合并计算 **精准率（Precision）、召回率（Recall）、F1 值、准确率（Accuracy）**，作为流程的综合评价指标。
+| 能力 | 旧版（隐式） | 新版（显式 ground_truth.json） |
+|------|-------------|-------------------------------|
+| 整件 Precision / Recall / F1 / Accuracy | ✅ | ✅ |
+| 误报率 / 漏检率 / 检出率 | ✅ | ✅ |
+| Mixed 轮量化评估 | ❌ 仅能统计 OK/NG 比例 | ✅ 有真实标签后与 Good / Defect 等同 |
+| 95% 威尔逊置信区间 | ❌ | ✅ 所有率指标附带 CI |
+| 单机位拆解指标 | ❌ | ✅ 每个 camera 独立 P/R/F1 |
+| 异常分数分布 | ❌ | ✅ OK vs NG 的 min/max/mean/median/std/p5/p95 |
+| 缺陷类型召回率 | ❌ | ✅ scratch / dent / stain 等分别统计 |
+| ROC/PR 数据导出 | ❌ | ✅ `--export-curves` 导出 CSV |
 
 ### 准备数据
 
@@ -79,57 +85,95 @@ Good 轮和 Defect 轮的结果会合并计算 **精准率（Precision）、召�
 
 ```text
 benchmark_data/
-├── good/                # 全部正确样本
+├── good/
 │   ├── cam_0/           # 机位 cam_0 的图片
 │   │   ├── img_001.jpg
 │   │   ├── img_002.jpg
 │   │   └── ...
-│   ├── cam_1/           # 机位 cam_1 的图片（数量与 cam_0 一致）
-│   │   ├── img_001.jpg
-│   │   ├── img_002.jpg
-│   │   └── ...
-│   └── ...
-├── defect/              # 全部缺陷样本
-│   ├── cam_0/
-│   │   └── ...
 │   ├── cam_1/
 │   │   └── ...
-│   └── ...
-└── mixed/               # OK/NG 杂糅随机样本
+│   └── ground_truth.json    # 可选：显式标注（见下方）
+├── defect/
+│   ├── cam_0/
+│   ├── cam_1/
+│   └── ground_truth.json    # 可选
+└── mixed/
     ├── cam_0/
-    │   └── ...
     ├── cam_1/
-    │   └── ...
-    └── ...
+    └── ground_truth.json    # 强烈建议 mixed 轮提供标注
 ```
 
-每个机位目录下的图片**按文件名排序**后按索引一一配对，不同机位之间**不要求文件名一致**。例如 `good/cam_0/a.jpg` 会与 `good/cam_1/b.jpg` 配对，只要两者在各机位目录中的排序位置相同。
+### Ground Truth 标注文件（可选，推荐）
+
+在每个 round 目录下放置 `ground_truth.json`，按图片索引显式标注真实标签：
+
+```json
+{
+  "version": 1,
+  "samples": [
+    {"index": 0, "label": "OK"},
+    {"index": 1, "label": "NG", "defect_type": "scratch", "severity": "high"},
+    {"index": 2, "label": "NG", "defect_type": "dent", "severity": "medium"},
+    {"index": 3, "label": "OK"}
+  ]
+}
+```
+
+字段说明：
+
+| 字段 | 必填 | 说明 |
+|------|------|------|
+| `index` | ✅ | 图片在机位目录中的排序位置（0-based） |
+| `label` | ✅ | `"OK"` 或 `"NG"` |
+| `defect_type` | 否 | 缺陷类型，如 `"scratch"`、`"dent"`、`"stain"`、`"crack"`。标注后启用缺陷类型召回率统计 |
+| `severity` | 否 | 严重程度：`"low"` / `"medium"` / `"high"`（供后续按严重度筛选） |
+
+各轮次的标注策略：
+
+| 轮次 | 推荐做法 |
+|------|----------|
+| Good | 图片本身就全是 OK，可不加 `ground_truth.json`（自动推断 label=OK），无需手动建 100 条 `{"index":0,"label":"OK"}` |
+| Defect | **建议添加**：为 NG 样本标注 `defect_type` 和 `severity`，即可获得按缺陷类型的召回率分析 |
+| Mixed | **强烈建议添加**：mixed 轮无标注完全无法评估，添加后即可与 Good/Defect 轮同等参与所有指标计算 |
 
 ### 运行评估
 
 ```bash
-# 使用默认配置
+# 基础用法（兼容旧版，隐式标注）
 seat-defect-inspection benchmark
 
-# 指定配置文件
+# 指定配置
 seat-defect-inspection benchmark --config configs/my_custom_config.json
+
+# 只跑特定轮次
+seat-defect-inspection benchmark --round good
+seat-defect-inspection benchmark --round defect
+
+# 筛选特定机位
+seat-defect-inspection benchmark --cameras cam_0,cam_1
+
+# 导出 ROC/PR 曲线数据（需 ground_truth.json）
+seat-defect-inspection benchmark --export-curves outputs/benchmark_curves
+
+# 保存完整结果为 JSON
+seat-defect-inspection benchmark --output outputs/benchmark_results.json
+
+# 组合使用
+seat-defect-inspection benchmark --round all --cameras cam_0 --export-curves outputs/curves --output outputs/results.json
 ```
 
-命令会遍历三轮数据集，每个样本逐一检测并实时输出进度和判定结果。三轮跑完后打印汇总报告。
+### 执行逻辑
 
-### 执行逻辑说明
+1. **图片收集**：对每个机位目录，按文件名 `sorted()` 排序后得到有序列表。
+2. **样本配对**：按索引 `idx = 0 → N-1` 依次取各机位的第 `idx` 张图片组合成一个样本。
+3. **图片加载**：直接通过 `cv2.imread` 读取图片构造 `InspectionFrame`，不再经过采图层 `AcquisitionService.capture`，简洁高效。
+4. **检测流程**：调用 `inspect_frames()` 执行完整 YOLO → ROI → PatchCore → 颜色 → 融合流程。
+5. **Ground Truth 匹配**：检查 `ground_truth.json` 是否存在 → 存在则按索引匹配标签 → 不存在则按目录名自动推断（good=OK, defect=NG, mixed=无标签）。
+6. **跨轮次隔离**：`good` / `defect` / `mixed` 三个目录完全独立，互不干扰。
 
-检测过程**不会重复检测同一张图片**，执行流程如下：
+### 输出示例
 
-1. **图片收集**：对每个机位目录，按文件名 `sorted()` 排序后得到有序列表，每个位置只有一张图片，不重不漏。
-2. **样本配对**：按索引 `idx = 0 → N-1` 依次取各机位的第 `idx` 张图片组合成一个样本，每个索引只被使用一次。
-3. **采图链路**：通过 `camera.source` 替换为图片路径，`AcquisitionService.capture` 识别为 `image` 类型后从磁盘读取，检测完成后 `camera.source` 被下一轮迭代覆盖，无残留。
-4. **跨轮次隔离**：`good` / `defect` / `mixed` 三个目录完全独立，互不干扰。
-5. **机位筛选**：指定 `--cameras` 时，未选中机位的 `enabled` 被置为 `False`，采图和 Pipeline 均不涉及。
-
-### 量化指标说明
-
-输出示例：
+#### 无标注时（与旧版兼容的输出格式）
 
 ```text
 ============================================================
@@ -161,39 +205,123 @@ seat-defect-inspection benchmark --config configs/my_custom_config.json
 ============================================================
 ```
 
-#### 各轮次指标
+#### 有 `ground_truth.json` 时（完整输出）
 
-| 指标 | 含义 | 计算方式 | 来源 |
-|------|------|----------|------|
-| **False positive rate（误报率）** | 无缺陷样本被误判为 NG/REJECT 的比例 | `(NG + REJECT) / total × 100%` | Good 轮 |
-| **Miss rate（漏检率）** | 有缺陷样本被漏判为 OK 的比例 | `OK / total × 100%` | Defect 轮 |
-| **Detection rate（检出率）** | 有缺陷样本被正确判定为 NG 的比例 | `NG / total × 100%` | Defect 轮 |
+```text
+============================================================
+  BENCHMARK SUMMARY
+============================================================
+  Cameras: cam_0, cam_1
 
-#### 综合指标（Good + Defect 合并计算）
+  [Defect (all NG)]
+    Samples: 100
+    OK: 8  |  NG: 90  |  REJECT: 2
 
-将 Good 轮作为负样本集（真值 = OK）、Defect 轮作为正样本集（真值 = NG），构建混淆矩阵：
+    Ground truth:
+    TP=90  TN=0  FP=0  FN=8
+    Precision: 100.0%  [95% CI: 95.8–100.0%]
+    Recall:    91.8%  [95% CI: 84.7–96.0%]
+    F1 Score:  95.7%
+    Accuracy:  91.8%  [95% CI: 84.7–96.0%]
+    FPR:       N/A    [95% CI: N/A]
 
+    Per-camera metrics:
+    Camera       TP    TN    FP    FN   Prec    Rec     F1
+    cam_0        88     0     0    12  100.0%  88.0%  93.6%
+    cam_1        85     0     0    15  100.0%  85.0%  91.9%
+
+    [OK] anomaly scores (n=0): (no OK samples in this round)
+    [NG] anomaly scores (n=90):
+      min=0.5234  max=2.8912  mean=1.2456  median=1.1023  std=0.4821  p5=0.6123  p95=2.3401
+
+    Defect-type recall:
+      dent            15/15   recall=100.0%
+      scratch         60/65   recall=92.3%
+      stain           10/10   recall=100.0%
+      tear             5/8     recall=62.5%
+
+  [Combined Metrics (all labeled rounds)]
+    TP=90  TN=95  FP=5  FN=8
+    Precision (精准率): 94.7%  [95% CI: 88.0–97.8%]
+    Recall    (召回率): 91.8%  [95% CI: 84.7–96.0%]
+    F1 Score  (F1 值):  93.2%
+    Accuracy  (准确率): 92.5%  [95% CI: 87.8–95.5%]
+    FPR       (误报率):  5.0%  [95% CI:  2.2–10.0%]
+============================================================
 ```
-               预测 OK    预测 NG/REJECT
-真值 OK         TN           FP
-真值 NG         FN           TP
-```
 
-| 指标 | 含义 | 计算方式 |
+### 量化指标说明
+
+#### 各轮次基础指标
+
+| 指标 | 含义 | 计算方式 | 适用场景 |
+|------|------|----------|----------|
+| **False positive rate（误报率）** | 无缺陷样本被误判为 NG/REJECT 的比例 | `(NG + REJECT) / total × 100%` | Good 轮评估模型过杀程度 |
+| **Miss rate（漏检率）** | 有缺陷样本被漏判为 OK 的比例 | `OK / total × 100%` | Defect 轮评估模型漏放风险 |
+| **Detection rate（检出率）** | 有缺陷样本被正确判定为 NG 的比例 | `NG / total × 100%` | Defect 轮评估模型检出能力 |
+
+#### 综合指标（所有标注轮次合并计算）
+
+| 指标 | 含义 | 计算方式 | 含 95% CI |
+|------|------|----------|-----------|
+| **Precision（精准率）** | 被判为 NG 的样本中有多少确实是 NG | `TP / (TP + FP)` | ✅ (Wilson) |
+| **Recall（召回率）** | 真实 NG 样本中有多少被正确检出 | `TP / (TP + FN)` | ✅ (Wilson) |
+| **F1 Score（F1 值）** | 精准率与召回率的调和平均 | `2 × P × R / (P + R)` | ❌ |
+| **Accuracy（准确率）** | 所有样本中判定正确的比例 | `(TP + TN) / (TP + TN + FP + FN)` | ✅ (Wilson) |
+| **FPR（误报率）** | 无缺陷样本被判为 NG/REJECT 的比例 | `FP / (FP + TN)` | ✅ (Wilson) |
+
+#### 新增评估维度（需 ground_truth.json）
+
+| 维度 | 含义 | 数据来源 |
 |------|------|----------|
-| **Precision（精准率）** | 被判为 NG 的样本中有多少确实是 NG | `TP / (TP + FP) × 100%` |
-| **Recall（召回率）** | 真实 NG 样本中有多少被正确检出 | `TP / (TP + FN) × 100%` |
-| **F1 Score（F1 值）** | 精准率与召回率的调和平均，综合评价模型 | `2 × P × R / (P + R)` |
-| **Accuracy（准确率）** | 所有样本中判定正确的比例 | `(TP + TN) / (TP + TN + FP + FN) × 100%` |
+| **95% 置信区间** | 指标在 95% 置信水平下的取值范围，样本量越小越宽 | Wilson score interval（无外部依赖） |
+| **单机位指标** | 每个 camera_id 独立计算的 P/R/F1，用于定位哪个视角是检测短板 | 按 `camera_results[].status` vs `ground_truth_label` 逐机位构建混淆矩阵 |
+| **异常分数分布** | OK / NG 样本的 anomaly score 分布统计（min/max/mean/median/std/p5/p95），用于判断阈值分离度 | 从 `texture_result.score` 或 `region_results[].texture_result.score` 提取 |
+| **缺陷类型召回** | 按 `defect_type` 分别统计检出率，识别模型对哪些缺陷类型不敏感 | `ground_truth.json` 中 `defect_type` 字段 |
+| **ROC/PR 数据** | 每条记录包含 sample_index + gt_label + camera_id + anomaly_score + threshold | `--export-curves` 导出为 CSV，用于外部画 ROC/PR 曲线 |
 
-#### 判读指南
+### ROC/PR 曲线数据导出
 
-- **Good 轮误报率高** → 模型对正常纹理变化过于敏感，考虑适当放宽 PatchCore 阈值或补充更多正常样本参与训练。
-- **Defect 轮漏检率高 / 召回率低** → 模型对当前缺陷类型不敏感，需要补充对应类型的缺陷样本重新训练。
-- **精准率低** → 误报多，正常件被频繁打回，影响生产效率。
-- **召回率低** → 漏检多，缺陷件可能流出，影响出货质量。
+```bash
+seat-defect-inspection benchmark --export-curves outputs/curves
+```
+
+导出文件结构：
+
+```text
+outputs/curves/
+├── good_scores.csv
+├── defect_scores.csv
+└── mixed_scores.csv
+```
+
+CSV 格式：
+
+| sample_index | part_id | ground_truth_label | camera_id | anomaly_score | is_anomaly | threshold |
+|-------------|---------|-------------------|-----------|---------------|------------|-----------|
+| 0 | defect_0000 | NG | cam_0 | 1.234 | True | 0.500 |
+| 0 | defect_0000 | NG | cam_1 | 0.876 | False | 0.500 |
+
+每行 = 一个样本 × 一个机位。`ground_truth_label` 为样本级标签，`anomaly_score` 为该机位的异常分数。可直接导入 Python/R 中画 ROC 曲线。
+
+### 完整结果 JSON 导出
+
+```bash
+seat-defect-inspection benchmark --output outputs/benchmark_results.json
+```
+
+JSON 包含所有轮次的完整 records 列表（每个样本的 label、status、各机位 score 等），以及所有聚合指标、CI、异常分数分布、缺陷类型召回等统计结果，可用于自动化报告或后续分析。
+
+### 判读指南
+
+- **Good 轮误报率高** → 模型对正常纹理变化过于敏感，可查看 OK 样本的异常分数分布，若 p95 远低于阈值说明部分样本异常偏高，考虑补充类似正常纹理参与训练。
+- **Defect 轮漏检率高 / 召回率低** → 查看**缺陷类型召回率**，定位漏检集中在哪种缺陷类型，针对性补充该类缺陷样本重新训练。
+- **精准率低** → 误报多，正常件被频繁打回，影响生产效率。查看 FPR 和 Precision CI 确认问题是否统计显著。
+- **召回率低** → 漏检多，缺陷件可能流出。查看**单机位指标**，可能只有一个机位识别不到缺陷（如缺陷仅在特定角度可见）。
+- **单机位指标差异大** → 说明某些视角的模型较弱，针对该机位补充训练样本或调整阈值。
 - **F1 值**是精准率和召回率的综合指标，迭代模型时以 F1 提升为主要优化方向。
-- **Mixed 轮**反映接近真实产线分布下的 OK/NG 比例，辅助判断产线直通率。
+- **异常分数分布重叠** → OK 和 NG 的 score 分布如果高度重叠（p95(OK) 接近甚至超过 p5(NG)），说明当前阈值无法有效分离正负样本，需重新训练或调整特征提取器。
+- **Mixed 轮**反映接近真实产线分布下的 OK/NG 比例。有 `ground_truth.json` 时与 Good/Defect 等同评估；无标注时仅辅助判断产线直通率。
 - **REJECT** 表示图片质量不达标（模糊、过曝、欠曝等），流程拒绝检测，不计入分类判定。若 REJECT 比例异常高，应检查采图质量或调整质量门禁阈值。
 
 也可以给 LabVIEW 或现场工具使用 INI 配置，JSON 主格式不变：
