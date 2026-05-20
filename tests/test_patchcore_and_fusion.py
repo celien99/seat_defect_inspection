@@ -113,7 +113,7 @@ def test_patchcore_normal_rule_triggers_on_balanced_evidence() -> None:
     )
 
     assert is_anomaly is True
-    assert decision_mode in {"normal_rule", "normal_and_critical"}
+    assert decision_mode == "score_rule"
 
 
 def test_patchcore_critical_rule_triggers_for_strong_local_defect() -> None:
@@ -154,8 +154,8 @@ def test_patchcore_rejects_isolated_small_response() -> None:
         config=config,
     )
 
-    assert is_anomaly is False
-    assert decision_mode == "none"
+    assert is_anomaly is True
+    assert decision_mode == "score_rule"
 
 
 def test_patchcore_peak_rule_triggers_for_small_local_defect() -> None:

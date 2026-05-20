@@ -229,9 +229,14 @@ def _decide_patchcore_anomaly(
         evidence.get("largest_component_patch_count", 0),
     )
 
-    normal_trigger = (
-        float(score) > decision_threshold
-        and int(evidence["strong_patch_count"]) >= int(config.min_strong_patch_count)
+    # Each dimension independently signals anomaly.
+    score_trigger = float(score) > decision_threshold
+    peak_trigger = (
+        float(evidence["peak_patch_score"]) > decision_threshold
+        and largest_decision_component_patch_count >= max(1, int(config.min_peak_component_patch_count))
+    )
+    spatial_trigger = (
+        int(evidence["strong_patch_count"]) >= int(config.min_strong_patch_count)
         and int(evidence["largest_component_patch_count"]) >= int(config.min_strong_component_count)
         and float(evidence["strong_patch_ratio"]) >= float(config.min_strong_patch_ratio)
         and float(evidence["largest_component_patch_ratio"]) >= float(config.min_strong_component_ratio)
@@ -241,22 +246,15 @@ def _decide_patchcore_anomaly(
         and float(evidence["peak_patch_score"]) > critical_peak_threshold
         and max(largest_component_patch_count, largest_decision_component_patch_count) >= component_min_patch_count
     )
-    # If the heatmap already contains a peak that crosses the final decision
-    # threshold, the result should not stay at OK even when the anomaly is very
-    # small and does not form a large connected region.
-    peak_trigger = (
-        float(evidence["peak_patch_score"]) > decision_threshold
-        and largest_decision_component_patch_count >= max(1, int(config.min_peak_component_patch_count))
-    )
 
-    if normal_trigger and critical_trigger:
-        return True, "normal_and_critical"
     if critical_trigger:
         return True, "critical_rule"
-    if normal_trigger:
-        return True, "normal_rule"
+    if score_trigger:
+        return True, "score_rule"
     if peak_trigger:
         return True, "peak_rule"
+    if spatial_trigger:
+        return True, "spatial_rule"
     return False, "none"
 
 
