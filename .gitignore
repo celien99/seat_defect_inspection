@@ -22,3 +22,5 @@ datasets/seat_defect/*
 .codex_tmp/
 .torch_cache/
 .claude/
+
+benchmark_data/

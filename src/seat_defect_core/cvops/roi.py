@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Tuple
+from typing import Any, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -13,8 +13,14 @@ from .roi_geometry import (
     _box_to_ints,
     _crop_mask,
     _expand_box,
+    _mask_to_box,
     _resolve_crop_source_box,
 )
+
+
+KEEP_LARGEST_COMPONENT_ONLY = True
+MIN_COMPONENT_AREA_RATIO = 0.001
+MIN_COMPONENT_AREA_PIXELS = 200
 
 
 class RoiRefineEngine:
@@ -28,10 +34,17 @@ class RoiRefineEngine:
         if detection_result.target is None:
             raise ValueError("ROI 精修必须提供目标检测框")
 
+        cleaned_target_mask = self._clean_target_segmentation_mask(
+            detection_result.target.segmentation_mask,
+            image.shape[:2],
+        )
         base_box = _resolve_crop_source_box(
             detection_result.target,
             image.shape[:2],
         )
+        mask_box = _mask_to_box(cleaned_target_mask, image.shape[:2])
+        if mask_box is not None:
+            base_box = mask_box
         crop_box = _expand_box(
             base_box,
             image.shape[:2],
@@ -47,6 +60,7 @@ class RoiRefineEngine:
             original_roi_image,
             detection_result,
             crop_box,
+            cleaned_target_mask,
         )
         aligned_roi_image, target_mask, alignment_applied = self._resize_bundle(
             original_roi_image,
@@ -76,16 +90,50 @@ class RoiRefineEngine:
         roi_image: Any,
         detection_result: DetectionResult,
         crop_box: BoundingBox,
+        cleaned_target_mask: Optional[np.ndarray] = None,
     ) -> np.ndarray:
         target = detection_result.target
         if target is None:
             raise ValueError("target_missing")
-        if target.segmentation_mask is not None:
-            cropped = _crop_mask(target.segmentation_mask, crop_box)
+        source_mask = cleaned_target_mask if cleaned_target_mask is not None else target.segmentation_mask
+        if source_mask is not None:
+            cropped = _crop_mask(source_mask, crop_box)
             if int(cropped.sum()) <= 0:
                 raise ValueError("target_mask_empty")
             return cropped
         raise ValueError("target_mask_missing")
+
+    def _clean_target_segmentation_mask(
+        self,
+        mask: Any,
+        image_shape: Tuple[int, int],
+    ) -> np.ndarray:
+        if mask is None:
+            raise ValueError("target_mask_missing")
+        normalized = np.asarray(mask)
+        if normalized.ndim != 2:
+            raise ValueError("target_mask_missing")
+
+        height, width = image_shape
+        if normalized.shape[:2] != (height, width):
+            normalized = cv2.resize(
+                normalized.astype(np.float32),
+                (width, height),
+                interpolation=cv2.INTER_NEAREST,
+            )
+        binary = (normalized > 0).astype(np.uint8)
+        if int(binary.sum()) <= 0:
+            raise ValueError("target_mask_empty")
+
+        cleaned = _filter_mask_components(
+            binary,
+            keep_largest_only=KEEP_LARGEST_COMPONENT_ONLY,
+            min_area_ratio=MIN_COMPONENT_AREA_RATIO,
+            min_area_pixels=MIN_COMPONENT_AREA_PIXELS,
+        )
+        if int(cleaned.sum()) <= 0:
+            raise ValueError("target_mask_empty_after_component_filter")
+        return cleaned
 
     def _erode_target_mask(self, target_mask: np.ndarray) -> np.ndarray:
         """按配置把 YOLO 前景 mask 向内收缩，避免边缘噪声进入 PatchCore。"""
@@ -149,6 +197,42 @@ def _apply_mask(image: np.ndarray, valid_mask: np.ndarray) -> np.ndarray:
         base = image.copy()
     alpha = np.where(valid_mask > 0, 255, 0).astype(np.uint8)
     return np.dstack([base, alpha])
+
+
+def _filter_mask_components(
+    mask: np.ndarray,
+    *,
+    keep_largest_only: bool,
+    min_area_ratio: float,
+    min_area_pixels: int,
+) -> np.ndarray:
+    binary = (mask > 0).astype(np.uint8)
+    component_count, labels, stats, _centroids = cv2.connectedComponentsWithStats(
+        binary,
+        connectivity=8,
+    )
+    if component_count <= 1:
+        return binary
+
+    areas = stats[1:, cv2.CC_STAT_AREA].astype(np.int64)
+    if areas.size == 0:
+        return np.zeros_like(binary, dtype=np.uint8)
+
+    min_area = max(
+        int(max(0, min_area_pixels)),
+        int(round(max(0.0, min_area_ratio) * float(binary.shape[0] * binary.shape[1]))),
+    )
+    keep_labels = [
+        label
+        for label, area in enumerate(areas, start=1)
+        if int(area) >= min_area
+    ]
+    if not keep_labels:
+        return np.zeros_like(binary, dtype=np.uint8)
+    if keep_largest_only:
+        keep_labels = [max(keep_labels, key=lambda label: int(stats[label, cv2.CC_STAT_AREA]))]
+
+    return np.isin(labels, keep_labels).astype(np.uint8)
 
 
 def _letterbox_bundle(

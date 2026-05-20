@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".webp"}
 
-BENCHMARK_DATA_DIR = Path(__file__).resolve().parents[4] / "benchmark_data"
+BENCHMARK_DATA_DIR = Path(__file__).resolve().parents[3] / "benchmark_data"
 ROUNDS = ("good", "defect", "mixed")
 
 

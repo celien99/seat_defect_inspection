@@ -268,6 +268,18 @@ def _parse_roi_refine_config(payload: Any, *, scope: str) -> RoiRefineConfig:
     if payload is None:
         return defaults
     payload = _expect_dict(payload, scope)
+    if any(
+        key in payload
+        for key in (
+            "keep_largest_component_only",
+            "min_component_area_ratio",
+            "min_component_area_pixels",
+        )
+    ):
+        payload = dict(payload)
+        payload.pop("keep_largest_component_only", None)
+        payload.pop("min_component_area_ratio", None)
+        payload.pop("min_component_area_pixels", None)
     _reject_unknown_keys(payload, _field_names(RoiRefineConfig), scope)
     return RoiRefineConfig(
         crop_expand_ratio=_float_or_default(
