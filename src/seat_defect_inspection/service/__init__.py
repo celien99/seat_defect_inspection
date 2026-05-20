@@ -50,6 +50,7 @@ def _create_service(config: InspectionConfig) -> "InspectionService":
 def train_patchcore_models(
     config: InspectionConfig,
     seat_model_id: Optional[str] = None,
+    camera_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """训练全部机位的 PatchCore 模型。"""
     # 入口层只做轻量路由，真正逻辑仍在具体模块里。
@@ -58,6 +59,7 @@ def train_patchcore_models(
     return _train_patchcore_models(
         _create_service(config),
         seat_model_id=seat_model_id,
+        camera_id=camera_id,
     )
 
 

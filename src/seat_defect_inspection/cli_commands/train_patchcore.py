@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 
 from ..runtime_config import load_config
-from .common import add_config_argument, add_seat_model_argument
+from .common import add_camera_id_argument, add_config_argument, add_seat_model_argument
 
 
 def register_train_patchcore_command(subparsers) -> None:
@@ -20,6 +20,10 @@ def register_train_patchcore_command(subparsers) -> None:
         parser,
         help_text="指定要训练的座椅型号；多型号配置下不传时默认训练全部型号",
     )
+    add_camera_id_argument(
+        parser,
+        help_text="指定要训练的机位；不传时默认训练全部机位",
+    )
 
 
 def run_train_patchcore_command(args: argparse.Namespace) -> None:
@@ -27,7 +31,11 @@ def run_train_patchcore_command(args: argparse.Namespace) -> None:
     from ..service import train_patchcore_models
 
     config = load_config(args.config)
-    summaries = train_patchcore_models(config, seat_model_id=args.seat_model_id)
+    summaries = train_patchcore_models(
+        config,
+        seat_model_id=args.seat_model_id,
+        camera_id=args.camera_id,
+    )
     # 训练可能覆盖多个型号，这里压成一行输出，便于命令行快速查看。
     model_scope = ",".join(
         sorted(
@@ -38,7 +46,10 @@ def run_train_patchcore_command(args: argparse.Namespace) -> None:
             }
         )
     ) or "default"
+    camera_scope = ",".join(
+        sorted({item["camera_id"] for item in summaries if item.get("camera_id") is not None})
+    ) or "all"
     print(
         f"PatchCore 训练完成，共生成 {len(summaries)} 个机位模型，"
-        f"型号范围：{model_scope}，配置来源：{args.config}",
+        f"型号范围：{model_scope}，机位范围：{camera_scope}，配置来源：{args.config}",
     )

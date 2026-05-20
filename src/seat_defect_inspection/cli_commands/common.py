@@ -29,3 +29,15 @@ def add_seat_model_argument(
         "--seat-model-id",
         help=help_text,
     )
+
+
+def add_camera_id_argument(
+    parser: argparse.ArgumentParser,
+    *,
+    help_text: str,
+) -> None:
+    """为子命令补充统一的机位过滤参数。"""
+    parser.add_argument(
+        "--camera-id",
+        help=help_text,
+    )

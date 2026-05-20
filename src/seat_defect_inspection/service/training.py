@@ -32,12 +32,15 @@ if TYPE_CHECKING:
 def train_patchcore_models(
     service: "InspectionService",
     seat_model_id: Optional[str] = None,
+    camera_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """按机位训练 PatchCore 模型。"""
     summaries: List[Dict[str, Any]] = []
     for candidate_model_id in _resolve_training_scope(service, seat_model_id):
         context = service.resolve_context(candidate_model_id)
         for camera in context.cameras:
+            if camera_id is not None and camera.camera_id != camera_id:
+                continue
             summaries.append(
                 _train_one_camera(
                     service,
@@ -46,6 +49,8 @@ def train_patchcore_models(
                     pipeline=context.pipelines[camera.camera_id],
                 )
             )
+    if camera_id is not None and not summaries:
+        raise ValueError(f"未找到机位 `{camera_id}`，请检查配置中的 camera_id 是否正确")
     return summaries
 
 
