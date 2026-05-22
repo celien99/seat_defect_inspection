@@ -22,6 +22,12 @@ if TYPE_CHECKING:
 IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".webp"}
 
 BENCHMARK_DATA_DIR = Path(__file__).resolve().parents[3] / "benchmark_data"
+DEFAULT_BENCHMARK_ARTIFACTS_DIR = (
+    Path(__file__).resolve().parents[3]
+    / "outputs"
+    / "seat_defect_inspection"
+    / "benchmark_artifacts"
+)
 ROUNDS = ("good", "defect", "mixed")
 GROUND_TRUTH_FILENAME = "ground_truth.json"
 
@@ -34,6 +40,7 @@ def run_benchmark(
     camera_ids: Optional[List[str]] = None,
     export_curves_dir: Optional[Path] = None,
     output_json_path: Optional[Path] = None,
+    artifacts_dir: Optional[Path] = DEFAULT_BENCHMARK_ARTIFACTS_DIR,
 ) -> Dict[str, dict]:
     """Run benchmark inspection on selected rounds and report metrics.
 
@@ -48,6 +55,8 @@ def run_benchmark(
         If set, export per-round ROC/PR CSVs into this directory.
     output_json_path:
         If set, save full benchmark results as JSON to this path.
+    artifacts_dir:
+        If set, save each camera's production overlay image in this directory.
     """
     if not BENCHMARK_DATA_DIR.is_dir():
         raise FileNotFoundError(
@@ -105,6 +114,7 @@ def run_benchmark(
                 round_dir,
                 camera_ids,
                 export_curves_dir=export_curves_dir,
+                artifacts_dir=artifacts_dir,
             )
             results[round_name] = round_result
 
@@ -456,6 +466,26 @@ def _export_results_json(results: Dict[str, dict], output_path: Path) -> None:
     print(f"\n[benchmark] Full results saved to: {output_path}")
 
 
+def _export_benchmark_overlay(
+    *,
+    artifacts_dir: Path,
+    round_name: str,
+    part_id: str,
+    cam_result: Any,
+) -> Dict[str, str]:
+    overlay_image = getattr(cam_result, "overlay_image", None)
+    if overlay_image is None:
+        return {}
+
+    artifact_paths: Dict[str, str] = {}
+    output_path = artifacts_dir / f"{round_name}_{part_id}_{cam_result.camera_id}_overlay.png"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if not cv2.imwrite(str(output_path), overlay_image):
+        raise OSError(f"Failed to write benchmark overlay: {output_path}")
+    artifact_paths["overlay"] = str(output_path)
+    return artifact_paths
+
+
 # ---------- single round ----------
 
 
@@ -465,6 +495,7 @@ def _run_single_round(
     round_dir: Path,
     camera_ids: List[str],
     export_curves_dir: Optional[Path] = None,
+    artifacts_dir: Optional[Path] = DEFAULT_BENCHMARK_ARTIFACTS_DIR,
 ) -> dict:
     camera_images = _collect_camera_images(round_dir, camera_ids)
     sample_count = len(next(iter(camera_images.values())))
@@ -513,6 +544,15 @@ def _run_single_round(
                 ]
                 if region_scores:
                     cam_info["anomaly_score"] = max(region_scores)
+            if artifacts_dir is not None:
+                artifact_paths = _export_benchmark_overlay(
+                    artifacts_dir=artifacts_dir,
+                    round_name=round_dir.name,
+                    part_id=part_id,
+                    cam_result=cam_result,
+                )
+                if artifact_paths:
+                    cam_info["artifact_paths"] = artifact_paths
             cam_details.append(cam_info)
 
         marker = "✓" if result.status == "OK" else "✗"
@@ -586,10 +626,10 @@ def _print_round_details(records: List[Dict[str, Any]]) -> None:
 
     print(f"\n  NG/REJECT samples ({len(ng_records)}):")
     for r in ng_records:
-        print(f"    [{r['index']:04d}] {r['status']}  part_id={r['part_id']}")
-        print(f"           reason: {r['decision_reason']}")
-        for cid, path in r["source_map"].items():
-            print(f"           {cid}: {path}")
+        print(
+            f"    [{r['index']:04d}] {r['status']}  part_id={r['part_id']}"
+            f"  reason={r['decision_reason']}"
+        )
 
 
 def _print_summary(

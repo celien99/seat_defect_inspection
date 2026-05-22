@@ -43,21 +43,41 @@ def register_benchmark_command(subparsers) -> None:
         default=None,
         help="Save full benchmark results as JSON to this path",
     )
+    parser.add_argument(
+        "--artifacts-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Directory for benchmark overlay image exports "
+            "(default: outputs/seat_defect_inspection/benchmark_artifacts)"
+        ),
+    )
+    parser.add_argument(
+        "--no-artifacts",
+        action="store_true",
+        help="Disable benchmark overlay image exports",
+    )
 
 
 def run_benchmark_command(args: argparse.Namespace) -> None:
     """Run benchmark inspection."""
-    from ..service.benchmark import run_benchmark
+    from ..service.benchmark import DEFAULT_BENCHMARK_ARTIFACTS_DIR, run_benchmark
     from ..service.core import InspectionService
 
     config = load_config(args.config)
     service = InspectionService(config)
     rounds = ("good", "defect", "mixed") if args.round == "all" else (args.round,)
     camera_ids = [c.strip() for c in args.cameras.split(",")] if args.cameras else None
+    artifacts_dir = (
+        None
+        if args.no_artifacts
+        else (args.artifacts_dir or DEFAULT_BENCHMARK_ARTIFACTS_DIR)
+    )
     run_benchmark(
         service,
         rounds=rounds,
         camera_ids=camera_ids,
         export_curves_dir=args.export_curves,
         output_json_path=args.output,
+        artifacts_dir=artifacts_dir,
     )
