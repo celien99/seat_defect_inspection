@@ -69,6 +69,11 @@ class PatchCoreConfig:
     max_memory: int = 1024
     threshold_quantile: float = 0.99
     texture_input: str = "lab_l"
+    # 颜色归一化方法，用于降低不同颜色座椅的纹理差异。
+    # "none": 不做归一化（默认）
+    # "grayscale": 灰度化，彻底去除颜色信息
+    # "lab_l": LAB 空间 L 通道，仅保留亮度
+    color_normalization: str = "none"
 
     # 有效 patch 过滤。
     min_target_coverage: float = 0.8

@@ -356,6 +356,9 @@ def _parse_patchcore_config(payload: Any, config_dir: Path, *, scope: str) -> Pa
             defaults.training_threshold_upper_quantile,
         ),
         texture_input=_string_or_default(payload.get("texture_input"), defaults.texture_input),
+        color_normalization=_string_or_default(
+            payload.get("color_normalization"), defaults.color_normalization
+        ),
         min_target_coverage=_float_or_default(
             payload.get("min_target_coverage"),
             defaults.min_target_coverage,

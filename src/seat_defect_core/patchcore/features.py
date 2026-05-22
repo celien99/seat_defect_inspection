@@ -83,6 +83,7 @@ def extract_handcrafted_patch_embeddings(
 ) -> Tuple[np.ndarray, _PatchBatch]:
     """用掩膜筛出有效 patch，并提取轻量手工纹理特征。"""
     feature_image = _prepare_feature_image(image, target_mask=target_mask)
+    feature_image = _apply_color_normalization(feature_image, config.color_normalization)
     resized_image = cv2.resize(
         feature_image,
         (config.image_size, config.image_size),
@@ -242,6 +243,7 @@ class _TorchPatchFeatureExtractor:
         """提取完整 PatchCore 使用的深度 embedding。"""
         with self._lock:
             feature_image = _prepare_feature_image(image, target_mask=target_mask)
+            feature_image = _apply_color_normalization(feature_image, self.config.color_normalization)
             resized_image = cv2.resize(
                 feature_image,
                 (self.config.image_size, self.config.image_size),
@@ -300,6 +302,7 @@ class _TorchPatchFeatureExtractor:
             resized_images: List[np.ndarray] = []
             for image, target_mask, _ignore_mask in samples:
                 feature_image = _prepare_feature_image(image, target_mask=target_mask)
+                feature_image = _apply_color_normalization(feature_image, self.config.color_normalization)
                 resized_images.append(
                     cv2.resize(
                         feature_image,
@@ -565,6 +568,20 @@ def _resize_mask_to_grid(
         interpolation=interpolation,
     )
     return resized.astype(np.float32)
+
+
+def _apply_color_normalization(image: np.ndarray, method: str) -> np.ndarray:
+    """对 BGR 图像做颜色归一化，降低不同颜色座椅的纹理差异。"""
+    method = method.strip().lower()
+    if method == "none":
+        return image
+    if method == "grayscale":
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        return cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+    if method == "lab_l":
+        lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+        return cv2.cvtColor(lab[:, :, 0], cv2.COLOR_GRAY2BGR)
+    raise ValueError(f"不支持的颜色归一化方法: {method!r}")
 
 
 def _prepare_feature_image(
