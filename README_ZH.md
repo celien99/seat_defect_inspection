@@ -87,6 +87,12 @@ seat-defect-inspection benchmark --config configs/seat_defect_inspection.mvs.jso
 
 ### 准备数据
 
+`benchmark` 默认还会为每个样本导出图像产物：
+
+- `overlay.png`：与原检测程序一致的缺陷热力叠加图
+
+默认目录是 `outputs/seat_defect_inspection/benchmark_artifacts/`。需要关闭时加 `--no-artifacts`，需要改路径时加 `--artifacts-dir <path>`.
+
 在项目根目录（或通过 `--data-dir` 指定路径）创建基准数据集目录，按机位分目录存放图片：
 
 ```text
