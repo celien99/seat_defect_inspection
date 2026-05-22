@@ -3,22 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
-
-
-# ---------- dataset ----------
-
-
-@dataclass
-class DatasetComposition:
-    round_name: str
-    sample_count: int
-    camera_count: int
-    camera_ids: List[str]
-    ng_count: int = 0
-    ok_count: int = 0
-    has_ground_truth: bool = False
-    ground_truth_source: str = "none"  # "manifest" | "implicit" | "none"
+from typing import Dict, List, Optional
 
 
 # ---------- sample / record ----------
@@ -41,13 +26,7 @@ class CameraBenchmarkRecord:
     predicted_status: str  # OK / NG / REJECT
     anomaly_score: Optional[float] = None
     anomaly_threshold: Optional[float] = None
-    decision_threshold: Optional[float] = None
-    peak_patch_score: Optional[float] = None
-    strong_patch_count: Optional[int] = None
-    decision_mode: Optional[str] = None
-    is_anomaly: Optional[bool] = None
-    valid_patch_ratio: Optional[float] = None
-    timing_ms: Dict[str, float] = field(default_factory=dict)
+    overlay_path: Optional[str] = None
 
 
 @dataclass
@@ -73,16 +52,6 @@ class ConfusionMatrix:
     def total(self) -> int:
         return self.tp + self.tn + self.fp + self.fn
 
-    @property
-    def miss_rate(self) -> float:
-        denom = self.tp + self.fn
-        return self.fn / denom if denom > 0 else 0.0
-
-    @property
-    def false_alarm_rate(self) -> float:
-        denom = self.fp + self.tn
-        return self.fp / denom if denom > 0 else 0.0
-
 
 @dataclass
 class BinaryMetrics:
@@ -92,22 +61,6 @@ class BinaryMetrics:
     accuracy: float = 0.0
     miss_rate: float = 0.0
     false_alarm_rate: float = 0.0
-    confidence_intervals: Dict[str, Tuple[float, float]] = field(default_factory=dict)
-
-
-@dataclass
-class ThresholdSweepPoint:
-    threshold: float
-    tpr: float
-    fpr: float
-    precision: float
-    f1: float
-
-
-@dataclass
-class CurveResult:
-    points: List[ThresholdSweepPoint] = field(default_factory=list)
-    auc: float = 0.0
 
 
 @dataclass
@@ -118,42 +71,8 @@ class PerCameraMetrics:
     recall: float = 0.0
     f1: float = 0.0
     accuracy: float = 0.0
-
-
-@dataclass
-class DefectTypeMetrics:
-    defect_type: str
-    total: int = 0
-    detected: int = 0
-    recall: float = 0.0
-    precision: float = 0.0
-    f1: float = 0.0
-
-
-@dataclass
-class ScoreDistribution:
-    label: str  # "OK" | "NG"
-    count: int = 0
-    min: float = 0.0
-    max: float = 0.0
-    mean: float = 0.0
-    median: float = 0.0
-    std: float = 0.0
-    p5: float = 0.0
-    p95: float = 0.0
-    all_scores: List[float] = field(default_factory=list)
-
-
-@dataclass
-class TimingStats:
-    mean_ms: float = 0.0
-    std_ms: float = 0.0
-    min_ms: float = 0.0
-    max_ms: float = 0.0
-    p50_ms: float = 0.0
-    p95_ms: float = 0.0
-    p99_ms: float = 0.0
-    all_timings_ms: List[float] = field(default_factory=list)
+    miss_rate: float = 0.0
+    false_alarm_rate: float = 0.0
 
 
 # ---------- round / summary ----------
@@ -161,16 +80,14 @@ class TimingStats:
 
 @dataclass
 class RoundResult:
-    round_name: str
-    composition: DatasetComposition = field(default_factory=lambda: DatasetComposition(round_name=""))
+    round_name: str = ""
+    sample_count: int = 0
+    ok_count: int = 0
+    ng_count: int = 0
+    reject_count: int = 0
     confusion: Optional[ConfusionMatrix] = None
     binary_metrics: Optional[BinaryMetrics] = None
     per_camera: List[PerCameraMetrics] = field(default_factory=list)
-    defect_type_breakdown: List[DefectTypeMetrics] = field(default_factory=list)
-    score_distributions: List[ScoreDistribution] = field(default_factory=list)
-    timing: Optional[TimingStats] = None
-    roc_curve: Optional[CurveResult] = None
-    pr_curve: Optional[CurveResult] = None
     records: List[BenchmarkRecord] = field(default_factory=list)
     failure_cases: List[BenchmarkRecord] = field(default_factory=list)
 
@@ -178,5 +95,5 @@ class RoundResult:
 @dataclass
 class BenchmarkSummary:
     rounds: List[RoundResult] = field(default_factory=list)
+    camera_ids: List[str] = field(default_factory=list)
     combined_metrics: Optional[BinaryMetrics] = None
-    dataset_overview: List[DatasetComposition] = field(default_factory=list)

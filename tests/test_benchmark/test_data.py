@@ -39,14 +39,9 @@ class TestDiscoverSamples:
         config = BenchmarkConfig(data_dir=str(root), rounds=("good",))
         result = discover_benchmark_samples(config)
         assert "good" in result
-        samples, composition = result["good"]
+        samples = result["good"]
         assert len(samples) == 3
-        assert composition.sample_count == 3
-        assert composition.camera_count == 2
-        assert composition.camera_ids == ["cam_0", "cam_1"]
         # Implicit label for "good" round
-        assert composition.has_ground_truth is True
-        assert composition.ground_truth_source == "implicit"
         for s in samples:
             assert s.ground_truth_label == "OK"
             assert "cam_0" in s.image_paths
@@ -56,8 +51,7 @@ class TestDiscoverSamples:
         root = _build_benchmark_dataset(tmp_path, {"defect": 2})
         config = BenchmarkConfig(data_dir=str(root), rounds=("defect",))
         result = discover_benchmark_samples(config)
-        samples, composition = result["defect"]
-        assert composition.ground_truth_source == "implicit"
+        samples = result["defect"]
         for s in samples:
             assert s.ground_truth_label == "NG"
 
@@ -65,9 +59,7 @@ class TestDiscoverSamples:
         root = _build_benchmark_dataset(tmp_path, {"mixed": 2})
         config = BenchmarkConfig(data_dir=str(root), rounds=("mixed",))
         result = discover_benchmark_samples(config)
-        samples, composition = result["mixed"]
-        # Mixed round has no implicit label without manifest
-        assert composition.ground_truth_source == "none"
+        samples = result["mixed"]
         for s in samples:
             assert s.ground_truth_label is None
 
@@ -80,8 +72,7 @@ class TestDiscoverSamples:
         ])
         config = BenchmarkConfig(data_dir=str(root), rounds=("mixed",))
         result = discover_benchmark_samples(config)
-        samples, composition = result["mixed"]
-        assert composition.ground_truth_source == "manifest"
+        samples = result["mixed"]
         assert samples[0].ground_truth_label == "OK"
         assert samples[1].ground_truth_label == "NG"
         assert samples[1].ground_truth_defect_type == "scratch"
@@ -100,7 +91,7 @@ class TestDiscoverSamples:
         ])
         config = BenchmarkConfig(data_dir=str(root), rounds=("mixed",))
         result = discover_benchmark_samples(config)
-        samples, _ = result["mixed"]
+        samples = result["mixed"]
         assert samples[0].camera_ground_truth == {"cam_0": "NG", "cam_1": "OK"}
         assert samples[1].camera_ground_truth == {"cam_0": "OK", "cam_1": "OK"}
 
@@ -116,16 +107,15 @@ class TestDiscoverSamples:
         root = _build_benchmark_dataset(tmp_path, {"good": 2})
         config = BenchmarkConfig(data_dir=str(root), rounds=("good",), camera_ids=["cam_0"])
         result = discover_benchmark_samples(config)
-        samples, composition = result["good"]
-        assert composition.camera_ids == ["cam_0"]
-        # Camera filtering happens in data resolution, not image collection
-        # _resolve_camera_ids returns only requested cameras
+        samples = result["good"]
+        # Should only have cam_0 images
+        for s in samples:
+            assert list(s.image_paths.keys()) == ["cam_0"]
 
     def test_empty_round_skipped(self, tmp_path):
         root = _build_benchmark_dataset(tmp_path, {"good": 2})
         config = BenchmarkConfig(data_dir=str(root), rounds=("good", "mixed"))
         result = discover_benchmark_samples(config)
-        # mixed doesn't exist, should be skipped
         assert "good" in result
         assert "mixed" not in result
 

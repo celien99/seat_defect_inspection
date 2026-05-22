@@ -1,22 +1,15 @@
 """Tests for benchmark metric computation."""
 
 from seat_defect_inspection.benchmark.metrics import (
-    _trapezoidal_auc,
-    _wilson_ci,
-    compute_all_metrics,
     compute_binary_metrics,
     compute_confusion_matrix,
-    compute_defect_type_metrics,
-    compute_score_distributions,
-    compute_threshold_sweep,
-    compute_timing_stats,
+    compute_per_camera_metrics,
+    identify_failure_cases,
 )
-from seat_defect_inspection.benchmark.config import BenchmarkConfig
 from seat_defect_inspection.benchmark.schemas import (
     BenchmarkRecord,
     BenchmarkSample,
     CameraBenchmarkRecord,
-    ConfusionMatrix,
 )
 
 
@@ -72,8 +65,6 @@ class TestConfusionMatrix:
         assert cm.tn == 2
         assert cm.fp == 0
         assert cm.fn == 0
-        assert cm.miss_rate == 0.0
-        assert cm.false_alarm_rate == 0.0
 
     def test_all_missed(self):
         records = [
@@ -83,7 +74,6 @@ class TestConfusionMatrix:
         cm = compute_confusion_matrix(records)
         assert cm.tp == 0
         assert cm.fn == 2
-        assert cm.miss_rate == 1.0
 
     def test_all_false_alarm(self):
         records = [
@@ -92,7 +82,6 @@ class TestConfusionMatrix:
         ]
         cm = compute_confusion_matrix(records)
         assert cm.fp == 2
-        assert cm.false_alarm_rate == 1.0
 
     def test_empty_records(self):
         cm = compute_confusion_matrix([])
@@ -129,102 +118,128 @@ class TestBinaryMetrics:
         assert bm.false_alarm_rate == 0.0  # 0/3
 
 
-class TestWilsonCI:
-    def test_basic(self):
-        lo, hi = _wilson_ci(95, 100)
-        assert 0.88 < lo < 0.99
-        assert 0.95 < hi < 1.0
-
-    def test_zero_trials(self):
-        lo, hi = _wilson_ci(0, 0)
-        assert lo == 0.0
-        assert hi == 0.0
-
-    def test_perfect_score(self):
-        lo, hi = _wilson_ci(50, 50)
-        assert lo > 0.9
-
-
-class TestDefectTypeMetrics:
-    def test_per_type_recall(self):
+class TestFailureCases:
+    def test_identify_miss_and_false_alarm(self):
         records = [
-            _make_record(0, "NG", "NG", defect_type="scratch"),
-            _make_record(1, "NG", "NG", defect_type="scratch"),
-            _make_record(2, "OK", "NG", defect_type="scratch"),  # missed
-            _make_record(3, "NG", "NG", defect_type="dent"),
-            _make_record(4, "NG", "NG", defect_type="dent"),
+            _make_record(0, "OK", "NG"),   # miss
+            _make_record(1, "NG", "OK"),   # false alarm
+            _make_record(2, "OK", "OK"),   # correct
+            _make_record(3, "NG", "NG"),   # correct
         ]
-        cm = compute_confusion_matrix(records)
-        results = compute_defect_type_metrics(records, cm)
-        scratch = [r for r in results if r.defect_type == "scratch"][0]
-        assert scratch.total == 3
-        assert scratch.detected == 2
-        assert abs(scratch.recall - 2/3) < 0.01
-        dent = [r for r in results if r.defect_type == "dent"][0]
-        assert dent.total == 2
-        assert dent.detected == 2
-        assert dent.recall == 1.0
+        failures = identify_failure_cases(records)
+        assert len(failures) == 2
+        indices = {f.sample.index for f in failures}
+        assert indices == {0, 1}
 
-
-class TestScoreDistribution:
-    def test_distribution_stats(self):
+    def test_no_failures(self):
         records = [
-            _make_record(0, "OK", "OK", anomaly_scores={"cam_0": 0.1}),
-            _make_record(1, "OK", "OK", anomaly_scores={"cam_0": 0.3}),
-            _make_record(2, "NG", "NG", anomaly_scores={"cam_0": 2.0}),
-            _make_record(3, "NG", "NG", anomaly_scores={"cam_0": 4.0}),
+            _make_record(0, "OK", "OK"),
+            _make_record(1, "NG", "NG"),
         ]
-        dists = compute_score_distributions(records)
-        ok_dist = [d for d in dists if d.label == "OK"][0]
-        ng_dist = [d for d in dists if d.label == "NG"][0]
-        assert ok_dist.count == 2
-        assert ng_dist.count == 2
-        assert ok_dist.mean < ng_dist.mean
+        failures = identify_failure_cases(records)
+        assert len(failures) == 0
 
 
-class TestThresholdSweep:
-    def test_sweep_two_classes(self):
+def _make_multi_camera_record(
+    index: int,
+    predicted_statuses: dict,
+    gt_label: str,
+    camera_gt: dict = None,
+) -> BenchmarkRecord:
+    """Build a record with multiple cameras, each having its own predicted status."""
+    cam_records = [
+        CameraBenchmarkRecord(
+            camera_id=cid,
+            predicted_status=status,
+            anomaly_score=2.0 if status != "OK" else 0.5,
+        )
+        for cid, status in predicted_statuses.items()
+    ]
+    image_paths = {cid: f"test_{index}_{cid}.png" for cid in predicted_statuses}
+    return BenchmarkRecord(
+        sample=BenchmarkSample(
+            index=index,
+            part_id=f"test_{index:04d}",
+            image_paths=image_paths,
+            ground_truth_label=gt_label,
+            camera_ground_truth=camera_gt or {},
+        ),
+        predicted_status="NG" if any(s != "OK" for s in predicted_statuses.values()) else "OK",
+        decision_reason="test_reason",
+        camera_records=cam_records,
+    )
+
+
+class TestPerCameraMetrics:
+    def test_perfect_per_camera(self):
+        """Both cameras predict correctly against overall GT."""
         records = [
-            _make_record(0, "OK", "OK", anomaly_scores={"cam_0": 0.1}),
-            _make_record(1, "OK", "OK", anomaly_scores={"cam_0": 0.3}),
-            _make_record(2, "OK", "OK", anomaly_scores={"cam_0": 0.2}),
-            _make_record(3, "NG", "NG", anomaly_scores={"cam_0": 2.0}),
-            _make_record(4, "NG", "NG", anomaly_scores={"cam_0": 3.0}),
-            _make_record(5, "NG", "NG", anomaly_scores={"cam_0": 4.0}),
+            _make_multi_camera_record(0, {"cam_0": "OK", "cam_1": "OK"}, "OK"),
+            _make_multi_camera_record(1, {"cam_0": "NG", "cam_1": "NG"}, "NG"),
         ]
-        config = BenchmarkConfig(enable_threshold_sweep=True, sweep_steps=10)
-        roc, pr = compute_threshold_sweep(records, config)
-        # With well-separated scores, AUC should be high
-        assert roc.auc > 0.9
-        assert pr.auc > 0.9
+        result = compute_per_camera_metrics(records, ["cam_0", "cam_1"])
+        for pc in result:
+            assert pc.confusion.tp == 1
+            assert pc.confusion.tn == 1
+            assert pc.confusion.fp == 0
+            assert pc.confusion.fn == 0
+            assert pc.precision == 1.0
+            assert pc.recall == 1.0
+            assert pc.f1 == 1.0
 
-    def test_sweep_no_gt(self):
+    def test_uses_camera_ground_truth(self):
+        """cam_0 GT=NG but overall GT=OK. cam_0 predicted NG correctly per its own GT."""
         records = [
-            _make_record(0, "OK", None),
+            _make_multi_camera_record(
+                0,
+                {"cam_0": "NG", "cam_1": "OK"},
+                gt_label="OK",
+                camera_gt={"cam_0": "NG", "cam_1": "OK"},
+            ),
         ]
-        config = BenchmarkConfig(enable_threshold_sweep=True, sweep_steps=10)
-        roc, pr = compute_threshold_sweep(records, config)
-        assert roc.auc == 0.0
-        assert pr.auc == 0.0
+        result = compute_per_camera_metrics(records, ["cam_0", "cam_1"])
+        cam0 = [pc for pc in result if pc.camera_id == "cam_0"][0]
+        cam1 = [pc for pc in result if pc.camera_id == "cam_1"][0]
+        # cam_0: GT=NG, pred=NG → TP
+        assert cam0.confusion.tp == 1
+        assert cam0.confusion.fn == 0
+        # cam_1: GT=OK, pred=OK → TN
+        assert cam1.confusion.tn == 1
+        assert cam1.confusion.fp == 0
 
-
-class TestTimingStats:
-    def test_timing(self):
+    def test_fallback_to_overall_gt(self):
+        """When camera_ground_truth is empty, fall back to overall GT."""
         records = [
-            _make_record(i, "OK", "OK", timing_ms=100.0 + i * 10)
-            for i in range(5)
+            _make_multi_camera_record(
+                0,
+                {"cam_0": "OK", "cam_1": "NG"},
+                gt_label="NG",
+                camera_gt={},
+            ),
         ]
-        ts = compute_timing_stats(records)
-        assert len(ts.all_timings_ms) == 5
-        assert ts.mean_ms > 100
-        assert ts.max_ms > ts.min_ms
+        result = compute_per_camera_metrics(records, ["cam_0", "cam_1"])
+        cam0 = [pc for pc in result if pc.camera_id == "cam_0"][0]
+        cam1 = [pc for pc in result if pc.camera_id == "cam_1"][0]
+        # cam_0: GT=NG (fallback), pred=OK → FN
+        assert cam0.confusion.fn == 1
+        # cam_1: GT=NG (fallback), pred=NG → TP
+        assert cam1.confusion.tp == 1
 
+    def test_reject_treated_as_not_ok(self):
+        """REJECT predicted → counted as not-OK (positive call)."""
+        records = [
+            _make_multi_camera_record(
+                0,
+                {"cam_0": "REJECT", "cam_1": "OK"},
+                gt_label="OK",
+            ),
+        ]
+        result = compute_per_camera_metrics(records, ["cam_0", "cam_1"])
+        cam0 = [pc for pc in result if pc.camera_id == "cam_0"][0]
+        # GT=OK, pred=REJECT → FP (REJECT != OK)
+        assert cam0.confusion.fp == 1
 
-class TestTrapezoidalAUC:
-    def test_perfect(self):
-        points = [(0.0, 0.0), (0.5, 1.0), (1.0, 1.0)]
-        assert abs(_trapezoidal_auc(points) - 0.75) < 0.01
-
-    def test_perfect_curve(self):
-        points = [(0.0, 0.0), (0.0, 1.0), (1.0, 1.0)]
-        assert abs(_trapezoidal_auc(points) - 1.0) < 0.01
+    def test_empty_records(self):
+        result = compute_per_camera_metrics([], ["cam_0"])
+        assert len(result) == 1
+        assert result[0].confusion.total == 0

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from time import perf_counter
-from typing import TYPE_CHECKING, Any, Dict, List, Tuple
+from typing import TYPE_CHECKING, List, Optional
 
 import cv2
 
@@ -15,7 +15,6 @@ from .schemas import (
     BenchmarkRecord,
     BenchmarkSample,
     CameraBenchmarkRecord,
-    DatasetComposition,
 )
 
 if TYPE_CHECKING:
@@ -28,7 +27,7 @@ def run_round(
     config: "BenchmarkConfig",
     round_name: str,
     samples: List[BenchmarkSample],
-) -> Tuple[List[BenchmarkRecord], DatasetComposition]:
+) -> List[BenchmarkRecord]:
     """Run inference on an entire benchmark round."""
     records: List[BenchmarkRecord] = []
     sample_count = len(samples)
@@ -39,9 +38,13 @@ def run_round(
         result = inspect_frames(service, frames, part_id=sample.part_id)
         elapsed_ms = (perf_counter() - t0) * 1000.0
 
-        cam_records = _build_camera_records(result.camera_results)
+        cam_records = _build_camera_records(
+            result.camera_results,
+            artifacts_dir=config.artifacts_dir,
+            round_name=round_name,
+            part_id=sample.part_id,
+        )
         predicted_status = result.status
-        # Handle non-standard statuses that are effectively NG
         if predicted_status not in ("OK", "NG", "REJECT"):
             predicted_status = "NG" if predicted_status else "OK"
 
@@ -84,24 +87,22 @@ def _build_frames(sample: BenchmarkSample) -> List[InspectionFrame]:
     return frames
 
 
-def _build_camera_records(camera_results) -> List[CameraBenchmarkRecord]:
+def _build_camera_records(
+    camera_results,
+    artifacts_dir: Optional[str] = None,
+    round_name: str = "",
+    part_id: str = "",
+) -> List[CameraBenchmarkRecord]:
     records: List[CameraBenchmarkRecord] = []
     for cam in camera_results:
         rec = CameraBenchmarkRecord(
             camera_id=cam.camera_id,
             predicted_status=cam.status,
-            timing_ms=dict(cam.timings_ms) if cam.timings_ms else {},
         )
         if cam.texture_result is not None:
             t = cam.texture_result
             rec.anomaly_score = t.score
             rec.anomaly_threshold = t.threshold
-            rec.decision_threshold = t.decision_threshold
-            rec.peak_patch_score = t.peak_patch_score
-            rec.strong_patch_count = t.strong_patch_count
-            rec.decision_mode = t.decision_mode
-            rec.is_anomaly = t.is_anomaly
-            rec.valid_patch_ratio = t.valid_patch_ratio
         elif cam.region_results:
             scores = [
                 r.texture_result.score
@@ -110,5 +111,18 @@ def _build_camera_records(camera_results) -> List[CameraBenchmarkRecord]:
             ]
             if scores:
                 rec.anomaly_score = max(scores)
+
+        # Export overlay image if artifacts_dir is configured
+        if artifacts_dir:
+            overlay_image = getattr(cam, "overlay_image", None)
+            if overlay_image is not None:
+                output_path = (
+                    Path(artifacts_dir)
+                    / f"{round_name}_{part_id}_{cam.camera_id}_overlay.png"
+                )
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                if cv2.imwrite(str(output_path), overlay_image):
+                    rec.overlay_path = str(output_path)
+
         records.append(rec)
     return records

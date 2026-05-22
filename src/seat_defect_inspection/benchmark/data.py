@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from .config import BenchmarkConfig
-from .schemas import BenchmarkSample, DatasetComposition
+from .schemas import BenchmarkSample
 
 IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".webp"}
 GROUND_TRUTH_FILENAME = "ground_truth.json"
@@ -18,18 +18,18 @@ GROUND_TRUTH_FILENAME = "ground_truth.json"
 
 def discover_benchmark_samples(
     config: BenchmarkConfig,
-) -> Dict[str, Tuple[List[BenchmarkSample], DatasetComposition]]:
+) -> Dict[str, List[BenchmarkSample]]:
     """Discover all benchmark rounds and load their samples.
 
     Returns
     -------
-    Dict mapping round name → (samples, composition).
+    Dict mapping round name → list of samples.
     """
     data_root = Path(config.data_dir)
     if not data_root.is_dir():
         raise FileNotFoundError(f"Benchmark data directory not found: {data_root}")
 
-    result: Dict[str, Tuple[List[BenchmarkSample], DatasetComposition]] = {}
+    result: Dict[str, List[BenchmarkSample]] = {}
     for round_name in config.rounds:
         round_dir = data_root / round_name
         if not round_dir.is_dir():
@@ -38,10 +38,7 @@ def discover_benchmark_samples(
         ground_truth = _load_ground_truth(round_dir)
         implicit_label = _infer_implicit_label(round_name, ground_truth)
         samples = _build_samples(round_dir, round_name, camera_ids, ground_truth, implicit_label)
-        composition = _build_composition(
-            round_name, round_dir, samples, camera_ids, ground_truth, implicit_label
-        )
-        result[round_name] = (samples, composition)
+        result[round_name] = samples
     return result
 
 
@@ -178,30 +175,3 @@ def _collect_camera_images(
         detail = ", ".join(f"{cid}={len(result[cid])}" for cid in camera_ids)
         raise ValueError(f"Camera image counts must be equal, got: {detail}")
     return result
-
-
-# ---------- composition ----------
-
-
-def _build_composition(
-    round_name: str,
-    round_dir: Path,
-    samples: List[BenchmarkSample],
-    camera_ids: List[str],
-    ground_truth: Optional[List[Dict[str, Any]]],
-    implicit_label: Optional[str],
-) -> DatasetComposition:
-    ng_count = sum(1 for s in samples if s.ground_truth_label == "NG")
-    ok_count = sum(1 for s in samples if s.ground_truth_label == "OK")
-    has_gt = ground_truth is not None or implicit_label is not None
-    gt_source = "manifest" if ground_truth is not None else ("implicit" if implicit_label is not None else "none")
-    return DatasetComposition(
-        round_name=round_name,
-        sample_count=len(samples),
-        camera_count=len(camera_ids),
-        camera_ids=list(camera_ids),
-        ng_count=ng_count,
-        ok_count=ok_count,
-        has_ground_truth=has_gt,
-        ground_truth_source=gt_source,
-    )
