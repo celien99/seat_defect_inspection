@@ -1,4 +1,12 @@
-"""Benchmark inspection pipeline with good/defect/mixed datasets."""
+"""DEPRECATED — Benchmark inspection pipeline.
+
+This module is deprecated. All benchmark logic has been moved to
+``seat_defect_inspection.benchmark``. The CLI entry point
+(``cli_commands/benchmark.py``) now imports from the new package.
+
+This file is kept for backward compatibility only and will be removed
+in a future release.
+"""
 
 from __future__ import annotations
 

@@ -14,8 +14,11 @@ python -m seat_defect_inspection --help
 # Run tests (pytest)
 python -m pytest tests/ -v
 
-# Run a single test
+# Run a single test file
 python -m pytest tests/test_core_api.py -v
+
+# Run tests matching a pattern
+python -m pytest tests/ -v -k "PatchCore"
 ```
 
 ## Architecture
@@ -23,9 +26,11 @@ python -m pytest tests/test_core_api.py -v
 The project has a strict two-layer architecture:
 
 - **`seat_defect_core`** — The single source of truth for the inspection runtime. It accepts external images, runs YOLO detection, ROI refinement, quality gating, PatchCore texture analysis, color branch, region-based inspection, multi-camera fusion, debug artifacts, and reporting. It never captures images, never trains models, and never traverses folders.
-- **`seat_defect_inspection`** — Engineering tool layer. Provides CLI commands (`capture`, `train-patchcore`, `train-yolo`, `inspect`, `inspect-folder`), camera acquisition, offline folder discovery, and training orchestration. Its `inspect` command captures images then delegates to `seat_defect_core` for the actual inspection.
+- **`seat_defect_inspection`** — Engineering tool layer. Provides CLI commands (`capture`, `train-patchcore`, `train-yolo`, `inspect`, `inspect-folder`, `benchmark`), camera acquisition, offline folder discovery, and training orchestration. Its `inspect` command captures images then delegates to `seat_defect_core` for the actual inspection.
 
 `media_inputs/` and `mvsCamera/` are tool-layer dependencies for image acquisition (MVS camera SDK bindings). They do not belong to core.
+
+**Python 3.8.5 constraint**: `seat_defect_core` must remain compatible with Python 3.8.5 for LabVIEW integration on production machines. Do not use language features or stdlib APIs introduced after 3.8. No `match`/`case`, no `str.removeprefix`, no `list[Type]` generics (use `List[Type]` from `typing`).
 
 ### Core package structure
 
@@ -111,7 +116,7 @@ Config validation happens eagerly at load time (`load_config` → `validate_insp
 ```
 src/seat_defect_inspection/
 ├── cli.py                    # argparse entry point, routes to subcommands
-├── cli_commands/             # capture, inspect, inspect_folder, train_patchcore, train_yolo
+├── cli_commands/             # capture, inspect, inspect_folder, train_patchcore, train_yolo, benchmark
 ├── acquisition.py            # Unified image source acquisition (file, MVS camera, video)
 ├── service/                  # CaptureService, InspectionService (thin wrapper), OfflineInspectionService, TrainingService
 ├── patchcore/training.py     # PatchCore training orchestration (replays core pipeline on training images)

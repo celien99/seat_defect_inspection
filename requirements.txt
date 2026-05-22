@@ -3,3 +3,5 @@ pyyaml
 torch
 torchvision
 ultralytics
+python-pptx
+jinja2
